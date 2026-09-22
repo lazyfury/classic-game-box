@@ -39,6 +39,14 @@
       "dylib": "custom_nes_core_libretro.dylib",
       "sample_rate": 44100,
       "fps": 60.0988
+    },
+    {
+      "key": "mame2003",
+      "name": "MAME 2003-Plus",
+      "system": "arcade",
+      "dylib": "mame2003_plus_libretro.dylib",
+      "sample_rate": 48000,
+      "fps": 60.0
     }
   ]
 }

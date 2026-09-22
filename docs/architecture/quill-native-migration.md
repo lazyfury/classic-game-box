@@ -5,7 +5,7 @@
 > 决策已确认：目标核心是 **Mesen**（不是构建系统 Meson），UI 先做**最小闭环**，
 > 手柄用 **gilrs**，自研核心保留在 `legacy/` 作对照。
 > 目标：用 Rust + [quill](../../legacy/README.md)（`../quill`）重写前端，**只做 UI 与 libretro 兼容**，
-> 接入 **Mesen**（NES）与 **mGBA**（GB/GBA）两个原生 libretro core。
+> 接入 **Mesen**（NES）、**mGBA**（GB/GBA）与 **MAME 2003-Plus**（街机）等原生 libretro core。
 
 ---
 
@@ -277,7 +277,7 @@ cargo run -p cgb-app -- --rom mario.nes --core ./x_libretro.dylib    # 直接指
 
 | section | 内容 | quill 组件 |
 |---|---|---|
-| 游戏库 | 扫描目录、扩展名过滤 `.nes/.gba/.gb/.gbc`、机种徽章、双击进入播放 | `List` + `ListColumn` + `Badge` |
+| 游戏库 | 扫描目录、扩展名过滤 `.nes/.gba/.gb/.gbc/.zip`、机种徽章、双击进入播放 | `List` + `ListColumn` + `Badge` |
 | 播放 | 画面（`DrawImage`）、暂停/复位/全屏、存档槽、当前核心与机种 | `Card` + `Button` + `DrawImage` |
 | 设置 | 每机种选核、键盘绑定、手柄绑定、扫描目录 | `Overlays` + `Checkbox` + `Switch` |
 

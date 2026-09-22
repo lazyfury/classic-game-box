@@ -10,6 +10,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 | `mgba` | GB / GBC / GBA | `libretro/mgba` | `dist/mgba_libretro.dylib` | ✅ arm64, RGB565, synthetic GBA ROM |
 | `nestopia` | NES / FC | `libretro/nestopia` | `dist/nestopia_libretro.dylib` | ✅ arm64, synthetic NROM |
 | `custom_nes_core` | NES / FC | `legacy/packages/fc-{core,libretro}` | `dist/custom_nes_core_libretro.dylib` | ✅ arm64 (clang++ direct), synthetic NROM |
+| `mame2003` | Arcade | `libretro/mame2003-plus-libretro` | `dist/mame2003_plus_libretro.dylib` | ✅ arm64 (2 patches), opens through the loader |
 
 ```bash
 ./scripts/build-cores.sh              # every cores/*/build.sh, in name order
@@ -78,6 +79,15 @@ shapes, both already in the tree:
 - **CMake** (mGBA is the only one so far): configure with
   `-DBUILD_LIBRETRO=ON`, then `cmake --build … --target <name>_libretro`.
 
+MAME is a family. `mame2003` here is **MAME 2003-Plus** — C, a plain Makefile,
+~150MB, and the arcade core most frontends ship. It needs two build-script
+fixes (both in [`mame2003/build.sh`](mame2003/build.sh)): drop the bundled
+zlib's `fdopen` macro (it breaks the macOS 26+ SDK headers) and override
+`fpic=-fPIC` (the Makefile appends an arm64-rejected `-mmacosx-version-min`).
+Upstream current MAME (`libretro/mame`) is the same *system* (`arcade`) but a
+multi-GB `Makefile.libretro` + genie + python3 build — add it the same way if
+you need newer drivers.
+
 `./scripts/build-cores.sh` runs every `cores/*/build.sh` in name order;
 `--skip-mgba` skips the cmake build.
 
@@ -131,9 +141,10 @@ core's private `fc_*` extension is ignored.
 
 ## Why scripts, not a build target
 
-Mesen and mGBA are tens of megabytes of source each, fetched over the network
-and built in minutes (mGBA needs cmake). They do not belong in `cargo build`.
-Once built, the app runs them exactly like any other libretro core.
+Mesen, mGBA and MAME 2003-Plus are tens to hundreds of megabytes of source,
+fetched over the network and built in minutes (mGBA needs cmake; MAME 2003-Plus
+is the biggest). They do not belong in `cargo build`. Once built, the app runs
+them exactly like any other libretro core.
 
 ## arm64
 

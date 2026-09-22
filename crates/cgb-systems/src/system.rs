@@ -13,10 +13,12 @@ pub enum SystemId {
     Nes,
     Gba,
     Gb,
+    /// Arcade: a MAME-family core, one ROM set per game.
+    Arcade,
 }
 
 /// The consoles, in the order the settings screen lists them.
-pub const SYSTEMS: &[SystemId] = &[SystemId::Nes, SystemId::Gba, SystemId::Gb];
+pub const SYSTEMS: &[SystemId] = &[SystemId::Nes, SystemId::Gba, SystemId::Gb, SystemId::Arcade];
 
 impl SystemId {
     /// Spelled out, for the settings screen where there is room.
@@ -25,6 +27,7 @@ impl SystemId {
             SystemId::Nes => "NES / FC",
             SystemId::Gba => "Game Boy Advance",
             SystemId::Gb => "Game Boy / Color",
+            SystemId::Arcade => "Arcade (MAME)",
         }
     }
 
@@ -35,6 +38,7 @@ impl SystemId {
             SystemId::Nes => "NES",
             SystemId::Gba => "GBA",
             SystemId::Gb => "GB",
+            SystemId::Arcade => "ARC",
         }
     }
 
@@ -44,6 +48,7 @@ impl SystemId {
             SystemId::Nes => &["nes"],
             SystemId::Gba => &["gba"],
             SystemId::Gb => &["gb", "gbc"],
+            SystemId::Arcade => &["zip"],
         }
     }
 
@@ -53,6 +58,7 @@ impl SystemId {
             SystemId::Nes => "nes",
             SystemId::Gba => "gba",
             SystemId::Gb => "gb",
+            SystemId::Arcade => "arcade",
         }
     }
 
@@ -61,6 +67,7 @@ impl SystemId {
         match key {
             "gba" => SystemId::Gba,
             "gb" | "gbc" => SystemId::Gb,
+            "arcade" => SystemId::Arcade,
             _ => SystemId::Nes,
         }
     }
@@ -80,6 +87,7 @@ pub fn system_for_path(path: &str) -> SystemId {
     match extension_of(path).as_str() {
         "gba" => SystemId::Gba,
         "gb" | "gbc" => SystemId::Gb,
+        "zip" => SystemId::Arcade,
         _ => SystemId::Nes,
     }
 }
@@ -94,6 +102,7 @@ mod tests {
         assert_eq!(system_for_path("pokemon.GBA"), SystemId::Gba);
         assert_eq!(system_for_path("tetris.gb"), SystemId::Gb);
         assert_eq!(system_for_path("tetris.gbc"), SystemId::Gb);
+        assert_eq!(system_for_path("puckman.zip"), SystemId::Arcade);
     }
 
     #[test]

@@ -17,6 +17,7 @@ pub struct Settings {
     pub nes_core: Option<String>,
     pub gba_core: Option<String>,
     pub gb_core: Option<String>,
+    pub arcade_core: Option<String>,
     /// Folders the library scans for ROMs.
     pub library_dirs: Vec<String>,
 }
@@ -47,6 +48,7 @@ impl Settings {
             SystemId::Nes => self.nes_core.as_deref(),
             SystemId::Gba => self.gba_core.as_deref(),
             SystemId::Gb => self.gb_core.as_deref(),
+            SystemId::Arcade => self.arcade_core.as_deref(),
         }
     }
 
@@ -56,6 +58,7 @@ impl Settings {
             SystemId::Nes => &mut self.nes_core,
             SystemId::Gba => &mut self.gba_core,
             SystemId::Gb => &mut self.gb_core,
+            SystemId::Arcade => &mut self.arcade_core,
         };
         *slot = key.map(str::to_string);
     }

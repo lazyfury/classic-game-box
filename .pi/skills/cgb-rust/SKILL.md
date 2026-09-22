@@ -20,7 +20,7 @@ crates/cgb-input/src/lib.rs   键盘绑定 + gilrs
 crates/cgb-library/src/       paths / settings / library / saves / cores（自定义核心清单）
 crates/cgb-ui/src/            model.rs / view.rs / frame.rs
 crates/cgb-app/src/           cli.rs（启动参数）/ app.rs（帧循环）/ session.rs（一局游戏）
-cores/cores.json              核心清单（mesen / mgba / nestopia / custom_nes_core）
+cores/cores.json              核心清单（mesen / mgba / nestopia / custom_nes_core / mame2003）
 cores/<name>/build.sh         每个核心的原生构建（产出到 cores/dist/）
 ```
 

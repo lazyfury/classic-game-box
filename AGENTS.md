@@ -12,8 +12,9 @@
 - **Q2 进行中**：音频（cpal）+ gilrs 手柄已接线，`.srm` 电池存档与即时存档槽
   （`Session::{save,load}_state`，F5/F6 与 F1–F3/Shift+F1–F3），待人眼验收“能玩、能存读”。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
-  （mesen / mgba / nestopia / custom_nes_core）；`--core` 按 key 或路径选核。
+  （mesen / mgba / nestopia / custom_nes_core / mame2003）；`--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
+  街机是新的 `SystemId::Arcade`（`.zip` → MAME 2003-Plus，`need_fullpath`）。
 
 ## 硬规则
 
