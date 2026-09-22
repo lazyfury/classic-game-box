@@ -102,13 +102,9 @@ pub fn load_cores(path: &Path) -> Vec<CoreSpec> {
 
 /// A manifest `system` string. Unknown values are skipped (with a warning)
 /// rather than silently defaulting to NES the way [`SystemId::from_key`] does.
+/// Delegates to [`SystemId::parse_key`] so adding a console is one edit.
 fn system_of(key: &str) -> Option<SystemId> {
-    match key.to_ascii_lowercase().as_str() {
-        "nes" => Some(SystemId::Nes),
-        "gba" => Some(SystemId::Gba),
-        "gb" | "gbc" => Some(SystemId::Gb),
-        _ => None,
-    }
+    SystemId::parse_key(key)
 }
 
 #[cfg(test)]
@@ -166,6 +162,42 @@ mod tests {
         assert_eq!(cores[0].name, "bare");
         assert_eq!(cores[0].system, SystemId::Gb);
         assert!((cores[0].frame_seconds - 1.0 / 60.0).abs() < 1e-9);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Guards the manifest that ships in the repo: every console it declares
+    /// must load, and every console we support must have a core. This is what
+    /// would have caught `arcade` being missing from the parser.
+    #[test]
+    fn the_shipped_manifest_covers_every_console() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../cores/cores.json");
+        let cores = load_cores(&path);
+        assert!(
+            !cores.is_empty(),
+            "manifest not found at {}",
+            path.display()
+        );
+        for system in cgb_systems::SYSTEMS {
+            assert!(
+                cores.iter().any(|core| core.system == *system),
+                "{system:?} has no core in the manifest"
+            );
+        }
+        assert!(cores
+            .iter()
+            .any(|core| core.key == "mame2003" && core.system == SystemId::Arcade));
+    }
+
+    #[test]
+    fn an_arcade_entry_is_recognised() {
+        let path = write_manifest(
+            r#"{ "cores": [
+                { "key": "mame2003", "system": "arcade", "dylib": "mame2003_plus_libretro.dylib" }
+            ] }"#,
+        );
+        let cores = load_cores(&path);
+        assert_eq!(cores.len(), 1);
+        assert_eq!(cores[0].system, SystemId::Arcade);
         let _ = std::fs::remove_file(&path);
     }
 

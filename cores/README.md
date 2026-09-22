@@ -42,7 +42,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 - `name` defaults to `key`.
 - `sample_rate` / `fps` are hints only: the real values come from the core's
   own `av_info` after a game loads.
-- `system` is `nes`, `gba`, `gb` or `gbc`; an unknown system is skipped with a
+- `system` is `nes`, `gba`, `gb`, `gbc` or `arcade`; an unknown system is skipped with a
   warning. A duplicate `(system, key)` keeps the first.
 
 The app reads the packaged `<app data>/cores/cores.json`, else this file when
@@ -102,8 +102,10 @@ else is needed.
 A small, mechanical Rust change; the core itself is still just data.
 
 - `crates/cgb-systems/src/system.rs`: add the `SystemId` variant, then update
-  `SYSTEMS`, `name`, `short`, `extensions`, `key`, `from_key` and
-  `system_for_path`. Add a case to the `system_for_path` test.
+  `SYSTEMS`, `name`, `short`, `extensions`, `key`, `parse_key` and
+  `system_for_path`. Add a case to the `system_for_path` test. `from_key`
+  delegates to `parse_key`, and the manifest loader uses `parse_key` too, so
+  the key → console map lives in exactly one place.
 - `crates/cgb-library/src/settings.rs`: add the `<system>_core` field and the
   `core_key` / `set_core_key` match arms, so the pick persists.
 

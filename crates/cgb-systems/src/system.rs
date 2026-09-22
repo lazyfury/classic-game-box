@@ -62,14 +62,21 @@ impl SystemId {
         }
     }
 
+    /// Parse a console key, or `None` when it is not one we know.
+    /// Case-insensitive. The one place the key → console map lives.
+    pub fn parse_key(key: &str) -> Option<SystemId> {
+        match key.to_ascii_lowercase().as_str() {
+            "nes" => Some(SystemId::Nes),
+            "gba" => Some(SystemId::Gba),
+            "gb" | "gbc" => Some(SystemId::Gb),
+            "arcade" => Some(SystemId::Arcade),
+            _ => None,
+        }
+    }
+
     /// Parse a [`SystemId::key`], defaulting to NES for unknown strings.
     pub fn from_key(key: &str) -> SystemId {
-        match key {
-            "gba" => SystemId::Gba,
-            "gb" | "gbc" => SystemId::Gb,
-            "arcade" => SystemId::Arcade,
-            _ => SystemId::Nes,
-        }
+        Self::parse_key(key).unwrap_or(SystemId::Nes)
     }
 }
 
@@ -103,6 +110,15 @@ mod tests {
         assert_eq!(system_for_path("tetris.gb"), SystemId::Gb);
         assert_eq!(system_for_path("tetris.gbc"), SystemId::Gb);
         assert_eq!(system_for_path("puckman.zip"), SystemId::Arcade);
+    }
+
+    #[test]
+    fn parse_key_round_trips_every_console() {
+        for system in SYSTEMS {
+            assert_eq!(SystemId::parse_key(system.key()), Some(*system));
+        }
+        assert_eq!(SystemId::parse_key("GBC"), Some(SystemId::Gb));
+        assert_eq!(SystemId::parse_key("wonderswan"), None);
     }
 
     #[test]
