@@ -7,6 +7,7 @@ own, cloned into `sources/` (gitignored) and linked into `dist/` (gitignored):
 |---|---|---|---|---|
 | Mesen | NES / FC | `libretro/Mesen` | `dist/mesen_libretro.dylib` | ✅ built & ABI-verified (Q1) |
 | mGBA | GB / GBC / GBA | `EmulatorJS/mgba` | `dist/mgba_libretro.dylib` | ⏸ deferred to Q4, unverified |
+| Nestopia (custom) | NES / FC | `libretro/nestopia` | `dist/nestopia_libretro.dylib` | ✅ built, ABI-verified, runs a synthetic NROM |
 
 ```bash
 ./scripts/build-cores.sh              # Mesen (NES) only — the Q1 target

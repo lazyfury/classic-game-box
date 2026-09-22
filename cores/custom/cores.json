@@ -1,3 +1,12 @@
 {
-  "cores": []
+  "cores": [
+    {
+      "key": "nestopia",
+      "name": "Nestopia",
+      "system": "nes",
+      "dylib": "nestopia_libretro.dylib",
+      "sample_rate": 48000,
+      "fps": 60.098
+    }
+  ]
 }

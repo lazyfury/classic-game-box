@@ -3,26 +3,22 @@
 Third-party libretro cores you add yourself. Everything here is data plus a
 build script — no Rust change, no registry edit.
 
-## Add one
+[Nestopia](nestopia/build.sh) (NES) ships as the worked example: its
+`build.sh` clones `libretro/nestopia`, builds it with the project's own
+libretro Makefile, and drops `nestopia_libretro.dylib` in `cores/dist/`.
+It is already declared in [`cores.json`](cores.json), so
+`--core nestopia` works after one build.
+
+## Add another
 
 1. Create the build script `cores/custom/<name>/build.sh`. It clones/builds
-   whatever it needs and **must** drop the finished module in `cores/dist/`:
+   whatever it needs and **must** drop the finished module in `cores/dist/`.
+   Copy [`nestopia/build.sh`](nestopia/build.sh) and change the clone URL,
+   source dir and final `cp`. Make it executable (`chmod +x`).
+   `scripts/build-cores.sh` runs every `cores/custom/*/build.sh` after the
+   built-in cores.
 
-   ```bash
-   #!/bin/bash
-   set -euo pipefail
-   ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-   SRC="$ROOT/cores/sources/nestopia"
-   [ -d "$SRC" ] || git clone --depth 1 https://github.com/libretro/nestopia "$SRC"
-   make -C "$SRC" -f Makefile platform=osx -j"$(sysctl -n hw.ncpu)"
-   mkdir -p "$ROOT/cores/dist"
-   cp "$SRC"/nestopia_libretro.dylib "$ROOT/cores/dist/"
-   ```
-
-   Make it executable (`chmod +x`). `scripts/build-cores.sh` runs every
-   `cores/custom/*/build.sh` after the built-in cores.
-
-2. Declare it in [`cores.json`](cores.json):
+2. Declare it in [`cores.json`](cores.json), next to the Nestopia entry:
 
    ```json
    {
@@ -41,8 +37,9 @@ build script — no Rust change, no registry edit.
 
    `key` is what `--core` and the settings picker use; it must be unique.
    `name` defaults to `key`. `sample_rate` / `fps` are hints only — the real
-   values come from the core's own `av_info` after a game loads. `system` is
-   `nes`, `gba`, `gb` or `gbc`; an unknown system is skipped with a warning.
+   values come from the core's own `av_info` after a game loads (`nestopia`
+   reports 256×240 @ 60.099 fps / 48000 Hz). `system` is `nes`, `gba`, `gb`
+   or `gbc`; an unknown system is skipped with a warning.
 
 3. Build and run:
 
