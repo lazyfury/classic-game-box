@@ -163,6 +163,9 @@ pub struct Gamepads {
     gilrs: gilrs::Gilrs,
     /// Which physical pad is on which libretro port, in connection order.
     ports: [Option<gilrs::GamepadId>; 2],
+    /// Each port's device vendor id, so a pad whose gilrs mapping is wrong can
+    /// be mapped by its raw HID usages instead.
+    vendors: [Option<u16>; 2],
     /// Buttons held per port, independent of the keyboard, so the two sources
     /// can be OR-ed instead of overwriting each other.
     held: [u16; 2],
@@ -178,6 +181,7 @@ impl Gamepads {
         Ok(Self {
             gilrs: gilrs::Gilrs::new()?,
             ports: [None, None],
+            vendors: [None, None],
             held: [0, 0],
         })
     }
@@ -186,18 +190,35 @@ impl Gamepads {
     pub fn poll(&mut self, state: &mut InputState) {
         while let Some(event) = self.gilrs.next_event() {
             match event.event {
-                gilrs::EventType::Connected => self.assign(event.id),
+                gilrs::EventType::Connected => {
+                    if let Some(gamepad) = self.gilrs.connected_gamepad(event.id) {
+                        eprintln!(
+                            "cgb: gamepad {:?} name={:?} vendor={:?} mapping={:?}",
+                            event.id,
+                            gamepad.name(),
+                            gamepad.vendor_id(),
+                            gamepad.mapping_source()
+                        );
+                    }
+                    self.assign(event.id);
+                }
                 gilrs::EventType::Disconnected => self.release_port(event.id),
-                gilrs::EventType::ButtonPressed(button, _) => {
-                    if let (Some(port), Some(mapped)) = (self.port_of(event.id), button_of(button))
-                    {
-                        self.set_button(state, port, mapped, true);
+                gilrs::EventType::ButtonPressed(button, code) => {
+                    eprintln!(
+                        "cgb: pad press {button:?} raw={code} -> {:?}",
+                        self.map_button(event.id, button, code)
+                    );
+                    if let Some(port) = self.port_of(event.id) {
+                        if let Some(mapped) = self.map_button(event.id, button, code) {
+                            self.set_button(state, port, mapped, true);
+                        }
                     }
                 }
-                gilrs::EventType::ButtonReleased(button, _) => {
-                    if let (Some(port), Some(mapped)) = (self.port_of(event.id), button_of(button))
-                    {
-                        self.set_button(state, port, mapped, false);
+                gilrs::EventType::ButtonReleased(button, code) => {
+                    if let Some(port) = self.port_of(event.id) {
+                        if let Some(mapped) = self.map_button(event.id, button, code) {
+                            self.set_button(state, port, mapped, false);
+                        }
                     }
                 }
                 // Some pads report the D-pad and the sticks as axes, not
@@ -224,20 +245,50 @@ impl Gamepads {
         if self.port_of(id).is_some() {
             return;
         }
-        if let Some(slot) = self.ports.iter_mut().find(|slot| slot.is_none()) {
-            *slot = Some(id);
-        }
+        let Some(slot) = self.ports.iter().position(|slot| slot.is_none()) else {
+            return;
+        };
+        self.ports[slot] = Some(id);
+        self.vendors[slot] = self
+            .gilrs
+            .connected_gamepad(id)
+            .and_then(|gamepad| gamepad.vendor_id());
     }
 
     fn release_port(&mut self, id: gilrs::GamepadId) {
         if let Some(port) = self.port_of(id) {
             self.ports[port] = None;
+            self.vendors[port] = None;
             self.held[port] = 0;
         }
     }
 
     fn port_of(&self, id: gilrs::GamepadId) -> Option<usize> {
         self.ports.iter().position(|slot| *slot == Some(id))
+    }
+
+    /// The libretro button a pad event means.
+    ///
+    /// gilrs's own mapping is wrong for the Xbox Wireless Controller over
+    /// Bluetooth on macOS (it labels usages 3–8 and the triggers as the wrong
+    /// buttons), so for Microsoft pads the raw HID usage is used. Every other
+    /// pad keeps gilrs's mapping.
+    fn map_button(
+        &self,
+        id: gilrs::GamepadId,
+        button: gilrs::Button,
+        code: gilrs::ev::Code,
+    ) -> Option<JoypadButton> {
+        let microsoft = self
+            .port_of(id)
+            .and_then(|port| self.vendors[port])
+            .is_some_and(|vendor| vendor == 0x045e);
+        if microsoft {
+            if let Some(mapped) = xbox_button(code.into_u32()) {
+                return Some(mapped);
+            }
+        }
+        button_of(button)
     }
 
     /// Merge this port's held buttons into the shared state.
@@ -277,6 +328,31 @@ fn axis_buttons(axis: gilrs::Axis) -> Option<(JoypadButton, JoypadButton)> {
         Axis::LeftStickX | Axis::DPadX => (Left, Right),
         // gilrs normalizes the Y axis so positive is up.
         Axis::LeftStickY | Axis::DPadY => (Down, Up),
+        _ => return None,
+    })
+}
+
+/// The Xbox Wireless Controller's raw HID button usages.
+///
+/// gilrs maps this pad's usages to the wrong buttons on macOS, so the usages
+/// are read straight from the descriptor. Taken from a real pad (Microsoft
+/// `0x045E:0x02E0` over Bluetooth): `1=A 2=B 3=X 4=Y 5=右肩 6=左扳机 7=左肩
+/// 8=Start 13=右扳机`, and the Consumer-page `0x224` is Select.
+fn xbox_button(code: u32) -> Option<JoypadButton> {
+    let page = code >> 16;
+    let usage = code & 0xffff;
+    use JoypadButton::*;
+    Some(match (page, usage) {
+        (0x09, 1) => A,
+        (0x09, 2) => B,
+        (0x09, 3) => X,
+        (0x09, 4) => Y,
+        (0x09, 5) => R,
+        (0x09, 6) => L,
+        (0x09, 7) => L,
+        (0x09, 8) => Start,
+        (0x09, 13) => R,
+        (0x0c, 0x224) => Select,
         _ => return None,
     })
 }
@@ -410,5 +486,22 @@ mod tests {
         assert_eq!(button_of(Button::East), Some(JoypadButton::B));
         assert_eq!(button_of(Button::Start), Some(JoypadButton::Start));
         assert_eq!(button_of(Button::DPadUp), Some(JoypadButton::Up));
+    }
+
+    /// The Xbox Wireless Controller's raw HID usages, taken from a real pad.
+    #[test]
+    fn the_xbox_pad_maps_by_raw_hid_usage() {
+        let usage = |page: u32, usage: u32| xbox_button((page << 16) | usage);
+        assert_eq!(usage(0x09, 1), Some(JoypadButton::A));
+        assert_eq!(usage(0x09, 2), Some(JoypadButton::B));
+        assert_eq!(usage(0x09, 3), Some(JoypadButton::X));
+        assert_eq!(usage(0x09, 4), Some(JoypadButton::Y));
+        assert_eq!(usage(0x09, 5), Some(JoypadButton::R)); // right shoulder
+        assert_eq!(usage(0x09, 6), Some(JoypadButton::L)); // left trigger
+        assert_eq!(usage(0x09, 7), Some(JoypadButton::L)); // left shoulder
+        assert_eq!(usage(0x09, 8), Some(JoypadButton::Start));
+        assert_eq!(usage(0x09, 13), Some(JoypadButton::R)); // right trigger
+        assert_eq!(usage(0x0c, 0x224), Some(JoypadButton::Select));
+        assert_eq!(usage(0x09, 99), None);
     }
 }
