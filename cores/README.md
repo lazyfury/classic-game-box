@@ -34,13 +34,19 @@ cargo run -p cgb-app -- --rom mario.nes --core mesen
 cargo run -p cgb-app -- --rom mario.nes --core ./cores/dist/mesen_libretro.dylib
 ```
 
-`--core` accepts either a registered key (`mesen`, `mgba`) or a path to a
+`--core` accepts a registered key (`mesen`, `mgba`), a key declared in
+[`custom/cores.json`](custom/cores.json), or a path to a
 `.dylib` / `.so` / `.dll`. A path is loaded exactly as given; the console is
 inferred from the ROM extension, and the frame/sample rates are taken from the
 core's own `av_info` once the game is loaded, so a custom core needs no table
 entry. Registered cores are located through
 [`App::find_module`](../crates/cgb-app/src/app.rs) (packaged `cores/` dir, then
 this `dist/`).
+
+To add a core with its own build step, put it under [`custom/`](custom/README.md):
+a `cores/custom/<name>/build.sh` that emits into `dist/`, plus a row in
+`cores/custom/cores.json`. `./scripts/build-cores.sh` runs every such script,
+and the app reads the manifest at startup — no Rust change.
 
 The seam is [`CoreSpec`](../crates/cgb-systems/src/core_choice.rs): the static
 registry stays `CoreChoice` (`'static`, `Copy`), and a resolved runnable core is

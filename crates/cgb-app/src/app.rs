@@ -25,8 +25,8 @@ use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 use winit::window::{Window, WindowId};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
-use cgb_library::{scan_dir, Library, Paths, Settings};
-use cgb_systems::{choose_core, cores_for, system_for_path, CoreSpec};
+use cgb_library::{load_custom_cores, scan_dir, CustomCore, Library, Paths, Settings};
+use cgb_systems::{choose_core, cores_for, system_for_path, CoreSpec, SystemId};
 use cgb_ui::{Action, Actions, GameRow, Section, Ui, ViewModel};
 
 use crate::cli::{Args, CoreOverride};
@@ -69,9 +69,12 @@ struct App {
     session: Option<Session>,
     /// `--rom` path to start once the window exists.
     pending_rom: Option<PathBuf>,
-    /// `--core` override: a registry key or a module path, applied to every
-    /// game this run starts.
+    /// `--core` override: a core key or a module path, applied to every game
+    /// this run starts.
     core_override: Option<CoreOverride>,
+    /// Custom cores declared in `cores/custom/cores.json`, merged with the
+    /// registry when resolving a key.
+    custom_cores: Vec<CustomCore>,
     /// Keyboard modifiers, so save-state hotkeys can tell save from load.
     modifiers: ModifiersState,
 
@@ -84,6 +87,7 @@ impl App {
         let _ = paths.ensure();
         let settings = Settings::load(&paths.settings_json);
         let library = Library::open(&paths.library_db).ok();
+        let custom_cores = load_manifest(&paths);
 
         let actions = Actions::default();
         let theme = default_theme(Mode::Dark);
@@ -115,6 +119,7 @@ impl App {
             session: None,
             pending_rom: args.rom,
             core_override: args.core,
+            custom_cores,
             modifiers: ModifiersState::empty(),
             last_frame: Instant::now(),
         };
@@ -376,37 +381,58 @@ impl App {
         self.dirty = true;
     }
 
+    /// Every core that can run `system`: the registry first (its order is the
+    /// default order), then custom cores from the manifest.
+    fn available_cores(&self, system: SystemId) -> Vec<CoreSpec> {
+        let mut cores: Vec<CoreSpec> = cores_for(system)
+            .into_iter()
+            .map(|choice| choice.with_module(choice.dylib))
+            .collect();
+        cores.extend(
+            self.custom_cores
+                .iter()
+                .filter(|core| core.system == system)
+                .map(CustomCore::spec),
+        );
+        cores
+    }
+
     /// Resolve which core runs this ROM. `--core` wins over the saved pick,
-    /// which wins over the console default. A `--core <path>` module is used
-    /// exactly as given; a registry core's module is located on disk by
-    /// [`App::find_module`].
+    /// which wins over the console default. A key is looked up in the registry
+    /// **and** the custom manifest; a `--core <path>` module is used as given.
     fn resolve_core(&self, rom_path: &Path) -> Result<CoreSpec, String> {
         let path = rom_path.to_string_lossy();
         let system = system_for_path(&path);
         match &self.core_override {
-            Some(CoreOverride::Registry(id)) => {
-                let choice = cores_for(system)
-                    .into_iter()
-                    .find(|choice| choice.id == *id)
-                    .ok_or_else(|| format!("核心 {id:?} 不支持 {}", system.short()))?;
-                Ok(choice.with_module(self.find_module(choice.dylib)))
-            }
+            Some(CoreOverride::Key(key)) => self
+                .available_cores(system)
+                .into_iter()
+                .find(|spec| spec.key == *key)
+                .map(|mut spec| {
+                    spec.module = self.find_module(&spec.module);
+                    spec
+                })
+                .ok_or_else(|| format!("没有核心 `{key}` 支持 {}", system.short())),
             Some(CoreOverride::Module(module)) => Ok(CoreSpec::custom(module.clone(), system)),
             None => {
                 let choice = choose_core(&path, &self.settings.core_selection());
-                Ok(choice.with_module(self.find_module(choice.dylib)))
+                Ok(choice.with_module(self.find_module(Path::new(choice.dylib))))
             }
         }
     }
 
-    /// The packaged core path, falling back to the dev build output in
-    /// `cores/dist` (see `cores/README.md`).
-    fn find_module(&self, dylib: &str) -> PathBuf {
-        let packaged = self.paths.core_dylib(dylib);
+    /// Locate a module: an absolute or existing path is used as given; a bare
+    /// file name is searched in the packaged `cores/` dir, then the dev build
+    /// output in `cores/dist` (see `cores/README.md`).
+    fn find_module(&self, module: &Path) -> PathBuf {
+        if module.is_absolute() || module.is_file() {
+            return module.to_path_buf();
+        }
+        let packaged = self.paths.cores.join(module);
         if packaged.is_file() {
             return packaged;
         }
-        let dev = Path::new("cores/dist").join(dylib);
+        let dev = Path::new("cores/dist").join(module);
         if dev.is_file() {
             return dev;
         }
@@ -657,6 +683,20 @@ fn wheel_pixels(delta: MouseScrollDelta, scale: f32) -> f32 {
     }
 }
 
+/// The custom-core manifest: the packaged `cores/cores.json`, else the dev
+/// checkout's `cores/custom/cores.json`. Missing is not an error.
+fn load_manifest(paths: &Paths) -> Vec<CustomCore> {
+    let packaged = paths.cores.join("cores.json");
+    if packaged.is_file() {
+        return load_custom_cores(&packaged);
+    }
+    let dev = Path::new("cores/custom/cores.json");
+    if dev.is_file() {
+        return load_custom_cores(dev);
+    }
+    Vec::new()
+}
+
 fn pointer_button(button: MouseButton) -> PointerButton {
     match button {
         MouseButton::Right => PointerButton::Right,
@@ -736,5 +776,28 @@ mod tests {
             Some(Action::LoadState(1))
         );
         assert_eq!(state_shortcut(&WinitKey::Named(NamedKey::F4), false), None);
+    }
+
+    fn temp_paths(name: &str) -> Paths {
+        let root = std::env::temp_dir().join(format!("cgb-app-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let paths = Paths::under(&root);
+        paths.ensure().expect("create temp paths");
+        paths
+    }
+
+    #[test]
+    fn the_manifest_is_read_from_the_packaged_cores_dir() {
+        let paths = temp_paths("manifest");
+        std::fs::write(
+            paths.cores.join("cores.json"),
+            r#"{ "cores": [ { "key": "x", "system": "nes", "dylib": "x.dylib" } ] }"#,
+        )
+        .expect("write manifest");
+
+        let cores = load_manifest(&paths);
+        assert_eq!(cores.len(), 1);
+        assert_eq!(cores[0].key, "x");
+        let _ = std::fs::remove_dir_all(&paths.root);
     }
 }

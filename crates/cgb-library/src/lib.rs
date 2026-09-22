@@ -5,12 +5,14 @@
 //! [`scan_dir`]), and how to read and write a save
 //! ([`saves`], [`save_state_path`], [`battery_save_path`]).
 
+mod cores;
 mod error;
 mod library;
 mod paths;
 mod saves;
 mod settings;
 
+pub use cores::{load_custom_cores, CustomCore};
 pub use error::LibraryError;
 pub use library::{scan_dir, Game, Library};
 pub use paths::{battery_save_path, save_state_path, Paths};

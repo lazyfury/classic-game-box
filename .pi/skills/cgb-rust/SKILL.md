@@ -17,7 +17,7 @@ crates/cgb-systems/src/       纯领域：机种、核心注册表、joypad id�
 crates/cgb-libretro/src/      ffi.rs / loader.rs / host.rs（libretro frontend）
 crates/cgb-audio/src/lib.rs   cpal + ringbuf
 crates/cgb-input/src/lib.rs   键盘绑定 + gilrs
-crates/cgb-library/src/       paths / settings / library / saves
+crates/cgb-library/src/       paths / settings / library / saves / cores（自定义核心清单）
 crates/cgb-ui/src/            model.rs / view.rs / frame.rs
 crates/cgb-app/src/           cli.rs（启动参数）/ app.rs（帧循环）/ session.rs（一局游戏）
 cores/*/build.sh              原生核心构建
@@ -56,13 +56,18 @@ cargo run -p cgb-app -- --rom game.nes
 `host.rs::environment` 加分支（返回 true/false 要诚实）→ 有副作用的加测试。
 
 **试一个新核心**（不改代码）：`cargo run -p cgb-app -- --rom game.nes --core ./foo_libretro.dylib`。
-`--core` 也收注册表 key（`mesen`/`mgba`）。路径按原样 dlopen；机种由 ROM 扩展名
-推断，帧率/采样率在 load 后从核心 `av_info` 读。解析在 `cgb-app/src/app.rs::resolve_core`。
+`--core` 也收注册表 key（`mesen`/`mgba`）或 `cores/custom/cores.json` 里声明的 key。
+路径按原样 dlopen；机种由 ROM 扩展名推断，帧率/采样率在 load 后从核心 `av_info` 读。
+解析在 `cgb-app/src/app.rs::{resolve_core, find_module}`；清单解析在
+`cgb-library/src/cores.rs`。
 
-**正式接一个新核心**：`cores/<name>/build.sh`（platform=osx）→
+**正式接一个自定义核心（不改 Rust）**：建 `cores/custom/<name>/build.sh`（产出到
+`cores/dist/`）+ 在 `cores/custom/cores.json` 加一行（key/name/system/dylib）→
+`./scripts/build-cores.sh` 会跑每个 `cores/custom/*/build.sh`。
+
+**把核心做成内置**（进注册表、设置页可选）：`cores/<name>/build.sh`（platform=osx）→
 `cgb-systems/src/core_choice.rs` 的 `CORES` / `CORES_BY_SYSTEM` 加一行 →
 若新机种，`SystemId` 加变体 + extensions。UI 不需要改。
-（自定义核心的构建流程如何并入 `cores/` 与 `build-cores.sh` 尚未定，先问再动。）
 
 **改 UI 视图**：`cgb-ui/src/model.rs` 加字段 → `view.rs` 构建树 →
 `cgb-app` 把状态投影进 `ViewModel`。回调只 push `Action`，由 app drain。

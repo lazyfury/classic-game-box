@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 
-use cgb_systems::{CoreId, CoreSpec};
+use cgb_systems::CoreSpec;
 
 /// Everything the process was asked to do at startup.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -25,8 +25,10 @@ pub struct Args {
 /// Which core `--core` named.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CoreOverride {
-    /// A core in the registry, by key.
-    Registry(CoreId),
+    /// A core key: a registered one (`mesen`, `mgba`) or one declared in the
+    /// custom-core manifest. Not validated here — the manifest is only read
+    /// once the app starts.
+    Key(String),
     /// A path to a libretro module on disk.
     Module(PathBuf),
 }
@@ -40,7 +42,8 @@ USAGE:
 
 OPTIONS:
     --rom <path>     Load a ROM at startup (also accepted positionally).
-    --core <value>   Force a core: a key (mesen, mgba) or a .dylib/.so/.dll.
+    --core <value>   Force a core: a key (mesen, mgba, or a custom-core key)
+                     or a path to a .dylib / .so / .dll.
     -h, --help       Print this help.
 
 EXAMPLES:
@@ -71,18 +74,14 @@ fn require_value(flag: &str, iter: &mut impl Iterator<Item = String>) -> Result<
     iter.next().ok_or_else(|| format!("{flag} 需要一个值"))
 }
 
-/// A registered key wins; otherwise the value must look like a module path.
+/// A path-looking value is a module; anything else is an unvalidated key (a
+/// registry key or a manifest key, checked once the manifest is read).
 fn parse_core(value: &str) -> Result<CoreOverride, String> {
-    if let Some(id) = CoreId::from_key(value) {
-        return Ok(CoreOverride::Registry(id));
-    }
     let path = PathBuf::from(value);
     if CoreSpec::looks_like_module(&path) || path.is_file() {
         Ok(CoreOverride::Module(path))
     } else {
-        Err(format!(
-            "无法识别核心 `{value}`：既不是已知 key，也不是模块路径"
-        ))
+        Ok(CoreOverride::Key(value.to_string()))
     }
 }
 
@@ -106,7 +105,7 @@ mod tests {
     fn rom_and_core_flags_parse() {
         let parsed = parse(&["--rom", "mario.nes", "--core", "mesen"]).unwrap();
         assert_eq!(parsed.rom, Some(PathBuf::from("mario.nes")));
-        assert_eq!(parsed.core, Some(CoreOverride::Registry(CoreId::Mesen)));
+        assert_eq!(parsed.core, Some(CoreOverride::Key("mesen".to_string())));
     }
 
     #[test]
@@ -132,7 +131,11 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_core_word_is_an_error() {
-        assert!(parse(&["--core", "not-a-core"]).is_err());
+    fn a_bare_word_is_an_unvalidated_key() {
+        // A custom key cannot be checked until the manifest is read.
+        assert_eq!(
+            parse(&["--core", "nestopia"]).unwrap().core,
+            Some(CoreOverride::Key("nestopia".to_string()))
+        );
     }
 }

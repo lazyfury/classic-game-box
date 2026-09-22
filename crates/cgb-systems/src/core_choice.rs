@@ -74,6 +74,7 @@ impl CoreChoice {
     /// the packaged-vs-dev search, so it hands the resolved path back here.
     pub fn with_module(self, module: impl Into<PathBuf>) -> CoreSpec {
         CoreSpec {
+            key: self.id.key().to_string(),
             name: self.name.to_string(),
             system: self.system,
             module: module.into(),
@@ -96,13 +97,16 @@ impl From<CoreChoice> for CoreSpec {
 /// module enters the system (`--core <path>`): the console comes from the ROM
 /// extension, and the timing hints are refined from the core's own `av_info`
 /// once a game is loaded.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CoreSpec {
+    /// The stable key a pick is stored under: a registry key or a manifest
+    /// key for a custom core.
+    pub key: String,
     /// What the UI calls it.
     pub name: String,
     /// The console it runs.
     pub system: SystemId,
-    /// The exact module the host `dlopen`s.
+    /// The module the host `dlopen`s: a file name to search for, or a path.
     pub module: PathBuf,
     /// A hint for the audio device, in Hz. The real rate comes from `av_info`.
     pub sample_rate: u32,
@@ -111,7 +115,7 @@ pub struct CoreSpec {
 }
 
 impl CoreSpec {
-    /// A user-supplied libretro module for `system`. The name is the file
+    /// A user-supplied libretro module for `system`. The key/name is the file
     /// stem; the timing hints are placeholders the core overrides after load.
     pub fn custom(module: impl Into<PathBuf>, system: SystemId) -> Self {
         let module = module.into();
@@ -120,6 +124,7 @@ impl CoreSpec {
             .map(|stem| stem.to_string_lossy().into_owned())
             .unwrap_or_else(|| "自定义核心".to_string());
         Self {
+            key: name.clone(),
             name,
             system,
             module,
@@ -287,6 +292,7 @@ mod tests {
     fn a_registry_choice_resolves_to_a_spec_with_the_module() {
         let choice = choose_core("mario.nes", &CoreSelection::default());
         let spec = choice.with_module("/dist/mesen_libretro.dylib");
+        assert_eq!(spec.key, "mesen");
         assert_eq!(spec.name, "Mesen");
         assert_eq!(spec.system, SystemId::Nes);
         assert_eq!(spec.module, PathBuf::from("/dist/mesen_libretro.dylib"));
@@ -296,6 +302,7 @@ mod tests {
     #[test]
     fn a_custom_spec_is_named_after_its_module() {
         let spec = CoreSpec::custom("/cores/nestopia_libretro.dylib", SystemId::Nes);
+        assert_eq!(spec.key, "nestopia_libretro");
         assert_eq!(spec.name, "nestopia_libretro");
         assert_eq!(spec.system, SystemId::Nes);
         assert!(CoreSpec::looks_like_module(&spec.module));

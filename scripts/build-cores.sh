@@ -30,6 +30,22 @@ else
     echo "==> mGBA skipped (GB/GBA is deferred; pass --with-mgba to build it)"
 fi
 
+# Custom cores: every cores/custom/<name>/build.sh, in name order. Each one
+# drops its module in cores/dist and is declared in cores/custom/cores.json;
+# see cores/custom/README.md.
+shopt -s nullglob
+custom=("$ROOT"/cores/custom/*/build.sh)
+if [ ${#custom[@]} -eq 0 ]; then
+    echo
+    echo "==> no custom cores (add cores/custom/<name>/build.sh + cores/custom/cores.json)"
+else
+    for script in "${custom[@]}"; do
+        echo
+        echo "==> custom core: $(basename "$(dirname "$script")")"
+        "$script"
+    done
+fi
+
 echo
 echo "cores:"
 ls -la "$ROOT/cores/dist"

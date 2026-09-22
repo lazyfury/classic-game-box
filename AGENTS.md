@@ -62,6 +62,7 @@ cargo run -p cgb-app -- --rom mario.nes --core ./custom.dylib  # 自定义核心
 | 机种 / 核心注册表、joypad id | `crates/cgb-systems/src/` |
 | UI 视图与帧循环 | `crates/cgb-ui/src/`、`crates/cgb-app/src/app.rs` |
 | 原生 core 构建 | `cores/README.md`、`cores/*/build.sh` |
+| 自定义/第三方核心（构建 + 清单 + 启动选核） | `cores/custom/README.md`、`cores/custom/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
 | 旧 Electron/C++/wasm 栈 | `legacy/`（只读） |
 
 ## 已知缺口（先记录，不擅自补）

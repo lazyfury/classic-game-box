@@ -232,23 +232,34 @@ git clone --depth 1 https://github.com/EmulatorJS/mgba  →  make -f Makefile.li
 
 > `cores/` 的产物（`cores/dist/`、`cores/sources/`）加入 `.gitignore`，按需构建。
 
-### 6.1 自定义 / 第三方核心
+### 6.1 自定义 / 第三方核心（清单驱动）
 
-任何标准 libretro 模块都能直接跑，不改注册表、不重编 app：
+任何标准 libretro 模块都能跑，不改注册表、不重编 app：
 
 ```bash
 cargo run -p cgb-app -- --rom mario.nes --core mesen
-cargo run -p cgb-app -- --rom mario.nes --core ./path/to/nestopia_libretro.dylib
+cargo run -p cgb-app -- --rom mario.nes --core nestopia              # 清单里的 key
+cargo run -p cgb-app -- --rom mario.nes --core ./nestopia_libretro.dylib  # 直接指模块
 ```
 
-- `--core` 收注册表 key（`mesen` / `mgba`）或模块路径（`.dylib` / `.so` / `.dll`）。
-- 路径按原样 dlopen；机种由 ROM 扩展名推断，帧率/采样率在 load 后从核心自己的
-  `av_info` 读取，所以自定义核心不需要表项。
-- 类型分层：静态注册表仍是 `CoreChoice`（`'static` + `Copy`），真正可运行的
-  是 owned 的 `CoreSpec`（`choice.with_module(path)` 或 `CoreSpec::custom`）。
-  路径解析（打包 `cores/` → dev `cores/dist/`）在 `cgb-app`，见 `App::find_module`。
-- **待定（本次未做）**：自定义核心的**构建流程**如何并入 `cores/` 与
-  `scripts/build-cores.sh`（例如 `cores/<name>/build.sh` 约定或外部脚本钩子）。
+**构建流程**：
+- 每个自定义核心一个 `cores/custom/<name>/build.sh`，产出模块到 `cores/dist/`；
+  `scripts/build-cores.sh` 在内置核心之后逐个执行。
+- 用 `cores/custom/cores.json` 声明（`key` / `name` / `system` / `dylib` +
+  可选 `sample_rate` / `fps`）。加核心 = 数据，不动 Rust。详见
+  [`cores/custom/README.md`](../../cores/custom/README.md)。
+
+**运行**：
+- app 启动时读清单：打包 `<app data>/cores/cores.json`，否则 dev
+  `cores/custom/cores.json`（`cgb-library::load_custom_cores`）。
+- `--core <key>` 在「注册表 + 清单」里按 key 查；`--core <path>` 按原样 dlopen。
+  机种由 ROM 扩展名推断，帧率/采样率在 load 后从核心自己的 `av_info` 读。
+- 类型分层：静态注册表仍是 `CoreChoice`（`'static` + `Copy`），可运行的是
+  owned `CoreSpec`（带 `key`）；`App::find_module` 负责 dlopen 前的路径解析
+  （绝对/存在的路径→原样，否则打包 `cores/` → dev `cores/dist/`）。
+  `App::available_cores(system)` = 注册表 + 清单，是 Q3 设置页选核列表的数据源。
+- 今天只有 `--core` 能选到自定义核心（按 key 或路径）；设置页持久化目前仍是
+  `CoreSelection`（按 `CoreId`），Q3 要把每机种的选核改成存任意 key 字符串。
 
 ---
 

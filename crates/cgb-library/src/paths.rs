@@ -58,6 +58,8 @@ impl Paths {
         std::fs::create_dir_all(&self.system)?;
         std::fs::create_dir_all(&self.saves)?;
         std::fs::create_dir_all(&self.roms)?;
+        // Holds the shipped cores and, beside them, `cores.json`.
+        std::fs::create_dir_all(&self.cores)?;
         Ok(())
     }
 
