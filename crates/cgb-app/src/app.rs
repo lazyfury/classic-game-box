@@ -27,7 +27,7 @@ use winit::window::{Window, WindowId};
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{collect_games, load_cores, seed_dir, Game, Library, Paths, Settings};
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton};
-use cgb_ui::{Action, Actions, BindingRow, CoreRow, GameRow, Section, Ui, ViewModel};
+use cgb_ui::{Action, Actions, BindingRow, CoreRow, GameRow, Ui, ViewModel};
 
 use crate::cli::{Args, CoreOverride};
 use crate::session::Session;
@@ -545,7 +545,6 @@ impl App {
                 self.model.playing = true;
                 self.model.paused = false;
                 self.model.status.clear();
-                self.model.section = Section::Play;
                 self.session = Some(session);
             }
             Err(error) => {

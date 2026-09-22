@@ -274,24 +274,41 @@ cargo run -p cgb-app -- --rom mario.nes --core ./x_libretro.dylib    # 直接指
 
 ## 7. 最小闭环 UI（`cgb-ui`）
 
-左栏 3 个 section（`Router` 或 `set_visible` 切换）：
+三列布局，参考旧 Electron 前端（`legacy/electron/src/renderer/App.tsx`）：
+
+```
+Flex::column()
+  ├─ header                        标题 + 当前 section
+  ├─ Flex::row()
+  │    ├─ rail        64px, shrink 0     图标 + 文字的 section 按钮
+  │    ├─ middle      320px, shrink 0    游戏库 / 设置
+  │    └─ play column grow 1             画面常驻（永不卸载）
+  └─ status bar                     最后一条消息 + 存读档快捷键
+```
+
+左栏只有两个 section；**游玩不再是 section**——右栏画面常驻，跟 legacy 一样。
 
 | section | 内容 | quill 组件 |
 |---|---|---|
-| 游戏库 | 扫描目录、扩展名过滤 `.nes/.gba/.gb/.gbc/.zip`、固定列网格 + 截图占位 + 机种徽章、单击进入播放；网格可滚动（`ScrollView`）；拖放 ROM 或“添加游戏文件…”加入库，也可“添加游戏目录…”整目录扫描 | `Grid`（固定列）+ `ScrollView` + `Card` + `Badge` |
-| 播放 | 画面（`DrawImage`）、暂停/复位/全屏、存档槽、当前核心与机种 | `Card` + `Button` + `DrawImage` |
-| 设置 | 每机种选核、键盘绑定、手柄绑定、扫描目录 | `Overlays` + `Checkbox` + `Switch` |
+| 游戏库 | 扫描目录、扩展名过滤 `.nes/.gba/.gb/.gbc/.zip`、固定 2 列网格 + 封面占位 + 机种短名、单击即玩；网格可滚动（`ScrollView`）；拖放 ROM 或“添加游戏文件…”加入库，也可“添加游戏目录…”整目录扫描 | `Grid`（固定列）+ `ScrollView` + `Icon` |
+| 设置 | 每机种选核、键盘绑定、扫描目录 | `Card` + `Button` |
 
-结构上预留但**暂不实现**：搜索框（quill 无 TextInput，自建或后置）、真实截图/封面（先放占位块）、标签、金手指。
-搜索框是已知缺口，若最小闭环需要，先在 `cgb-ui` 内自建一个轻量 `TextInput`。
+右栏：`DrawImage`（`frame::FrameImage`）+ 暂停/复位/快速存读档 + 当前核心。
 
-游戏库用固定列数的 `draw_components::Grid`，每格是一张 `Card`（截图占位 + 标题 + 机种
-`Badge`）；只有网格区域被 `ScrollView` 包住，标题与“添加目录”按钮固定。滚动状态
-（`ScrollViewState`）由 `cgb-ui::Ui` 持有：`Ui::layout` 在 layout 后调 `sync`，偏移变动时
-再 layout 一次（quill `ScrollView` 的约定）。
+结构上预留但**暂不实现**：搜索框（quill 无 TextInput，自建或后置）、真实截图/封面（先用
+surface 色块占位）、标签、金手指。搜索框是已知缺口，若最小闭环需要，先在 `cgb-ui`
+内自建一个轻量 `TextInput`。
 
-**画面已能上屏**：`cgb-ui` 的 `frame::FrameImage`（见 §5.3）在 `foreground`
-装饰器里发 `DrawImage`，播放页因此显示真实画面；上游 `Image` 组件仍是待补项。
+游戏库用固定列数的 `draw_components::Grid`（当前 2 列），每格一个可点 cell：surface 色块
+封面（名字居中）+ 名字 + 机种短名；正在玩的那张用 accent 选中底色标记。只有网格区域被
+`ScrollView` 包住，标题与“添加…”按钮固定。滚动状态（`ScrollViewState`）由 `cgb-ui::Ui`
+持有：`Ui::layout` 在 layout 后调 `sync`，偏移变动时再 layout 一次（quill `ScrollView` 的约定）。
+
+**画面**：`cgb-ui` 的 `frame::FrameImage`（见 §5.3）在 `foreground` 装饰器里发
+`DrawImage`；上游 `Image` 组件仍是待补项。
+
+**未做**：左栏目前只映射 quill 自带的 `Glyph`（没有库/相机/存档图标），中栏不可拖动分隔，
+也没有 mac 式统一标题栏（保留系统窗口边框）。
 
 ---
 

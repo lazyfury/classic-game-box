@@ -4,23 +4,22 @@
 use cgb_systems::SystemId;
 use draw_render::TextureId;
 
-/// Which page the middle column is showing.
+/// Which page the middle column is showing. The console is the right column
+/// and is always there, so it is not a section.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Section {
     Library,
-    Play,
     Settings,
 }
 
 impl Section {
     /// The pages, in the order the rail lists them.
-    pub const ALL: [Section; 3] = [Section::Library, Section::Play, Section::Settings];
+    pub const ALL: [Section; 2] = [Section::Library, Section::Settings];
 
     /// What the rail says.
     pub fn label(self) -> &'static str {
         match self {
             Section::Library => "游戏库",
-            Section::Play => "游玩",
             Section::Settings => "设置",
         }
     }

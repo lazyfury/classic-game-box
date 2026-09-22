@@ -28,26 +28,27 @@ use draw_ui::TextMeasurer;
 /// The mounted tree plus the frame-loop calls.
 pub struct Ui {
     tree: SceneTree,
-    /// The library grid's scroll offset; `None` when the page has no list.
-    /// Owned here so it survives a [`Ui::rebuild`] within the same page.
-    library_scroll: Option<ScrollViewState>,
+    /// The middle column's scroll offset (the library grid or the settings
+    /// bodies); `None` when the page has nothing to scroll. Owned here so it
+    /// survives a [`Ui::rebuild`] within the same page.
+    middle_scroll: Option<ScrollViewState>,
 }
 
 impl Ui {
     /// Build a fresh tree from the model.
     pub fn new(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Self {
-        let (tree, library_scroll) = view::build(theme, model, actions);
+        let (tree, middle_scroll) = view::build(theme, model, actions);
         Self {
             tree,
-            library_scroll,
+            middle_scroll,
         }
     }
 
     /// Replace the tree with a rebuilt one (call when the model changed).
     pub fn rebuild(&mut self, theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) {
-        let (tree, library_scroll) = view::build(theme, model, actions);
+        let (tree, middle_scroll) = view::build(theme, model, actions);
         self.tree = tree;
-        self.library_scroll = library_scroll;
+        self.middle_scroll = middle_scroll;
     }
 
     /// The mounted tree.
@@ -74,7 +75,7 @@ impl Ui {
     pub fn layout(&mut self, viewport: ViewportSize) {
         draw_ui::layout(&mut self.tree, viewport);
         self.tree.update();
-        if let Some(scroll) = self.library_scroll.as_mut() {
+        if let Some(scroll) = self.middle_scroll.as_mut() {
             if scroll.sync(&mut self.tree) {
                 draw_ui::layout(&mut self.tree, viewport);
                 self.tree.update();
