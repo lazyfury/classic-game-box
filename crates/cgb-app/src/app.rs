@@ -88,6 +88,7 @@ struct App {
 
 impl App {
     fn new(args: Args) -> Self {
+        let rescan = args.rescan;
         let paths = Paths::platform();
         let _ = paths.ensure();
         // Arcade cores need a BIOS. Seed the writable system dir the core
@@ -131,7 +132,7 @@ impl App {
             modifiers: ModifiersState::empty(),
             last_frame: Instant::now(),
         };
-        app.refresh_library();
+        app.refresh_library(rescan);
         app
     }
 
@@ -207,7 +208,12 @@ impl App {
     }
 
     /// Re-read the library folders and rebuild the game rows.
-    fn refresh_library(&mut self) {
+    ///
+    /// With `rescan`, also reconcile the database against disk: rows whose file
+    /// is gone are dropped, so moving or deleting ROMs outside the app stays in
+    /// sync. Without it the scan only upserts, which is enough for a normal
+    /// start.
+    fn refresh_library(&mut self, rescan: bool) {
         // Configured folders plus the built-in ROM folder.
         let mut dirs: Vec<PathBuf> = self
             .settings
@@ -219,18 +225,27 @@ impl App {
 
         let mut games = Vec::new();
         for dir in &dirs {
-            for game in scan_dir(dir) {
-                if let Some(library) = &self.library {
-                    let _ = library.upsert(&game);
+            games.extend(scan_dir(dir));
+        }
+
+        if let Some(library) = &self.library {
+            if rescan {
+                let _ = library.sync(&games);
+            } else {
+                for game in &games {
+                    let _ = library.upsert(game);
                 }
-                games.push(GameRow {
-                    title: game.title.clone(),
-                    system: game.system,
-                    path: game.path.clone(),
-                });
             }
         }
-        self.model.games = games;
+
+        self.model.games = games
+            .into_iter()
+            .map(|game| GameRow {
+                title: game.title,
+                system: game.system,
+                path: game.path,
+            })
+            .collect();
         self.dirty = true;
     }
 

@@ -5,6 +5,7 @@
 //! reconciles it against what is on disk. Here that is kept deliberately
 //! simple — upsert on scan, list for the UI.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use cgb_systems::{extension_of, system_for_path, SystemId};
@@ -125,27 +126,122 @@ impl Library {
             .execute("DELETE FROM games WHERE path = ?1", params![path])?;
         Ok(())
     }
+
+    /// Reconcile the database with a fresh scan: upsert everything in `found`
+    /// and drop rows whose file is no longer there. Returns how many stale
+    /// rows were removed.
+    ///
+    /// The folder is the source of truth, so this is what a `--rescan` does:
+    /// after ROMs are moved or deleted outside the app, the cache is brought
+    /// back in line instead of keeping dead paths forever.
+    pub fn sync(&self, found: &[Game]) -> Result<usize, LibraryError> {
+        for game in found {
+            self.upsert(game)?;
+        }
+        let keep: HashSet<&str> = found.iter().map(|game| game.path.as_str()).collect();
+        let mut removed = 0;
+        for game in self.games()? {
+            if !keep.contains(game.path.as_str()) {
+                self.remove(&game.path)?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
 }
+
+/// The deepest directory level [`scan_dir`] descends below the folder it is
+/// given (the folder itself is level 0). Three is enough for a per-console
+/// layout with one extra grouping (`nes/汉化/game.nes`) without wandering into
+/// a deep tree of assets or screenshots.
+pub const MAX_SCAN_DEPTH: usize = 3;
 
 /// Recursively collect every ROM under `dir` this app knows.
 ///
-/// The scanner is intentionally forgiving: unreadable subdirectories are
-/// skipped, not fatal.
+/// Descends at most [`MAX_SCAN_DEPTH`] levels, so a folder per console (and one
+/// more grouping inside it) is found. The scanner is intentionally forgiving:
+/// unreadable subdirectories are skipped, not fatal.
 pub fn scan_dir(dir: impl AsRef<Path>) -> Vec<Game> {
     let mut found = Vec::new();
-    let mut stack = vec![PathBuf::from(dir.as_ref())];
-    while let Some(current) = stack.pop() {
+    let mut stack = vec![(PathBuf::from(dir.as_ref()), 0usize)];
+    while let Some((current, depth)) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&current) else {
             continue;
         };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                stack.push(path);
+                if depth < MAX_SCAN_DEPTH {
+                    stack.push((path, depth + 1));
+                }
             } else if let Some(game) = Game::from_path(&path) {
                 found.push(game);
             }
         }
     }
     found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("cgb-scan-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        dir
+    }
+
+    #[test]
+    fn scan_finds_roms_up_to_three_levels_deep() {
+        let root = temp_dir("depth");
+        // no subdir: root/top.nes
+        std::fs::write(root.join("top.nes"), b"x").unwrap();
+        // one subdir: root/nes/a.nes
+        std::fs::create_dir_all(root.join("nes")).unwrap();
+        std::fs::write(root.join("nes/a.nes"), b"x").unwrap();
+        // two subdirs: root/nes/han/b.nes
+        std::fs::create_dir_all(root.join("nes/han")).unwrap();
+        std::fs::write(root.join("nes/han/b.nes"), b"x").unwrap();
+        // three subdirs: root/nes/han/deep/c.nes — the deepest we scan
+        std::fs::create_dir_all(root.join("nes/han/deep")).unwrap();
+        std::fs::write(root.join("nes/han/deep/c.nes"), b"x").unwrap();
+        // four subdirs: too deep, ignored
+        std::fs::create_dir_all(root.join("nes/han/deep/deeper")).unwrap();
+        std::fs::write(root.join("nes/han/deep/deeper/d.nes"), b"x").unwrap();
+        // not a ROM, ignored
+        std::fs::write(root.join("nes/readme.txt"), b"x").unwrap();
+
+        let mut titles: Vec<String> = scan_dir(&root).into_iter().map(|game| game.title).collect();
+        titles.sort();
+        assert_eq!(titles, ["a", "b", "c", "top"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sync_removes_rows_that_are_no_longer_on_disk() {
+        let root = temp_dir("sync");
+        let db = root.join("library.db");
+        let library = Library::open(&db).unwrap();
+        let game = |path: &str| Game {
+            path: path.to_string(),
+            title: path.to_string(),
+            system: SystemId::Nes,
+            size: 1,
+        };
+        library.sync(&[game("/a.nes"), game("/b.nes")]).unwrap();
+        assert_eq!(library.games().unwrap().len(), 2);
+
+        let removed = library.sync(&[game("/b.nes"), game("/c.nes")]).unwrap();
+        assert_eq!(removed, 1);
+        let paths: Vec<String> = library
+            .games()
+            .unwrap()
+            .into_iter()
+            .map(|game| game.path)
+            .collect();
+        assert_eq!(paths, ["/b.nes", "/c.nes"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

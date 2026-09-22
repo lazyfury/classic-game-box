@@ -20,6 +20,10 @@ pub struct Args {
     pub rom: Option<PathBuf>,
     /// Force a core instead of the console's default.
     pub core: Option<CoreOverride>,
+    /// Reconcile the library database with disk before opening the window:
+    /// drop rows whose file is gone, add the new ones. Useful after moving
+    /// ROMs around outside the app.
+    pub rescan: bool,
 }
 
 /// Which core `--core` named.
@@ -37,12 +41,14 @@ pub const USAGE: &str = "\
 Classic Game Box
 
 USAGE:
-    classic-game-box [--rom <path>] [--core <key|module>]
+    classic-game-box [--rom <path>] [--core <key|module>] [--rescan]
 
 OPTIONS:
     --rom <path>     Load a ROM at startup (also accepted positionally).
     --core <value>   Force a core: a manifest key (mesen, mgba, nestopia, …)
                      or a path to a .dylib / .so / .dll.
+    --rescan         Reconcile the library database with disk before opening:
+                     drop games whose file is gone, add the new ones.
     -h, --help       Print this help.
 
 EXAMPLES:
@@ -59,6 +65,7 @@ impl Args {
             match arg.as_str() {
                 "--rom" => out.rom = Some(PathBuf::from(require_value("--rom", &mut iter)?)),
                 "--core" => out.core = Some(parse_core(&require_value("--core", &mut iter)?)?),
+                "--rescan" => out.rescan = true,
                 other if other.starts_with('-') => return Err(format!("未知参数：{other}")),
                 other if out.rom.is_none() => out.rom = Some(PathBuf::from(other)),
                 other => return Err(format!("多余的位置参数：{other}")),
