@@ -1,0 +1,11 @@
+[package]
+name = "cgb-libretro"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cgb-systems.workspace = true
+libloading.workspace = true
+thiserror.workspace = true

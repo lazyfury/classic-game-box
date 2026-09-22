@@ -1,58 +1,48 @@
-# Build output. The leading slash matters: a bare `build/` would also hide
-# electron/build/, which is electron-builder's resource folder (the app
-# icon) and is source, not output.
-/build/
-cmake-build-*/
-# Standalone builds of a single monorepo package, as the README describes
-# (cmake -S packages/fc-core -B build-core).
-/build-core/
-/build-libretro/
+# Build output.
+/target/
+
+# ---------------------------------------------------------------------------
+# Native libretro cores. Built on demand by cores/*/build.sh; the sources are
+# third-party clones and the dylibs are build products, so neither is tracked.
+# ---------------------------------------------------------------------------
+/cores/dist/
+/cores/sources/
+/cores/**/*.dylib
+/cores/**/*.o
+/cores/**/*.a
+
+# Mesen / mGBA Makefile leftovers.
+/cores/sources/**/*.bc
+
+# ---------------------------------------------------------------------------
+# Cores fetched at runtime into the app data dir are not in the repo at all;
+# ROMs and saves are never committed (copyright + size).
+# ---------------------------------------------------------------------------
+*.nes
+*.gba
+*.gb
+*.gbc
+*.srm
+*.state
 
 # macOS
 .DS_Store
 ._*
 
 # Editors
-# Ignore the whole folder, but keep the shared project configuration so a
-# fresh clone gets a working IntelliSense setup (C++20, compile_commands.json).
 .vscode/*
-!.vscode/c_cpp_properties.json
-!.vscode/settings.json
 !.vscode/extensions.json
 .idea/
 *.swp
 
-# Apple / Xcode
-*.xcuserstate
-xcuserdata/
-DerivedData/
-
-# Real ROMs are never committed (copyright, and they are big)
-*.nes
-packages/fc-core/tests/data/
-
-# Demo output: PPM pictures and WAV files the teaching demos write. Generated
-# by `./build/demo_ppu`, `./build/demo_input` and `./build/demo_apu`; the README
-# tells you to run those before looking at them.
+# Legacy outputs (the old CMake / Emscripten / Electron trees moved to legacy/;
+# if anyone builds them in place, keep the junk out of git).
+/legacy/build/
+/legacy/build-*/
+/legacy/wasm/dist/
+/legacy/electron/node_modules/
+/legacy/electron/dist/
+/legacy/electron/dist-electron/
+/legacy/electron/release/
+/legacy/third_party/emsdk/
 frames/
-
-# Emscripten SDK. Installed by wasm/build.sh's instructions; about 1.4GB, and
-# it is a toolchain, not a source file.
-third_party/emsdk/
-
-# WebAssembly build output
-build-wasm/
-wasm/dist/
-
-# Test ROMs. Copyrighted, large, and not ours to commit. See the README for
-# where to get them; the tests skip themselves when the folder is empty.
-packages/fc-core/tests/data/testroms/
-
-# mGBA source + build tree (fetched by wasm/mgba/build.sh; ~94MB)
-/build-mgba/
-
-# Mesen source + build tree (fetched by wasm/mesen/build.sh; ~100MB)
-/build-mesen/
-
-# MAME research checkout (see docs/architecture/mame-integration.md; ~150MB)
-/build-mame/

@@ -1,0 +1,71 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cgb-app",
+    "crates/cgb-ui",
+    "crates/cgb-libretro",
+    "crates/cgb-systems",
+    "crates/cgb-audio",
+    "crates/cgb-input",
+    "crates/cgb-library",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+# `wgpu` 24 / `winit` 0.30 (pulled in by quill and this app) require 1.76.
+rust-version = "1.76"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/lazyfury/classic-game-box"
+
+[workspace.dependencies]
+# ---------------------------------------------------------------------------
+# quill — the UI stack. Consumed from the sibling checkout `../quill` (the
+# same relative-path pattern quill's own `examples/image_editor` uses). Swap
+# to a pinned git revision when the two repos need to move independently.
+# ---------------------------------------------------------------------------
+draw_core = { path = "../quill/crates/draw_core" }
+draw_scene = { path = "../quill/crates/draw_scene" }
+draw_ui = { path = "../quill/crates/draw_ui" }
+draw_render = { path = "../quill/crates/draw_render" }
+draw_theme = { path = "../quill/crates/draw_theme" }
+draw_components = { path = "../quill/crates/draw_components" }
+draw_backend_wgpu = { path = "../quill/crates/draw_backend_wgpu" }
+draw_backend_recording = { path = "../quill/crates/draw_backend_recording" }
+draw_profile = { path = "../quill/crates/draw_profile" }
+
+# ---------------------------------------------------------------------------
+# Internal crates. One concern each; see docs/architecture/quill-native-migration.md.
+# ---------------------------------------------------------------------------
+cgb-systems = { path = "crates/cgb-systems" }
+cgb-libretro = { path = "crates/cgb-libretro" }
+cgb-audio = { path = "crates/cgb-audio" }
+cgb-input = { path = "crates/cgb-input" }
+cgb-library = { path = "crates/cgb-library" }
+cgb-ui = { path = "crates/cgb-ui" }
+
+# ---------------------------------------------------------------------------
+# Platform / host dependencies.
+# ---------------------------------------------------------------------------
+libloading = "0.8"
+cpal = "0.15"
+ringbuf = "0.4"
+gilrs = "0.11"
+rusqlite = { version = "0.32", features = ["bundled"] }
+dirs = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.15"
+winit = "0.30"
+thiserror = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+
+# The emulator wants throughput, not size: cores run every frame.
+[profile.release.package.cgb-libretro]
+opt-level = 3
+
+[profile.bench]
+opt-level = 3

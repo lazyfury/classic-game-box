@@ -1,0 +1,15 @@
+[package]
+name = "cgb-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cgb-systems.workspace = true
+draw_core.workspace = true
+draw_render.workspace = true
+draw_scene.workspace = true
+draw_theme.workspace = true
+draw_ui.workspace = true
+draw_components.workspace = true

@@ -1,0 +1,11 @@
+[package]
+name = "cgb-input"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cgb-systems.workspace = true
+draw_core.workspace = true
+gilrs.workspace = true
