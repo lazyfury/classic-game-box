@@ -14,7 +14,7 @@ mod settings;
 
 pub use cores::load_cores;
 pub use error::LibraryError;
-pub use library::{scan_dir, Game, Library};
+pub use library::{collect_games, scan_dir, Game, Library};
 pub use paths::{battery_save_path, save_state_path, seed_dir, Paths};
 pub use saves::{exists, read, remove, write};
 pub use settings::Settings;

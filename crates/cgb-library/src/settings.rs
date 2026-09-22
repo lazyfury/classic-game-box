@@ -20,6 +20,10 @@ pub struct Settings {
     pub arcade_core: Option<String>,
     /// Folders the library scans for ROMs.
     pub library_dirs: Vec<String>,
+    /// ROM files added on their own (dragged in, or chosen in the file
+    /// dialog), outside any scanned folder. Kept as long as the file exists,
+    /// so they survive a rescan without being copied into the ROM folder.
+    pub added_roms: Vec<String>,
 }
 
 impl Settings {
@@ -61,5 +65,19 @@ impl Settings {
             SystemId::Arcade => &mut self.arcade_core,
         };
         *slot = key.map(str::to_string);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_without_added_roms_still_load() {
+        // A settings file written before individually added ROMs existed.
+        let json = r#"{"nes_core":"mesen","library_dirs":["/roms"]}"#;
+        let settings: Settings = serde_json::from_str(json).expect("old settings parse");
+        assert!(settings.added_roms.is_empty());
+        assert_eq!(settings.library_dirs, ["/roms"]);
     }
 }

@@ -156,6 +156,38 @@ impl Library {
 /// a deep tree of assets or screenshots.
 pub const MAX_SCAN_DEPTH: usize = 3;
 
+/// The games from scanned folders plus individually added ROM files.
+///
+/// ROM paths are de-duplicated, so a file that is both inside a scanned folder
+/// and listed explicitly appears once. `extra` paths that no longer point at a
+/// file are skipped; the ones that survive are returned so the caller can prune
+/// its stored list.
+pub fn collect_games(dirs: &[PathBuf], extra: &[String]) -> (Vec<Game>, Vec<String>) {
+    let mut seen = HashSet::new();
+    let mut games = Vec::new();
+    for dir in dirs {
+        for game in scan_dir(dir) {
+            if seen.insert(game.path.clone()) {
+                games.push(game);
+            }
+        }
+    }
+    let mut kept = Vec::new();
+    for path in extra {
+        if !Path::new(path).is_file() {
+            continue;
+        }
+        let Some(game) = Game::from_path(path) else {
+            continue;
+        };
+        kept.push(path.clone());
+        if seen.insert(game.path.clone()) {
+            games.push(game);
+        }
+    }
+    (games, kept)
+}
+
 /// Recursively collect every ROM under `dir` this app knows.
 ///
 /// Descends at most [`MAX_SCAN_DEPTH`] levels, so a folder per console (and one
@@ -216,6 +248,23 @@ mod tests {
         let mut titles: Vec<String> = scan_dir(&root).into_iter().map(|game| game.title).collect();
         titles.sort();
         assert_eq!(titles, ["a", "b", "c", "top"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn collect_games_merges_extras_and_prunes_missing() {
+        let root = temp_dir("collect");
+        std::fs::write(root.join("scanned.nes"), b"x").unwrap();
+        let extra = root.join("dropped.gba");
+        std::fs::write(&extra, b"x").unwrap();
+        let extra = extra.to_string_lossy().into_owned();
+        let missing = root.join("gone.nes").to_string_lossy().into_owned();
+
+        let (games, kept) = collect_games(std::slice::from_ref(&root), &[extra.clone(), missing]);
+        let mut titles: Vec<String> = games.into_iter().map(|game| game.title).collect();
+        titles.sort();
+        assert_eq!(titles, ["dropped", "scanned"]);
+        assert_eq!(kept, [extra]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
