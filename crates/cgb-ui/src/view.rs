@@ -35,6 +35,7 @@ use draw_components::{
 };
 use draw_core::{Color, Edges};
 use draw_scene::{SceneChild, SceneTree};
+use draw_theme::radius::MD;
 use draw_theme::{radius, space, Theme, Tone};
 use draw_ui::{Align, Justify, MouseFilter, SizeBasis, SurfaceStyle, Track};
 
@@ -54,10 +55,6 @@ const LIBRARY_COLUMNS: usize = 2;
 /// Height of a card's cover placeholder in logical pixels.
 const PLACEHOLDER_HEIGHT: f32 = 112.0;
 
-/// The library page's right inset: the usual `MD` less 10px, so the grid's
-/// scrollbar (drawn at the [`ScrollView`]'s right edge) sits nearer the panel
-/// edge instead of floating 10px in.
-const LIBRARY_RIGHT_INSET: f32 = space::MD;
 
 /// Where view callbacks deposit what the user did. The app drains it once per
 /// frame (see the quill UI guide's "state lives in cells" rule).
@@ -277,12 +274,7 @@ fn library_page(
 ) -> Column {
     let mut column = Column::new()
         .gap(space::SM)
-        .padding(Edges::new(
-            space::MD,
-            space::MD,
-            LIBRARY_RIGHT_INSET,
-            space::MD,
-        ))
+        .padding(Edges::all(MD))
         .mouse_filter(MouseFilter::Ignore);
     column = column.child(Text::heading("游戏库", theme));
 
@@ -526,7 +518,7 @@ fn settings_page(
     );
 
     // Only the settings bodies scroll; the title stays put.
-    let view = ScrollView::new(theme).grow(1.0).child(body);
+    let view = ScrollView::new(theme).grow(1.0).scrollbar(false).child(body);
     *scroll = Some(view.state());
     column = column.child(view);
 
