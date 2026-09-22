@@ -25,7 +25,7 @@ use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 use winit::window::{Window, WindowId};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
-use cgb_library::{load_cores, scan_dir, Library, Paths, Settings};
+use cgb_library::{load_cores, scan_dir, seed_dir, Library, Paths, Settings};
 use cgb_systems::{choose_core, system_for_path, CoreSpec};
 use cgb_ui::{Action, Actions, GameRow, Section, Ui, ViewModel};
 
@@ -34,6 +34,12 @@ use crate::session::Session;
 
 /// One wheel notch scrolls about three text lines.
 const WHEEL_LINE_HEIGHT: f32 = 48.0;
+
+/// Arcade BIOS bundled in the checkout (`assets/roms/<system>/system`). The
+/// core is pointed at the writable `<app data>/system` directory, so its
+/// missing files are seeded from here on startup. Relative to the working
+/// directory, like the dev `cores/cores.json` fallback.
+const BUNDLED_ARCADE_SYSTEM: &str = "assets/roms/arcade/system";
 
 /// Runs the app until the window closes.
 pub fn run(args: Args) {
@@ -84,6 +90,9 @@ impl App {
     fn new(args: Args) -> Self {
         let paths = Paths::platform();
         let _ = paths.ensure();
+        // Arcade cores need a BIOS. Seed the writable system dir the core
+        // actually reads from the bundled assets; a player-supplied file wins.
+        let _ = seed_dir(Path::new(BUNDLED_ARCADE_SYSTEM), &paths.system);
         let settings = Settings::load(&paths.settings_json);
         let library = Library::open(&paths.library_db).ok();
         let cores = load_core_manifest(&paths);

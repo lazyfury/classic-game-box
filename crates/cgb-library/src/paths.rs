@@ -88,6 +88,39 @@ pub fn battery_save_path(saves: &Path, rom: &Path) -> PathBuf {
     saves.join(format!("{name}.srm"))
 }
 
+/// Copy files from a bundled, read-only directory into a writable one,
+/// skipping names that already exist. Returns how many files were copied.
+///
+/// The checkout ships the BIOS an arcade core needs under
+/// `assets/roms/<system>/system`, but the core is pointed at the writable
+/// `<app data>/system` directory through `GET_SYSTEM_DIRECTORY`. Seeding keeps
+/// the two apart: the repository stays clean, and a file the player drops into
+/// the writable directory is never overwritten. A missing source is not an
+/// error (the assets may not be shipped), it just seeds nothing.
+pub fn seed_dir(bundled: &Path, target: &Path) -> std::io::Result<usize> {
+    if !bundled.is_dir() {
+        return Ok(0);
+    }
+    std::fs::create_dir_all(target)?;
+    let mut copied = 0;
+    for entry in std::fs::read_dir(bundled)? {
+        let path = entry?.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+        let dest = target.join(name);
+        if dest.exists() {
+            continue;
+        }
+        std::fs::copy(&path, &dest)?;
+        copied += 1;
+    }
+    Ok(copied)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +135,40 @@ mod tests {
     fn a_battery_path_drops_the_extension() {
         let path = battery_save_path(Path::new("/saves"), Path::new("/roms/mario.nes"));
         assert_eq!(path, PathBuf::from("/saves/mario.srm"));
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("cgb-seed-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        dir
+    }
+
+    #[test]
+    fn seed_copies_missing_files_only() {
+        let root = temp_dir("copy");
+        let bundled = root.join("bundled");
+        let target = root.join("target");
+        std::fs::create_dir_all(&bundled).unwrap();
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(bundled.join("neogeo.zip"), b"bundled").unwrap();
+        std::fs::write(bundled.join("pgm.zip"), b"bundled").unwrap();
+        // A player-supplied file with the same name must win.
+        std::fs::write(target.join("neogeo.zip"), b"player").unwrap();
+
+        assert_eq!(seed_dir(&bundled, &target).unwrap(), 1);
+        assert_eq!(std::fs::read(target.join("neogeo.zip")).unwrap(), b"player");
+        assert_eq!(std::fs::read(target.join("pgm.zip")).unwrap(), b"bundled");
+        // Seeding again copies nothing.
+        assert_eq!(seed_dir(&bundled, &target).unwrap(), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn seed_without_a_source_is_not_an_error() {
+        let root = temp_dir("missing");
+        let target = root.join("target");
+        assert_eq!(seed_dir(&root.join("nope"), &target).unwrap(), 0);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

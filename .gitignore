@@ -17,7 +17,9 @@
 
 # ---------------------------------------------------------------------------
 # Cores fetched at runtime into the app data dir are not in the repo at all;
-# ROMs and saves are never committed (copyright + size).
+# game ROMs and saves are never committed (copyright + size). The arcade BIOS
+# under assets/roms/ is the deliberate exception: small, bundled with the app,
+# and seeded into the writable system dir at startup (see assets/README.md).
 # ---------------------------------------------------------------------------
 *.nes
 *.gba
