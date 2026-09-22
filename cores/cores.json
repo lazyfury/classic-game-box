@@ -41,6 +41,14 @@
       "fps": 60.0988
     },
     {
+      "key": "fbneo",
+      "name": "FinalBurn Neo",
+      "system": "arcade",
+      "dylib": "fbneo_libretro.dylib",
+      "sample_rate": 48000,
+      "fps": 60.0
+    },
+    {
       "key": "mame2003",
       "name": "MAME 2003-Plus",
       "system": "arcade",

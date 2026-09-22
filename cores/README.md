@@ -11,6 +11,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 | `nestopia` | NES / FC | `libretro/nestopia` | `dist/nestopia_libretro.dylib` | ✅ arm64, synthetic NROM |
 | `custom_nes_core` | NES / FC | `legacy/packages/fc-{core,libretro}` | `dist/custom_nes_core_libretro.dylib` | ✅ arm64 (clang++ direct), synthetic NROM |
 | `mame2003` | Arcade | `libretro/mame2003-plus-libretro` | `dist/mame2003_plus_libretro.dylib` | ✅ arm64 (2 patches), opens through the loader |
+| `fbneo` | Arcade | `libretro/FBNeo` | `dist/fbneo_libretro.dylib` | ✅ arm64, loads standard Neo Geo sets (encrypted C-ROMs) |
 
 ```bash
 ./scripts/build-cores.sh              # every cores/*/build.sh, in name order
@@ -87,6 +88,12 @@ zlib's `fdopen` macro (it breaks the macOS 26+ SDK headers) and override
 Upstream current MAME (`libretro/mame`) is the same *system* (`arcade`) but a
 multi-GB `Makefile.libretro` + genie + python3 build — add it the same way if
 you need newer drivers.
+
+`fbneo` is the second arcade core and the one that matches the *standard* Neo
+Geo romsets (the encrypted 4 MiB C-ROMs, e.g. `201-c1.c1` = `72813676`). MAME
+2003-Plus instead wants the pre-decrypted variants (`d00bd152`), so the two
+cores are not interchangeable for Neo Geo. It is a plain Makefile build from
+`libretro/FBNeo` (`src/burner/libretro`, `platform=osx`).
 
 `./scripts/build-cores.sh` runs every `cores/*/build.sh` in name order;
 `--skip-mgba` skips the cmake build.

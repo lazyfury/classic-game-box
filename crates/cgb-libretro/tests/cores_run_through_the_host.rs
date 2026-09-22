@@ -144,6 +144,30 @@ fn cores_run_through_the_host() {
         eprintln!("skip: {} not built", mame.display());
     }
 
+    // FBNeo is the other arcade core (the one that runs the standard Neo Geo
+    // sets). Same deal: no synthetic ROM, so just prove it opens and declares
+    // zips. `need_fullpath` is false — it reads the archive itself.
+    let fbneo = dist_core("fbneo_libretro.dylib");
+    if fbneo.is_file() {
+        let dir = std::env::temp_dir();
+        let host = CoreHost::new(&fbneo, &dir, &dir).expect("open fbneo");
+        let info = host.system_info();
+        assert!(
+            info.library_name.contains("FinalBurn Neo"),
+            "{}",
+            info.library_name
+        );
+        assert!(info.valid_extensions.iter().any(|ext| ext == "zip"));
+        eprintln!(
+            "fbneo_libretro.dylib: {} ({:?})",
+            info.library_name, info.valid_extensions
+        );
+        drop(host);
+        tested += 1;
+    } else {
+        eprintln!("skip: {} not built", fbneo.display());
+    }
+
     if tested == 0 {
         eprintln!("skip: no cores built (run ./scripts/build-cores.sh)");
     }
