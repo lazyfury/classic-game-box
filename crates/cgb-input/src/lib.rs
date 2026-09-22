@@ -16,9 +16,18 @@ use cgb_systems::JoypadButton;
 use draw_core::Key;
 
 /// The pressed-button bitmask for both controller ports.
+///
+/// Keyboard and gamepad are tracked separately and OR-ed by [`mask`], so
+/// releasing a pad button while a key is held (or vice versa) does not drop the
+/// input.
+///
+/// [`mask`]: InputState::mask
 #[derive(Clone, Copy, Debug, Default)]
 pub struct InputState {
-    masks: [u16; 2],
+    /// Buttons held by the keyboard bindings.
+    keyboard: [u16; 2],
+    /// Buttons held by a gamepad.
+    gamepad: [u16; 2],
 }
 
 impl InputState {
@@ -27,34 +36,49 @@ impl InputState {
         Self::default()
     }
 
-    /// The bitmask for `port` (`0` or `1`).
+    /// The bitmask for `port` (`0` or `1`), both sources OR-ed.
     pub fn mask(&self, port: usize) -> u16 {
-        self.masks.get(port).copied().unwrap_or(0)
+        let keyboard = self.keyboard.get(port).copied().unwrap_or(0);
+        let gamepad = self.gamepad.get(port).copied().unwrap_or(0);
+        keyboard | gamepad
     }
 
-    /// Whether `button` is currently held on `port`.
+    /// Whether `button` is currently held on `port` by either source.
     pub fn is_down(&self, port: usize, button: JoypadButton) -> bool {
         (self.mask(port) >> button.id()) & 1 != 0
     }
 
-    /// Press or release one button on one port.
+    /// Press or release one button from the **keyboard** on one port.
     pub fn set(&mut self, port: usize, button: JoypadButton, down: bool) {
-        let Some(mask) = self.masks.get_mut(port) else {
-            return;
-        };
-        let bit = 1u16 << button.id();
-        if down {
-            *mask |= bit;
-        } else {
-            *mask &= !bit;
-        }
+        set_bit(&mut self.keyboard, port, button, down);
+    }
+
+    /// Press or release one button from a **gamepad** on one port.
+    pub fn set_gamepad(&mut self, port: usize, button: JoypadButton, down: bool) {
+        set_bit(&mut self.gamepad, port, button, down);
     }
 
     /// Release everything on a port (focus loss, core switch).
     pub fn clear(&mut self, port: usize) {
-        if let Some(mask) = self.masks.get_mut(port) {
+        if let Some(mask) = self.keyboard.get_mut(port) {
             *mask = 0;
         }
+        if let Some(mask) = self.gamepad.get_mut(port) {
+            *mask = 0;
+        }
+    }
+}
+
+/// Set or clear one bit in a per-port mask.
+fn set_bit(masks: &mut [u16; 2], port: usize, button: JoypadButton, down: bool) {
+    let Some(mask) = masks.get_mut(port) else {
+        return;
+    };
+    let bit = 1u16 << button.id();
+    if down {
+        *mask |= bit;
+    } else {
+        *mask &= !bit;
     }
 }
 
@@ -167,15 +191,23 @@ impl Gamepads {
                 gilrs::EventType::ButtonPressed(button, _) => {
                     if let (Some(port), Some(mapped)) = (self.port_of(event.id), button_of(button))
                     {
-                        self.held[port] |= 1 << mapped.id();
-                        self.publish(state, port);
+                        self.set_button(state, port, mapped, true);
                     }
                 }
                 gilrs::EventType::ButtonReleased(button, _) => {
                     if let (Some(port), Some(mapped)) = (self.port_of(event.id), button_of(button))
                     {
-                        self.held[port] &= !(1 << mapped.id());
-                        self.publish(state, port);
+                        self.set_button(state, port, mapped, false);
+                    }
+                }
+                // Some pads report the D-pad and the sticks as axes, not
+                // buttons, so map those too.
+                gilrs::EventType::AxisChanged(axis, value, _) => {
+                    if let (Some(port), Some((negative, positive))) =
+                        (self.port_of(event.id), axis_buttons(axis))
+                    {
+                        self.set_button(state, port, negative, value < -STICK_DEADZONE);
+                        self.set_button(state, port, positive, value > STICK_DEADZONE);
                     }
                 }
                 _ => {}
@@ -212,19 +244,55 @@ impl Gamepads {
     fn publish(&self, state: &mut InputState, port: usize) {
         for button in JoypadButton::ALL {
             let down = (self.held[port] >> button.id()) & 1 != 0;
-            state.set(port, button, down);
+            state.set_gamepad(port, button, down);
         }
+    }
+
+    /// Press or release one gamepad button and republish the port.
+    fn set_button(
+        &mut self,
+        state: &mut InputState,
+        port: usize,
+        button: JoypadButton,
+        down: bool,
+    ) {
+        let bit = 1u16 << button.id();
+        if down {
+            self.held[port] |= bit;
+        } else {
+            self.held[port] &= !bit;
+        }
+        self.publish(state, port);
     }
 }
 
-/// Which libretro button a physical pad button means. Xbox-style layout, the
-/// same convention the old front end used.
+/// How far a stick or hat must move before it counts as a direction.
+const STICK_DEADZONE: f32 = 0.5;
+
+/// The (negative, positive) D-pad buttons an axis drives, if any.
+fn axis_buttons(axis: gilrs::Axis) -> Option<(JoypadButton, JoypadButton)> {
+    use gilrs::Axis;
+    use JoypadButton::*;
+    Some(match axis {
+        Axis::LeftStickX | Axis::DPadX => (Left, Right),
+        // gilrs normalizes the Y axis so positive is up.
+        Axis::LeftStickY | Axis::DPadY => (Down, Up),
+        _ => return None,
+    })
+}
+
+/// Which libretro button a physical pad button means.
+///
+/// The bottom face button is the one printed "A" on most pads and the console's
+/// A is the right-hand one, so it is the **bottom** button that maps to libretro
+/// A (id 8) and the **right** one to B (id 0) — the same way the legacy front
+/// end did (`legacy/electron/src/renderer/gamepad.ts`).
 fn button_of(button: gilrs::Button) -> Option<JoypadButton> {
     use gilrs::Button;
     use JoypadButton::*;
     Some(match button {
-        Button::South => B,
-        Button::East => A,
+        Button::South => A,
+        Button::East => B,
         Button::North => Y,
         Button::West => X,
         Button::LeftTrigger | Button::LeftTrigger2 => L,
@@ -300,5 +368,47 @@ mod tests {
             bindings.button_for(Key::Character('x')),
             Some(JoypadButton::A)
         );
+    }
+
+    #[test]
+    fn keyboard_and_gamepad_are_or_ed() {
+        let mut state = InputState::new();
+        let bindings = KeyboardBindings::default_bindings();
+        bindings.apply(Key::ArrowUp, true, &mut state, 0);
+        state.set_gamepad(0, JoypadButton::Up, true);
+        // Releasing the pad button must not clear the held key.
+        state.set_gamepad(0, JoypadButton::Up, false);
+        assert!(state.is_down(0, JoypadButton::Up));
+        // And releasing the key must not clear a held pad button.
+        state.set(0, JoypadButton::A, true);
+        state.set_gamepad(0, JoypadButton::A, true);
+        state.set(0, JoypadButton::A, false);
+        assert!(state.is_down(0, JoypadButton::A));
+    }
+
+    #[test]
+    fn stick_axes_drive_the_dpad() {
+        use gilrs::Axis;
+        assert_eq!(
+            axis_buttons(Axis::LeftStickX),
+            Some((JoypadButton::Left, JoypadButton::Right))
+        );
+        assert_eq!(
+            axis_buttons(Axis::LeftStickY),
+            Some((JoypadButton::Down, JoypadButton::Up))
+        );
+        assert_eq!(axis_buttons(Axis::RightStickX), None);
+    }
+
+    /// The legacy front end mapped the bottom face button (printed "A" on most
+    /// pads) to the console's A, and the right face button to B. Pinned here so
+    /// the two do not drift.
+    #[test]
+    fn the_bottom_face_button_is_a_and_the_right_one_is_b() {
+        use gilrs::Button;
+        assert_eq!(button_of(Button::South), Some(JoypadButton::A));
+        assert_eq!(button_of(Button::East), Some(JoypadButton::B));
+        assert_eq!(button_of(Button::Start), Some(JoypadButton::Start));
+        assert_eq!(button_of(Button::DPadUp), Some(JoypadButton::Up));
     }
 }

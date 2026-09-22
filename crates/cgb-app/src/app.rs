@@ -124,7 +124,13 @@ impl App {
             library,
             input: InputState::new(),
             bindings: KeyboardBindings::default_bindings(),
-            gamepads: Gamepads::new().ok(),
+            gamepads: match Gamepads::new() {
+                Ok(gamepads) => Some(gamepads),
+                Err(error) => {
+                    eprintln!("cgb: 手柄不可用：{error}");
+                    None
+                }
+            },
             session: None,
             pending_rom: args.rom,
             core_override: args.core,
