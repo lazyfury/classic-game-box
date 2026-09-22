@@ -7,6 +7,14 @@
       "dylib": "nestopia_libretro.dylib",
       "sample_rate": 48000,
       "fps": 60.098
+    },
+    {
+      "key": "custom_nes_core",
+      "name": "Custom NES Core (legacy)",
+      "system": "nes",
+      "dylib": "custom_nes_core_libretro.dylib",
+      "sample_rate": 44100,
+      "fps": 60.0988
     }
   ]
 }

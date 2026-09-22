@@ -3,11 +3,17 @@
 Third-party libretro cores you add yourself. Everything here is data plus a
 build script — no Rust change, no registry edit.
 
-[Nestopia](nestopia/build.sh) (NES) ships as the worked example: its
-`build.sh` clones `libretro/nestopia`, builds it with the project's own
-libretro Makefile, and drops `nestopia_libretro.dylib` in `cores/dist/`.
-It is already declared in [`cores.json`](cores.json), so
-`--core nestopia` works after one build.
+Two cores ship as examples, both already declared in
+[`cores.json`](cores.json) so they work after one build:
+
+- [Nestopia](nestopia/build.sh) (NES) — clones `libretro/nestopia` and builds
+  it with the project's own libretro Makefile.
+- [custom_nes_core](custom_nes_core/build.sh) (NES) — the legacy hand-written
+  FC / NES core from the read-only `legacy/` archive. That tree is a CMake
+  project, but this machine has no cmake, so the script drives `clang++`
+  directly over the same sources. Only the standard libretro ABI is used: the
+  core also exports a private `fc_*` extension (`fc_libretro_get_ext`) which
+  the host ignores.
 
 ## Add another
 

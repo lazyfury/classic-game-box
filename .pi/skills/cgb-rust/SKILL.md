@@ -21,6 +21,7 @@ crates/cgb-library/src/       paths / settings / library / saves / cores（自�
 crates/cgb-ui/src/            model.rs / view.rs / frame.rs
 crates/cgb-app/src/           cli.rs（启动参数）/ app.rs（帧循环）/ session.rs（一局游戏）
 cores/*/build.sh              原生核心构建
+cores/custom/                 自定义核心：cores.json + <name>/build.sh（含 legacy 的 custom_nes_core）
 ```
 
 **禁读**：`target/`、`legacy/`（除非查历史决策）、`cores/sources/`、`cores/dist/`、
@@ -55,7 +56,8 @@ cargo run -p cgb-app -- --rom game.nes
 **加一个 libretro environment 命令**：`cgb-libretro/src/ffi.rs` 加常量 →
 `host.rs::environment` 加分支（返回 true/false 要诚实）→ 有副作用的加测试。
 
-**试一个新核心**（不改代码）：`cargo run -p cgb-app -- --rom game.nes --core ./foo_libretro.dylib`。
+**试一个新核心**（不改代码）：`cargo run -p cgb-app -- --rom game.nes --core ./foo_libretro.dylib`
+或仓库内置的 `--core custom_nes_core`（legacy 自研核心，见 `cores/custom/README.md`）。
 `--core` 也收注册表 key（`mesen`/`mgba`）或 `cores/custom/cores.json` 里声明的 key。
 路径按原样 dlopen；机种由 ROM 扩展名推断，帧率/采样率在 load 后从核心 `av_info` 读。
 解析在 `cgb-app/src/app.rs::{resolve_core, find_module}`；清单解析在

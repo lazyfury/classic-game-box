@@ -248,6 +248,9 @@ cargo run -p cgb-app -- --rom mario.nes --core ./nestopia_libretro.dylib  # 直�
 - 用 `cores/custom/cores.json` 声明（`key` / `name` / `system` / `dylib` +
   可选 `sample_rate` / `fps`）。加核心 = 数据，不动 Rust。详见
   [`cores/custom/README.md`](../../cores/custom/README.md)。
+- 仓库内置两个范例：`nestopia`（上游）与 `custom_nes_core`（`legacy/packages/fc-*`
+  里的自研 FC/NES 核心，用 clang++ 直接编译，不依赖 cmake，`legacy/` 只读；
+  前端只用标准 libretro ABI，`fc_*` 私有扩展被忽略）。
 
 **运行**：
 - app 启动时读清单：打包 `<app data>/cores/cores.json`，否则 dev

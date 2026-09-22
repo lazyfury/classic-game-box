@@ -18,9 +18,10 @@
    `assets/`、`docs/`、`legacy/`。不要往根目录丢构建产物或临时文件。
 2. **只做 UI 与 libretro 兼容。** 不实现/移植自研模拟器；它已在 `legacy/`。
    新功能先问「libretro 有没有标准对应」。
-3. **libretro 是唯一对外契约。** 只加载标准 libretro core（Mesen、mGBA），
-   不使用 `fc_*` 私有扩展。ABI 头是 `cores/libretro/libretro.h`；
-   **不要整读**（≈8700 行），`rg` 定位再看。
+3. **libretro 是唯一对外契约。** 只加载标准 libretro core（Mesen、mGBA，
+   以及 `cores/custom/` 下的自定义核心，如 legacy 的 `custom_nes_core`）；
+   不使用 `fc_*` 私有扩展（`custom_nes_core` 会导出该扩展，但被忽略）。
+   ABI 头是 `cores/libretro/libretro.h`；**不要整读**（≈8700 行），`rg` 定位再看。
 4. **依赖方向单向**：`cgb-app → {cgb-ui, cgb-libretro, cgb-audio, cgb-input,
    cgb-library, cgb-systems}`；`cgb-ui` 不认识 libretro；`cgb-libretro` 不认识 UI
    与音频设备（只暴露 `Frame` / `Vec<i16>`）。`cgb-systems` 无依赖。
