@@ -25,18 +25,25 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use draw_components::{
-    Button, Card, Column, Component, Divider, EmptyState, Flex, Panel, Row, Text,
+    Badge, Button, Card, Column, Component, Divider, EmptyState, Flex, Grid, Panel, Row,
+    ScrollView, ScrollViewState, Text,
 };
 use draw_core::{Color, Edges};
 use draw_scene::{SceneChild, SceneTree};
-use draw_theme::{space, Theme, Tone};
-use draw_ui::{MouseFilter, SizeBasis, SurfaceStyle};
+use draw_theme::{radius, space, Theme, Tone};
+use draw_ui::{Align, Justify, MouseFilter, SizeBasis, SurfaceStyle, Track};
 
 use crate::frame::FrameImage;
-use crate::model::{Action, Section, ViewModel};
+use crate::model::{Action, GameRow, Section, ViewModel};
 
 /// The rail's fixed width in logical pixels.
 const SIDEBAR_WIDTH: f32 = 224.0;
+
+/// Library grid columns. A fixed count; the cells split the available width.
+const LIBRARY_COLUMNS: usize = 4;
+
+/// Height of a card's cover placeholder in logical pixels.
+const PLACEHOLDER_HEIGHT: f32 = 132.0;
 
 /// Where view callbacks deposit what the user did. The app drains it once per
 /// frame (see the quill UI guide's "state lives in cells" rule).
@@ -57,9 +64,15 @@ impl Actions {
     }
 }
 
-/// Build the whole tree for one frame.
-pub fn build(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> SceneTree {
-    Flex::column()
+/// Build the whole tree for one frame, plus the persistent view state the app
+/// must drive across frames (the library grid's scroll offset).
+pub fn build(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &Actions,
+) -> (SceneTree, Option<ScrollViewState>) {
+    let mut library_scroll = None;
+    let tree = Flex::column()
         .mouse_filter(MouseFilter::Ignore)
         .child(
             Flex::row()
@@ -67,9 +80,10 @@ pub fn build(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) ->
                 .padding(Edges::ZERO)
                 .mouse_filter(MouseFilter::Ignore)
                 .child(sidebar(theme, model, actions))
-                .child(content(theme, model, actions)),
+                .child(content(theme, model, actions, &mut library_scroll)),
         )
-        .into_tree()
+        .into_tree();
+    (tree, library_scroll)
 }
 
 fn sidebar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
@@ -100,9 +114,14 @@ fn sidebar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> C
 }
 
 /// The content column, already padded and set to take the rest of the row.
-fn content(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Panel {
+fn content(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &Actions,
+    library_scroll: &mut Option<ScrollViewState>,
+) -> Panel {
     let page = match model.section {
-        Section::Library => library_page(theme, model, actions),
+        Section::Library => library_page(theme, model, actions, library_scroll),
         Section::Play => play_page(theme, model, actions),
         Section::Settings => settings_page(theme, model, actions),
     };
@@ -130,7 +149,12 @@ fn content(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> P
         .child(column)
 }
 
-fn library_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
+fn library_page(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &Actions,
+    library_scroll: &mut Option<ScrollViewState>,
+) -> Column {
     let mut column = Column::new()
         .gap(space::MD)
         .mouse_filter(MouseFilter::Ignore);
@@ -141,29 +165,72 @@ fn library_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions)
             EmptyState::new("还没有游戏", theme).description("把 ROM 放进库目录，或点“添加 ROM”。"),
         );
     } else {
-        let mut list = Column::new().gap(space::XS);
-        for (index, game) in model.games.iter().enumerate() {
-            let actions = actions.clone();
-            let label = format!("{}   ·   {}", game.title, game.system.short());
-            list = list.child(
-                Button::ghost(label, theme)
-                    .min_size(0.0, 30.0)
-                    .on_click(move || actions.push(Action::Play(index))),
-            );
-        }
-        column = column.child(
-            Card::new(theme)
-                .gap(space::XS)
-                .padding(Edges::all(space::SM))
-                .child(list),
-        );
+        // Only the grid scrolls; the title and the add button stay put.
+        let view = ScrollView::new(theme)
+            .grow(1.0)
+            .child(library_grid(theme, model, actions));
+        *library_scroll = Some(view.state());
+        column = column.child(view);
     }
 
-    let actions = actions.clone();
+    let add_files = actions.clone();
+    let add_dir = actions.clone();
     column = column.child(
-        Button::secondary("添加游戏目录…", theme).on_click(move || actions.push(Action::OpenRom)),
+        Row::new()
+            .gap(space::SM)
+            .child(
+                Button::secondary("添加游戏文件…", theme)
+                    .on_click(move || add_files.push(Action::AddGames)),
+            )
+            .child(
+                Button::ghost("添加游戏目录…", theme)
+                    .on_click(move || add_dir.push(Action::OpenRom)),
+            ),
     );
     column
+}
+
+/// The library as a fixed-column grid of cover cards. The whole grid is the
+/// content of the library page's [`ScrollView`].
+fn library_grid(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Grid {
+    let mut grid = Grid::new(vec![Track::Fr(1.0); LIBRARY_COLUMNS])
+        .gap(space::MD)
+        .padding(Edges::ZERO);
+    for (index, game) in model.games.iter().enumerate() {
+        grid = grid.child(game_card(theme, game, index, actions));
+    }
+    grid
+}
+
+/// One library cell: a cover placeholder, the title, and a console badge.
+///
+/// The cover is a placeholder until real captures exist — quill has no image
+/// widget, and loading covers is a later step (see `frame.rs`). Clicking
+/// anywhere on the card starts the game.
+fn game_card(theme: &'static dyn Theme, game: &GameRow, index: usize, actions: &Actions) -> Card {
+    let actions = actions.clone();
+    Card::new(theme)
+        .gap(space::XS)
+        .padding(Edges::all(space::SM))
+        .on_click(move || actions.push(Action::Play(index)))
+        .child(
+            Flex::row()
+                .align(Align::Center)
+                .justify(Justify::Center)
+                .min_size(0.0, PLACEHOLDER_HEIGHT)
+                .surface(
+                    SurfaceStyle::new(theme.palette().surface)
+                        .border(theme.palette().border)
+                        .radius(radius::MD),
+                )
+                .child(Text::caption("截图", theme).tone(Tone::Muted)),
+        )
+        .child(
+            Text::small(game.title.as_str(), theme)
+                .max_lines(1)
+                .ellipsis(true),
+        )
+        .child(Row::new().child(Badge::new(game.system.short(), theme)))
 }
 
 fn play_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
@@ -335,7 +402,7 @@ fn settings_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{BindingRow, CoreRow, FrameHandle};
+    use crate::model::{BindingRow, CoreRow, FrameHandle, GameRow};
     use cgb_systems::SystemId;
     use draw_core::Size;
     use draw_render::{DrawCommand, PaintContext, TextureId};
@@ -344,12 +411,16 @@ mod tests {
     fn paint(model: &ViewModel) -> draw_render::DrawList {
         let theme = default_theme(Mode::Dark);
         let actions = Actions::default();
-        let mut tree = build(theme, model, &actions);
-        draw_ui::layout(
-            &mut tree,
-            draw_core::ViewportSize::new(Size::new(1100.0, 760.0)),
-        );
+        let (mut tree, mut scroll) = build(theme, model, &actions);
+        let viewport = draw_core::ViewportSize::new(Size::new(1100.0, 760.0));
+        draw_ui::layout(&mut tree, viewport);
         tree.update();
+        if let Some(scroll) = scroll.as_mut() {
+            if scroll.sync(&mut tree) {
+                draw_ui::layout(&mut tree, viewport);
+                tree.update();
+            }
+        }
         let mut ctx = PaintContext::new();
         draw_ui::paint(&tree, &mut ctx);
         ctx.into_draw_list()
@@ -372,7 +443,7 @@ mod tests {
             ..ViewModel::default()
         };
 
-        let mut tree = build(theme, &model, &actions);
+        let (mut tree, _) = build(theme, &model, &actions);
         draw_ui::layout(
             &mut tree,
             draw_core::ViewportSize::new(Size::new(1100.0, 760.0)),
@@ -447,5 +518,42 @@ mod tests {
         assert!(has("Nestopia"), "every core for the console is offered");
         assert!(has("Mesen"), "the selected core is shown");
         assert!(has("X / K"), "the binding is shown");
+    }
+
+    /// The library is a grid, not a list: the first `LIBRARY_COLUMNS` cells
+    /// share a row (increasing x, same baseline) and the next one wraps to a
+    /// new row below.
+    #[test]
+    fn the_library_page_lays_games_out_in_a_grid() {
+        let games: Vec<GameRow> = (0..LIBRARY_COLUMNS + 1)
+            .map(|index| GameRow {
+                title: format!("Game {index}"),
+                system: SystemId::Nes,
+                path: format!("/roms/game{index}.nes"),
+            })
+            .collect();
+        let model = ViewModel {
+            games,
+            ..ViewModel::default()
+        };
+        let list = paint(&model);
+        let position = |needle: &str| {
+            list.commands().iter().find_map(|command| match command {
+                DrawCommand::DrawText { text, position, .. } if text == needle => Some(*position),
+                _ => None,
+            })
+        };
+
+        let first = position("Game 0").expect("the first card paints its title");
+        let second = position("Game 1").expect("the second card paints its title");
+        let wrapped = position(&format!("Game {LIBRARY_COLUMNS}"))
+            .expect("the wrapped card paints its title");
+
+        assert!(
+            (first.y - second.y).abs() < 0.5,
+            "the first columns share a row: {first:?} vs {second:?}"
+        );
+        assert!(second.x > first.x, "the next column is to the right");
+        assert!(wrapped.y > first.y, "the next row is below the first");
     }
 }

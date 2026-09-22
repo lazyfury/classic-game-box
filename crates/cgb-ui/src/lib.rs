@@ -18,6 +18,7 @@ pub use view::Actions;
 
 use std::rc::Rc;
 
+use draw_components::ScrollViewState;
 use draw_core::{InputEvent, ViewportSize};
 use draw_render::PaintContext;
 use draw_scene::SceneTree;
@@ -27,19 +28,26 @@ use draw_ui::TextMeasurer;
 /// The mounted tree plus the frame-loop calls.
 pub struct Ui {
     tree: SceneTree,
+    /// The library grid's scroll offset; `None` when the page has no list.
+    /// Owned here so it survives a [`Ui::rebuild`] within the same page.
+    library_scroll: Option<ScrollViewState>,
 }
 
 impl Ui {
     /// Build a fresh tree from the model.
     pub fn new(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Self {
+        let (tree, library_scroll) = view::build(theme, model, actions);
         Self {
-            tree: view::build(theme, model, actions),
+            tree,
+            library_scroll,
         }
     }
 
     /// Replace the tree with a rebuilt one (call when the model changed).
     pub fn rebuild(&mut self, theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) {
-        self.tree = view::build(theme, model, actions);
+        let (tree, library_scroll) = view::build(theme, model, actions);
+        self.tree = tree;
+        self.library_scroll = library_scroll;
     }
 
     /// The mounted tree.
@@ -59,9 +67,19 @@ impl Ui {
     }
 
     /// Resolve geometry and flush deferred tree work.
+    ///
+    /// A [`ScrollView`](draw_components::ScrollView) resolves its viewport and
+    /// content only after layout, so `sync` runs here and, when the offset
+    /// moved the content, layout runs once more before paint.
     pub fn layout(&mut self, viewport: ViewportSize) {
         draw_ui::layout(&mut self.tree, viewport);
         self.tree.update();
+        if let Some(scroll) = self.library_scroll.as_mut() {
+            if scroll.sync(&mut self.tree) {
+                draw_ui::layout(&mut self.tree, viewport);
+                self.tree.update();
+            }
+        }
     }
 
     /// Emit this frame's draw list into `ctx`.

@@ -278,12 +278,17 @@ cargo run -p cgb-app -- --rom mario.nes --core ./x_libretro.dylib    # 直接指
 
 | section | 内容 | quill 组件 |
 |---|---|---|
-| 游戏库 | 扫描目录、扩展名过滤 `.nes/.gba/.gb/.gbc/.zip`、机种徽章、双击进入播放 | `List` + `ListColumn` + `Badge` |
+| 游戏库 | 扫描目录、扩展名过滤 `.nes/.gba/.gb/.gbc/.zip`、固定列网格 + 截图占位 + 机种徽章、单击进入播放；网格可滚动（`ScrollView`）；拖放 ROM 或“添加游戏文件…”加入库，也可“添加游戏目录…”整目录扫描 | `Grid`（固定列）+ `ScrollView` + `Card` + `Badge` |
 | 播放 | 画面（`DrawImage`）、暂停/复位/全屏、存档槽、当前核心与机种 | `Card` + `Button` + `DrawImage` |
 | 设置 | 每机种选核、键盘绑定、手柄绑定、扫描目录 | `Overlays` + `Checkbox` + `Switch` |
 
-结构上预留但**暂不实现**：搜索框（quill 无 TextInput，自建或后置）、截图/封面、标签、金手指。
+结构上预留但**暂不实现**：搜索框（quill 无 TextInput，自建或后置）、真实截图/封面（先放占位块）、标签、金手指。
 搜索框是已知缺口，若最小闭环需要，先在 `cgb-ui` 内自建一个轻量 `TextInput`。
+
+游戏库用固定列数的 `draw_components::Grid`，每格是一张 `Card`（截图占位 + 标题 + 机种
+`Badge`）；只有网格区域被 `ScrollView` 包住，标题与“添加目录”按钮固定。滚动状态
+（`ScrollViewState`）由 `cgb-ui::Ui` 持有：`Ui::layout` 在 layout 后调 `sync`，偏移变动时
+再 layout 一次（quill `ScrollView` 的约定）。
 
 **画面已能上屏**：`cgb-ui` 的 `frame::FrameImage`（见 §5.3）在 `foreground`
 装饰器里发 `DrawImage`，播放页因此显示真实画面；上游 `Image` 组件仍是待补项。

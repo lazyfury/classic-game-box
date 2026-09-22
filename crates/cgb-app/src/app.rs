@@ -25,7 +25,7 @@ use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 use winit::window::{Window, WindowId};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
-use cgb_library::{load_cores, scan_dir, seed_dir, Library, Paths, Settings};
+use cgb_library::{collect_games, load_cores, seed_dir, Game, Library, Paths, Settings};
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton};
 use cgb_ui::{Action, Actions, BindingRow, CoreRow, GameRow, Section, Ui, ViewModel};
 
@@ -82,6 +82,9 @@ struct App {
     cores: Vec<CoreSpec>,
     /// Keyboard modifiers, so save-state hotkeys can tell save from load.
     modifiers: ModifiersState,
+    /// Files dropped onto the window since the last frame. winit delivers one
+    /// `DroppedFile` event per file, so they are buffered and added in one batch.
+    pending_drops: Vec<PathBuf>,
 
     last_frame: Instant,
 }
@@ -136,6 +139,7 @@ impl App {
             core_override: args.core,
             cores,
             modifiers: ModifiersState::empty(),
+            pending_drops: Vec::new(),
             last_frame: Instant::now(),
         };
         app.refresh_library(rescan);
@@ -230,9 +234,12 @@ impl App {
             .collect();
         dirs.push(self.paths.roms.clone());
 
-        let mut games = Vec::new();
-        for dir in &dirs {
-            games.extend(scan_dir(dir));
+        // Individually added files (dragged in or chosen in the dialog) merge
+        // in, and are pruned from the settings once their file is gone.
+        let (games, kept) = collect_games(&dirs, &self.settings.added_roms);
+        if kept != self.settings.added_roms {
+            self.settings.added_roms = kept;
+            let _ = self.settings.save(&self.paths.settings_json);
         }
 
         if let Some(library) = &self.library {
@@ -295,6 +302,67 @@ impl App {
             let _ = self.settings.save(&self.paths.settings_json);
         }
         self.reload_library();
+    }
+
+    /// Ask for ROM files and add them to the library.
+    fn add_games_dialog(&mut self) {
+        let extensions: Vec<&str> = cgb_systems::SYSTEMS
+            .iter()
+            .flat_map(|system| system.extensions().iter().copied())
+            .collect();
+        let Some(paths) = rfd::FileDialog::new()
+            .set_title("选择游戏")
+            .add_filter("ROM", &extensions)
+            .pick_files()
+        else {
+            return;
+        };
+        self.add_game_paths(paths);
+    }
+
+    /// Add ROM files (dropped in, or picked in the dialog) to the library.
+    ///
+    /// A dropped folder joins the scanned folders; a file is remembered
+    /// individually, so it survives a rescan without being copied.
+    fn add_game_paths(&mut self, paths: Vec<PathBuf>) {
+        let mut added = 0;
+        let mut skipped = None;
+        for path in paths {
+            if path.is_dir() {
+                let dir = path.to_string_lossy().into_owned();
+                if !self.settings.library_dirs.contains(&dir) {
+                    self.settings.library_dirs.push(dir);
+                    added += 1;
+                }
+                continue;
+            }
+            match Game::from_path(&path) {
+                Some(game) if !self.settings.added_roms.contains(&game.path) => {
+                    self.settings.added_roms.push(game.path);
+                    added += 1;
+                }
+                Some(_) => {}
+                None => skipped = Some(path.display().to_string()),
+            }
+        }
+        let _ = self.settings.save(&self.paths.settings_json);
+        self.reload_library();
+        self.model.status = if added > 0 {
+            format!("已添加 {added} 个游戏")
+        } else if let Some(path) = skipped {
+            format!("跳过不认识的 ROM：{path}")
+        } else {
+            "没有新增游戏".to_string()
+        };
+    }
+
+    /// Add any files dropped since the last frame, in one batch.
+    fn flush_drops(&mut self) {
+        if self.pending_drops.is_empty() {
+            return;
+        }
+        let paths = std::mem::take(&mut self.pending_drops);
+        self.add_game_paths(paths);
     }
 
     /// Stop scanning a library folder and forget its games.
@@ -396,6 +464,7 @@ impl App {
                     };
                     self.dirty = true;
                 }
+                Action::AddGames => self.add_games_dialog(),
                 Action::OpenRom => self.add_library_dir(),
                 Action::SelectCore(index) => self.select_core(index),
                 Action::RemoveLibraryDir(index) => self.remove_library_dir(index),
@@ -545,6 +614,7 @@ impl App {
     }
 
     fn render(&mut self) {
+        self.flush_drops();
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame).as_secs_f64().min(0.25);
         self.last_frame = now;
@@ -659,6 +729,7 @@ impl ApplicationHandler for App {
                 return;
             }
             WindowEvent::Resized(size) => self.resize(size.width, size.height),
+            WindowEvent::DroppedFile(path) => self.pending_drops.push(path),
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.scale_factor = scale_factor;
                 if let Some(backend) = self.backend.as_mut() {

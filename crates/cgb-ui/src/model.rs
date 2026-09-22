@@ -113,6 +113,8 @@ pub enum Action {
     SaveState(u8),
     /// Restore a save state from a slot.
     LoadState(u8),
+    /// Open the native file picker and add the chosen ROM files to the library.
+    AddGames,
     /// Open the native folder picker and add the chosen folder to the library.
     OpenRom,
     /// Make the core at this `cores` index the pick for its console.
