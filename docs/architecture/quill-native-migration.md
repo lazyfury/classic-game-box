@@ -232,6 +232,24 @@ git clone --depth 1 https://github.com/EmulatorJS/mgba  →  make -f Makefile.li
 
 > `cores/` 的产物（`cores/dist/`、`cores/sources/`）加入 `.gitignore`，按需构建。
 
+### 6.1 自定义 / 第三方核心
+
+任何标准 libretro 模块都能直接跑，不改注册表、不重编 app：
+
+```bash
+cargo run -p cgb-app -- --rom mario.nes --core mesen
+cargo run -p cgb-app -- --rom mario.nes --core ./path/to/nestopia_libretro.dylib
+```
+
+- `--core` 收注册表 key（`mesen` / `mgba`）或模块路径（`.dylib` / `.so` / `.dll`）。
+- 路径按原样 dlopen；机种由 ROM 扩展名推断，帧率/采样率在 load 后从核心自己的
+  `av_info` 读取，所以自定义核心不需要表项。
+- 类型分层：静态注册表仍是 `CoreChoice`（`'static` + `Copy`），真正可运行的
+  是 owned 的 `CoreSpec`（`choice.with_module(path)` 或 `CoreSpec::custom`）。
+  路径解析（打包 `cores/` → dev `cores/dist/`）在 `cgb-app`，见 `App::find_module`。
+- **待定（本次未做）**：自定义核心的**构建流程**如何并入 `cores/` 与
+  `scripts/build-cores.sh`（例如 `cores/<name>/build.sh` 约定或外部脚本钩子）。
+
 ---
 
 ## 7. 最小闭环 UI（`cgb-ui`）

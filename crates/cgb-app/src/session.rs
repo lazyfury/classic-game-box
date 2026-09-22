@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use cgb_audio::AudioOutput;
 use cgb_library::{battery_save_path, exists, read, save_state_path, write};
 use cgb_libretro::CoreHost;
-use cgb_systems::CoreChoice;
+use cgb_systems::CoreSpec;
 use cgb_ui::FrameHandle;
 use draw_backend_wgpu::{TextureFilter, WgpuBackend};
 use draw_render::TextureId;
@@ -39,10 +39,9 @@ pub struct Session {
 }
 
 impl Session {
-    /// Bring up `choice`'s core and load the cartridge.
+    /// Bring up `spec`'s core and load the cartridge.
     pub fn start(
-        choice: &CoreChoice,
-        core_path: &Path,
+        spec: &CoreSpec,
         system_dir: &Path,
         save_dir: &Path,
         rom_path: &Path,
@@ -50,7 +49,7 @@ impl Session {
         backend: &mut WgpuBackend,
     ) -> Result<Self, String> {
         let mut core =
-            CoreHost::new(core_path, system_dir, save_dir).map_err(|error| error.to_string())?;
+            CoreHost::new(&spec.module, system_dir, save_dir).map_err(|error| error.to_string())?;
         core.load_game(rom_path, data)
             .map_err(|error| error.to_string())?;
 
@@ -86,7 +85,7 @@ impl Session {
         let frame_seconds = if av.fps > 0.0 {
             1.0 / av.fps
         } else {
-            choice.frame_seconds
+            spec.frame_seconds
         };
 
         Ok(Self {
@@ -99,7 +98,7 @@ impl Session {
                 height,
             }),
             paused: false,
-            core_name: choice.name.to_string(),
+            core_name: spec.name.clone(),
             frame_seconds,
             accumulator: 0.0,
             save_dir: save_dir.to_path_buf(),

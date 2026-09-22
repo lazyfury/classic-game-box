@@ -15,6 +15,8 @@
 //!   GB/GBC   160x144, 59.7275 fps, 131072 Hz  (mGBA resamples the GB clock)
 //! ```
 
+use std::path::{Path, PathBuf};
+
 use crate::{system_for_path, SystemId};
 
 /// A libretro core.
@@ -64,6 +66,75 @@ impl CoreChoice {
     /// One emulated frame, in milliseconds.
     pub fn frame_millis(self) -> f64 {
         self.frame_seconds * 1000.0
+    }
+
+    /// This registry entry with the module path the app located on disk.
+    ///
+    /// [`CoreChoice`] is `'static` and carries only a file name; the app owns
+    /// the packaged-vs-dev search, so it hands the resolved path back here.
+    pub fn with_module(self, module: impl Into<PathBuf>) -> CoreSpec {
+        CoreSpec {
+            name: self.name.to_string(),
+            system: self.system,
+            module: module.into(),
+            sample_rate: self.sample_rate,
+            frame_seconds: self.frame_seconds,
+        }
+    }
+}
+
+impl From<CoreChoice> for CoreSpec {
+    fn from(choice: CoreChoice) -> Self {
+        choice.with_module(choice.dylib)
+    }
+}
+
+/// A core resolved to something the app can `dlopen`.
+///
+/// [`CoreChoice`] is the static, `Copy` registry; this is its owned form, and
+/// it is what the session runs. It is also how a **user-supplied** libretro
+/// module enters the system (`--core <path>`): the console comes from the ROM
+/// extension, and the timing hints are refined from the core's own `av_info`
+/// once a game is loaded.
+#[derive(Clone, Debug)]
+pub struct CoreSpec {
+    /// What the UI calls it.
+    pub name: String,
+    /// The console it runs.
+    pub system: SystemId,
+    /// The exact module the host `dlopen`s.
+    pub module: PathBuf,
+    /// A hint for the audio device, in Hz. The real rate comes from `av_info`.
+    pub sample_rate: u32,
+    /// A hint for the frame clock. The real rate comes from `av_info`.
+    pub frame_seconds: f64,
+}
+
+impl CoreSpec {
+    /// A user-supplied libretro module for `system`. The name is the file
+    /// stem; the timing hints are placeholders the core overrides after load.
+    pub fn custom(module: impl Into<PathBuf>, system: SystemId) -> Self {
+        let module = module.into();
+        let name = module
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "自定义核心".to_string());
+        Self {
+            name,
+            system,
+            module,
+            sample_rate: 0,
+            frame_seconds: 1.0 / 60.0,
+        }
+    }
+
+    /// Whether the module looks like a loadable library by extension. Used by
+    /// `--core` to tell a registry key from a path.
+    pub fn looks_like_module(path: &Path) -> bool {
+        matches!(
+            path.extension().and_then(|ext| ext.to_str()),
+            Some("dylib" | "so" | "dll")
+        )
     }
 }
 
@@ -210,6 +281,29 @@ mod tests {
         let gba = choose_core("pokemon.gba", &CoreSelection::default());
         assert!(!same_core(Some(gba), choice));
         assert!(same_core(Some(gba), gba));
+    }
+
+    #[test]
+    fn a_registry_choice_resolves_to_a_spec_with_the_module() {
+        let choice = choose_core("mario.nes", &CoreSelection::default());
+        let spec = choice.with_module("/dist/mesen_libretro.dylib");
+        assert_eq!(spec.name, "Mesen");
+        assert_eq!(spec.system, SystemId::Nes);
+        assert_eq!(spec.module, PathBuf::from("/dist/mesen_libretro.dylib"));
+        assert_eq!(spec.sample_rate, 48_000);
+    }
+
+    #[test]
+    fn a_custom_spec_is_named_after_its_module() {
+        let spec = CoreSpec::custom("/cores/nestopia_libretro.dylib", SystemId::Nes);
+        assert_eq!(spec.name, "nestopia_libretro");
+        assert_eq!(spec.system, SystemId::Nes);
+        assert!(CoreSpec::looks_like_module(&spec.module));
+    }
+
+    #[test]
+    fn a_key_is_not_mistaken_for_a_module() {
+        assert!(!CoreSpec::looks_like_module(Path::new("mesen")));
     }
 
     #[test]

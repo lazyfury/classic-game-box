@@ -26,19 +26,20 @@ use winit::window::{Window, WindowId};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{scan_dir, Library, Paths, Settings};
-use cgb_systems::choose_core;
+use cgb_systems::{choose_core, cores_for, system_for_path, CoreSpec};
 use cgb_ui::{Action, Actions, GameRow, Section, Ui, ViewModel};
 
+use crate::cli::{Args, CoreOverride};
 use crate::session::Session;
 
 /// One wheel notch scrolls about three text lines.
 const WHEEL_LINE_HEIGHT: f32 = 48.0;
 
-/// Runs the app until the window closes. `rom` is the optional `--rom` path.
-pub fn run(rom: Option<PathBuf>) {
+/// Runs the app until the window closes.
+pub fn run(args: Args) {
     let event_loop = EventLoop::new().expect("create event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App::new(rom);
+    let mut app = App::new(args);
     event_loop.run_app(&mut app).expect("run event loop");
 }
 
@@ -68,6 +69,9 @@ struct App {
     session: Option<Session>,
     /// `--rom` path to start once the window exists.
     pending_rom: Option<PathBuf>,
+    /// `--core` override: a registry key or a module path, applied to every
+    /// game this run starts.
+    core_override: Option<CoreOverride>,
     /// Keyboard modifiers, so save-state hotkeys can tell save from load.
     modifiers: ModifiersState,
 
@@ -75,7 +79,7 @@ struct App {
 }
 
 impl App {
-    fn new(rom: Option<PathBuf>) -> Self {
+    fn new(args: Args) -> Self {
         let paths = Paths::platform();
         let _ = paths.ensure();
         let settings = Settings::load(&paths.settings_json);
@@ -109,14 +113,12 @@ impl App {
             bindings: KeyboardBindings::default_bindings(),
             gamepads: Gamepads::new().ok(),
             session: None,
-            pending_rom: None,
+            pending_rom: args.rom,
+            core_override: args.core,
             modifiers: ModifiersState::empty(),
             last_frame: Instant::now(),
         };
         app.refresh_library();
-        if let Some(rom) = rom {
-            app.pending_rom = Some(rom);
-        }
         app
     }
 
@@ -317,28 +319,21 @@ impl App {
             }
         };
 
-        let selection = self.settings.core_selection();
-        let choice = choose_core(&rom_path.to_string_lossy(), &selection);
-        // Packaged app: the core lives in the app data dir. Dev (`cargo run`
-        // from the repo): fall back to the build output in `cores/dist`.
-        let packaged = self.paths.core_dylib(choice.dylib);
-        let core_path = if packaged.is_file() {
-            packaged
-        } else {
-            let dev = Path::new("cores/dist").join(choice.dylib);
-            if dev.is_file() {
-                dev
-            } else {
-                packaged
+        let spec = match self.resolve_core(rom_path) {
+            Ok(spec) => spec,
+            Err(status) => {
+                self.model.status = status;
+                self.dirty = true;
+                return;
             }
         };
 
-        if !core_path.is_file() {
+        if !spec.module.is_file() {
             self.model.status = format!(
-                "找不到核心 {}：先跑 ./scripts/build-cores.sh",
-                core_path.display()
+                "找不到核心 {}：先跑 ./scripts/build-cores.sh，或用 --core 指定模块",
+                spec.module.display()
             );
-            self.model.core_name = choice.name.to_string();
+            self.model.core_name = spec.name.clone();
             self.dirty = true;
             return;
         }
@@ -348,8 +343,7 @@ impl App {
             None => return,
         };
         let started = Session::start(
-            choice,
-            &core_path,
+            &spec,
             &self.paths.system,
             &self.paths.saves,
             rom_path,
@@ -380,6 +374,43 @@ impl App {
             }
         }
         self.dirty = true;
+    }
+
+    /// Resolve which core runs this ROM. `--core` wins over the saved pick,
+    /// which wins over the console default. A `--core <path>` module is used
+    /// exactly as given; a registry core's module is located on disk by
+    /// [`App::find_module`].
+    fn resolve_core(&self, rom_path: &Path) -> Result<CoreSpec, String> {
+        let path = rom_path.to_string_lossy();
+        let system = system_for_path(&path);
+        match &self.core_override {
+            Some(CoreOverride::Registry(id)) => {
+                let choice = cores_for(system)
+                    .into_iter()
+                    .find(|choice| choice.id == *id)
+                    .ok_or_else(|| format!("核心 {id:?} 不支持 {}", system.short()))?;
+                Ok(choice.with_module(self.find_module(choice.dylib)))
+            }
+            Some(CoreOverride::Module(module)) => Ok(CoreSpec::custom(module.clone(), system)),
+            None => {
+                let choice = choose_core(&path, &self.settings.core_selection());
+                Ok(choice.with_module(self.find_module(choice.dylib)))
+            }
+        }
+    }
+
+    /// The packaged core path, falling back to the dev build output in
+    /// `cores/dist` (see `cores/README.md`).
+    fn find_module(&self, dylib: &str) -> PathBuf {
+        let packaged = self.paths.core_dylib(dylib);
+        if packaged.is_file() {
+            return packaged;
+        }
+        let dev = Path::new("cores/dist").join(dylib);
+        if dev.is_file() {
+            return dev;
+        }
+        packaged
     }
 
     fn rebuild_ui(&mut self) {

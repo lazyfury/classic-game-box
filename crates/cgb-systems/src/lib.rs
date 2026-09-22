@@ -13,7 +13,8 @@ mod joypad;
 mod system;
 
 pub use core_choice::{
-    choose_core, cores_for, same_core, CoreChoice, CoreId, CoreSelection, CORES, CORES_BY_SYSTEM,
+    choose_core, cores_for, same_core, CoreChoice, CoreId, CoreSelection, CoreSpec, CORES,
+    CORES_BY_SYSTEM,
 };
 pub use joypad::{JoypadButton, RETRO_DEVICE_ID_JOYPAD_MASK, RETRO_DEVICE_JOYPAD};
 pub use system::{extension_of, system_for_path, SystemId, SYSTEMS};

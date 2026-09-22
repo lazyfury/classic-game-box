@@ -47,6 +47,8 @@ cargo test --workspace
 ```bash
 ./scripts/build-cores.sh   # → cores/dist/{mesen,mgba}_libretro.dylib
 cargo run -p cgb-app -- --rom /path/to/mario.nes
+cargo run -p cgb-app -- --rom mario.nes --core mesen           # 强制核心
+cargo run -p cgb-app -- --rom mario.nes --core ./custom.dylib  # 自定义核心
 ```
 
 ## 目录地图
