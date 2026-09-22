@@ -149,7 +149,7 @@ dlopen(dylib)
 | `SET_INPUT_DESCRIPTORS` | 存起来，供输入绑定 UI |
 | `SET_CONTROLLER_INFO` | 存起来，供设置页列端口 |
 | `GET_VARIABLE` / `SET_VARIABLES` / `GET_VARIABLE_UPDATE` | 只读变量表，先返回空串/false |
-| `GET_LOG_INTERFACE` | 转发到 `tracing`/`eprintln` |
+| `GET_LOG_INTERFACE` | 返回一个真实 sink（转 `eprintln`）。MAME 系核心无条件调用该指针，返回 false 会让它拿到空指针而崩溃 |
 | `GET_CAN_DUPE` | `true` |
 | `SET_GEOMETRY` | 更新当前画面几何 |
 | `SET_PERFORMANCE_LEVEL` / `SET_ROTATION` / `GET_OVERSCAN` / `SET_MESSAGE` | 接受 / 忽略 |

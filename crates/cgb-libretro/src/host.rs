@@ -226,6 +226,17 @@ impl HostShared {
                 *(data as *mut *const c_char) = self.save_dir.as_ptr();
                 true
             }
+            RETRO_ENVIRONMENT_GET_LOG_INTERFACE => {
+                if data.is_null() {
+                    return false;
+                }
+                // MAME-family cores call this pointer unconditionally, so a
+                // false here leaves them with a null function pointer and they
+                // crash on the first log line. Always hand back a real sink.
+                let callback = data as *mut RetroLogCallback;
+                (*callback).log = core_log as *const () as *mut c_void;
+                true
+            }
             RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS => {
                 *lock(&self.input_descriptors) = read_input_descriptors(data);
                 true
@@ -495,6 +506,24 @@ fn current() -> Option<&'static HostShared> {
         // cleared before that Arc is dropped. Reads only.
         Some(unsafe { &*ptr })
     }
+}
+
+/// `retro_log_callback`: the one function pointer a core logs through.
+#[repr(C)]
+struct RetroLogCallback {
+    log: *mut c_void,
+}
+
+/// The front end's log sink. Declared non-variadic on purpose: the core calls
+/// it with a printf-style varargs tail, which this ignores (it prints the
+/// format string). On arm64 the extra arguments sit in registers/stack the
+/// callee never reads, so the mismatch is harmless.
+unsafe extern "C" fn core_log(level: c_uint, fmt: *const c_char) {
+    if fmt.is_null() {
+        return;
+    }
+    let text = CStr::from_ptr(fmt).to_string_lossy();
+    eprintln!("core[{level}]: {text}");
 }
 
 unsafe extern "C" fn environment_cb(cmd: c_uint, data: *mut c_void) -> bool {
