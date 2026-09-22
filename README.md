@@ -28,8 +28,9 @@ macOS 上的经典游戏机模拟器。**打开就能玩**：把 ROM 拖进窗�
 
 ```bash
 # 1. 构建原生 libretro 核心（第三方项目，首次要联网、几分钟）
+#    Q1 只构建 Mesen（NES）；GB/GBA 推迟到 Q4，加 --with-mgba 才构建
 ./scripts/build-cores.sh
-#    → cores/dist/mesen_libretro.dylib, cores/dist/mgba_libretro.dylib
+#    → cores/dist/mesen_libretro.dylib
 
 # 2. 构建并运行
 cargo run -p cgb-app                          # 打开库界面

@@ -196,22 +196,34 @@ dlopen(dylib)
 
 ## 6. Mesen / mGBA 原生构建（`cores/`）
 
-两个核心都自带 libretro 桌面 Makefile，且都有 `osx` platform 分支（已确认）。
-把 `legacy/wasm/*/build.sh` 的逻辑改成原生版：
+**Q1 实测结论：**
+- **Mesen**：`libretro/Mesen` 自带 `Libretro/Makefile` 与 `osx` 分支，
+  `make -f Makefile platform=osx` 在 arm64 上编译通过，产出
+  `mesen_libretro.dylib`（3.1MB arm64），`nm -gU` 确认导出全部 `retro_*`。
+  这是 Q1 的“通”。wasm 版的内存卡带 patch 与异常 flag 原生都不需要。
+- **mGBA：推迟到 Q4。** 上游 `libretro/mgba` 已不再提供 `Makefile.libretro`，
+  改用 CMake（`-DBUILD_LIBRETRO=ON`，需要 cmake）；本机没有 cmake。
+  暂定回用 `EmulatorJS/mgba` fork（它仍带 `Makefile.libretro` + `osx` 分支，
+  且与 `legacy/wasm/mgba/build.sh` 同源），脚本未验证。
+  另：上游 CMake 硬编码 `COLOR_16_BIT;COLOR_5_6_5`（RGB565），等接入 mGBA 时
+  宿主要接受 RGB565（`cgb-libretro` 已会转换，但 `environment` 现在只接受
+  XRGB8888，需要放开）。
+
+`cores/` 的构建脚本把这两个第三方的逻辑从 wasm 移植成原生版：
 
 ```bash
-# cores/mesen/build.sh
-git clone --depth 1 https://github.com/libretro/Mesen  →  make -f Libretro/Makefile platform=osx
-# cores/mgba/build.sh
-git clone --depth 1 https://github.com/libretro/mgba   →  make -f Makefile.libretro platform=osx
+# cores/mesen/build.sh（已验证）
+git clone --depth 1 https://github.com/libretro/Mesen   →  make -f Libretro/Makefile platform=osx
+# cores/mgba/build.sh（推迟，未验证）
+git clone --depth 1 https://github.com/EmulatorJS/mgba  →  make -f Makefile.libretro platform=osx
 # 产物 → cores/dist/{mesen,mgba}_libretro.dylib
 ```
 
 需要保留的 patch（与 wasm 版相同理由）：
-- mGBA：去掉 `-DCOLOR_16_BIT`（保持 XRGB8888）、去掉 `-DHAVE_CRC32`（自带 crc32）。
-- Mesen：wasm 版的「内存卡带」patch **原生不需要**（有文件系统）；
-  C++ 异常是原生默认，也**不需要**。
-- 两者都要求 Apple Silicon arm64；Mesen 1.x（C++11）是最可能踩坑的一处，先做 spike。
+- mGBA：去掉 `-DCOLOR_16_BIT`、去掉 `-DHAVE_CRC32`（fork 的 Makefile 路径）。
+- Mesen：wasm 版的「内存卡带」patch 与 C++ 异常 flag **原生都不需要**
+  （有文件系统、异常默认开）。
+- 两者都要求 Apple Silicon arm64。Mesen 已验证；mGBA 待 Q4 验证。
 
 > `cores/` 的产物（`cores/dist/`、`cores/sources/`）加入 `.gitignore`，按需构建。
 
@@ -256,10 +268,10 @@ ControlFlow::WaitUntil(now + frame_budget)
 | 阶段 | 内容 | 验收 |
 |---|---|---|
 | **Q0** ✅ | 计划 + 结构 + 脚手架 | `cargo check --workspace` 通过 |
-| **Q1** | Mesen spike：原生 arm64 编译 + dlopen + 出画面 + 键盘 | 打开一个 NES ROM 能看到画面 |
+| **Q1** | Mesen spike：原生 arm64 编译 + dlopen + 出画面 + 键盘 | ✅ 编译与 ABI 已验证，剩 dlopen 出画面 |
 | **Q2** | 音频（cpal）+ gilrs 手柄 + 存档槽 + `.srm` | 能玩、能存读 |
 | **Q3** | `cgb-ui` 最小闭环 + 库（SQLite）+ 打开目录对话框 | 从库列表选游戏进入游玩 |
-| **Q4** | mGBA 接入 + 机种路由 + 动态分辨率/帧率/输入描述 | `.gba/.gb/.gbc` 可玩 |
+| **Q4** | mGBA 接入（原生）+ 机种路由 + 动态分辨率/帧率/输入描述 | `.gba/.gb/.gbc` 可玩（**已推迟**） |
 | **Q5** | 打包 `.app`、无头自检、发版脚本 | 可发布，`--selfcheck` 绿 |
 
 ---

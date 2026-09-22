@@ -4,20 +4,33 @@
 #
 # Output: cores/dist/mgba_libretro.dylib
 #
-# mGBA runs Game Boy, Game Boy Color and Game Boy Advance. Same story as
-# Mesen: clone on demand, build with the in-tree libretro Makefile's `osx`
-# target. Replaces `legacy/wasm/mgba/build.sh`.
+# ---------------------------------------------------------------------------
+# STATUS: DEFERRED to Q4 (not yet verified).
 #
-# Two patches carried over from the wasm script, both still needed natively:
+# Two facts found while trying to run this:
+#   * upstream `libretro/mgba` no longer ships a Makefile.libretro; it builds
+#     the core through CMake with -DBUILD_LIBRETRO=ON, which needs cmake.
+#   * the EmulatorJS/mgba fork still ships the Makefile.libretro + osx target
+#     (the same fork legacy/wasm/mgba/build.sh used), and needs no cmake.
+# This script targets the fork. It has NOT been run end to end yet, because
+# cloning the fork needs the network and it was not exercised in Q1.
+# ---------------------------------------------------------------------------
+#
+# mGBA runs Game Boy, Game Boy Color and Game Boy Advance.
+#
+# Two patches carried over from the wasm script, both still needed here:
 #   * remove -DCOLOR_16_BIT  -> render XRGB8888, matching the host and Mesen.
+#     NOTE: the upstream CMake build hardcodes COLOR_16_BIT|COLOR_5_6_5, so
+#     when this core is picked up the host must accept RGB565 — cgb-libretro
+#     already converts it, but its environment handler must be made to accept
+#     it too (it currently only accepts XRGB8888).
 #   * remove -DHAVE_CRC32    -> let mGBA's crc32.c carry its own implementation
-#                               (nothing here links zlib).
+#     (nothing here links zlib).
 #
 # Usage:
 #   ./cores/mgba/build.sh
 #   MGBA_SRC=/path/to/mgba ./cores/mgba/build.sh
-#
-# Requires: network (once), Xcode command line tools, and an arm64 Mac.
+# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -29,8 +42,8 @@ JOBS="$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 mkdir -p "$OUT" "$(dirname "$SRC")"
 
 if [ ! -d "$SRC" ]; then
-    echo "==> cloning libretro/mgba into $SRC"
-    git clone --depth 1 https://github.com/libretro/mgba "$SRC"
+    echo "==> cloning EmulatorJS/mgba into $SRC"
+    git clone --depth 1 https://github.com/EmulatorJS/mgba "$SRC"
 fi
 
 cd "$SRC"
