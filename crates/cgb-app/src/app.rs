@@ -26,8 +26,8 @@ use winit::window::{Window, WindowId};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{load_cores, scan_dir, seed_dir, Library, Paths, Settings};
-use cgb_systems::{choose_core, system_for_path, CoreSpec};
-use cgb_ui::{Action, Actions, GameRow, Section, Ui, ViewModel};
+use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton};
+use cgb_ui::{Action, Actions, BindingRow, CoreRow, GameRow, Section, Ui, ViewModel};
 
 use crate::cli::{Args, CoreOverride};
 use crate::session::Session;
@@ -133,6 +133,7 @@ impl App {
             last_frame: Instant::now(),
         };
         app.refresh_library(rescan);
+        app.rebuild_settings_view();
         app
     }
 
@@ -249,6 +250,75 @@ impl App {
         self.dirty = true;
     }
 
+    /// Project the cores, folders and keyboard bindings into the settings page.
+    fn rebuild_settings_view(&mut self) {
+        self.model.cores = self
+            .cores
+            .iter()
+            .map(|core| CoreRow {
+                key: core.key.clone(),
+                name: core.name.clone(),
+                system: core.system,
+                // The core that would run this console now: the saved pick, else
+                // the manifest's first core for it.
+                selected: choose_core(
+                    &self.cores,
+                    core.system,
+                    self.settings.core_key(core.system),
+                )
+                .map(|chosen| chosen.key == core.key)
+                .unwrap_or(false),
+            })
+            .collect();
+        self.model.library_dirs = self.settings.library_dirs.clone();
+        self.model.bindings = binding_rows(&self.bindings);
+        self.dirty = true;
+    }
+
+    /// Ask for a folder and add it to the scanned library.
+    fn add_library_dir(&mut self) {
+        let Some(dir) = rfd::FileDialog::new()
+            .set_title("选择游戏目录")
+            .pick_folder()
+        else {
+            return;
+        };
+        let dir = dir.to_string_lossy().into_owned();
+        if !self.settings.library_dirs.contains(&dir) {
+            self.settings.library_dirs.push(dir);
+            let _ = self.settings.save(&self.paths.settings_json);
+        }
+        self.reload_library();
+    }
+
+    /// Stop scanning a library folder and forget its games.
+    fn remove_library_dir(&mut self, index: usize) {
+        if index >= self.settings.library_dirs.len() {
+            return;
+        }
+        self.settings.library_dirs.remove(index);
+        let _ = self.settings.save(&self.paths.settings_json);
+        self.reload_library();
+    }
+
+    /// Remember a core pick for its console.
+    fn select_core(&mut self, index: usize) {
+        let Some(row) = self.model.cores.get(index) else {
+            return;
+        };
+        let (system, key) = (row.system, row.key.clone());
+        self.settings.set_core_key(system, Some(&key));
+        let _ = self.settings.save(&self.paths.settings_json);
+        self.model.status = format!("{} 的核心已切换为 {key}", system.short());
+        self.rebuild_settings_view();
+    }
+
+    /// Re-scan and reconcile the library after the folders changed.
+    fn reload_library(&mut self) {
+        self.refresh_library(true);
+        self.rebuild_settings_view();
+    }
+
     fn resize(&mut self, width: u32, height: u32) {
         let (Some(surface), Some(backend), Some(config)) = (
             self.surface.as_ref(),
@@ -320,10 +390,9 @@ impl App {
                     };
                     self.dirty = true;
                 }
-                Action::OpenRom => {
-                    self.model.status = "打开 ROM 对话框尚未接入（Q3）".to_string();
-                    self.dirty = true;
-                }
+                Action::OpenRom => self.add_library_dir(),
+                Action::SelectCore(index) => self.select_core(index),
+                Action::RemoveLibraryDir(index) => self.remove_library_dir(index),
             }
         }
     }
@@ -713,6 +782,56 @@ fn pointer_button(button: MouseButton) -> PointerButton {
         MouseButton::Right => PointerButton::Right,
         MouseButton::Middle => PointerButton::Middle,
         _ => PointerButton::Left,
+    }
+}
+
+/// One row per joypad button that has keys bound, for the settings page.
+fn binding_rows(bindings: &KeyboardBindings) -> Vec<BindingRow> {
+    JoypadButton::ALL
+        .iter()
+        .filter_map(|button| {
+            let keys: Vec<String> = bindings
+                .entries()
+                .iter()
+                .filter(|(_, bound)| bound == button)
+                .map(|(key, _)| key_label(*key))
+                .collect();
+            (!keys.is_empty()).then(|| BindingRow {
+                button: button.label().to_string(),
+                keys: keys.join(" / "),
+            })
+        })
+        .collect()
+}
+
+/// A key's printable name for the bindings list.
+fn key_label(key: Key) -> String {
+    match key {
+        Key::Character(c) => c.to_ascii_uppercase().to_string(),
+        Key::Enter => "Enter".to_string(),
+        Key::Escape => "Esc".to_string(),
+        Key::Backspace => "Backspace".to_string(),
+        Key::Delete => "Delete".to_string(),
+        Key::Tab => "Tab".to_string(),
+        Key::Space => "Space".to_string(),
+        Key::Home => "Home".to_string(),
+        Key::End => "End".to_string(),
+        Key::ArrowUp => "↑".to_string(),
+        Key::ArrowDown => "↓".to_string(),
+        Key::ArrowLeft => "←".to_string(),
+        Key::ArrowRight => "→".to_string(),
+        Key::F1 => "F1".to_string(),
+        Key::F2 => "F2".to_string(),
+        Key::F3 => "F3".to_string(),
+        Key::F4 => "F4".to_string(),
+        Key::F5 => "F5".to_string(),
+        Key::F6 => "F6".to_string(),
+        Key::F7 => "F7".to_string(),
+        Key::F8 => "F8".to_string(),
+        Key::F9 => "F9".to_string(),
+        Key::F10 => "F10".to_string(),
+        Key::F11 => "F11".to_string(),
+        Key::F12 => "F12".to_string(),
     }
 }
 

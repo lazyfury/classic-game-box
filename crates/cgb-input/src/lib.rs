@@ -113,6 +113,11 @@ impl KeyboardBindings {
             .map(|(_, button)| *button)
     }
 
+    /// The whole key → button table, for the settings page.
+    pub fn entries(&self) -> &[(Key, JoypadButton)] {
+        &self.bindings
+    }
+
     /// Apply a key event to `state` on `port`.
     pub fn apply(&self, key: Key, down: bool, state: &mut InputState, port: usize) {
         for (bound, button) in &self.bindings {

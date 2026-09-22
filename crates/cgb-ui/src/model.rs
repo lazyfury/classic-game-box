@@ -34,6 +34,23 @@ pub struct GameRow {
     pub path: String,
 }
 
+/// A core the settings page can pick for a console.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CoreRow {
+    pub key: String,
+    pub name: String,
+    pub system: SystemId,
+    /// Whether this is the core that would run the console now.
+    pub selected: bool,
+}
+
+/// One joypad button and the keys bound to it, for the settings page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BindingRow {
+    pub button: String,
+    pub keys: String,
+}
+
 /// A registered framebuffer texture and its size.
 ///
 /// The texture is registered in the wgpu backend by the app; the view only
@@ -57,6 +74,12 @@ pub struct ViewModel {
     pub core_name: String,
     pub frame: Option<FrameHandle>,
     pub status: String,
+    /// Every core in the manifest, for the settings picker.
+    pub cores: Vec<CoreRow>,
+    /// Folders the library scans.
+    pub library_dirs: Vec<String>,
+    /// Keyboard bindings, for the settings page.
+    pub bindings: Vec<BindingRow>,
 }
 
 impl Default for ViewModel {
@@ -70,6 +93,9 @@ impl Default for ViewModel {
             core_name: String::new(),
             frame: None,
             status: String::new(),
+            cores: Vec::new(),
+            library_dirs: Vec::new(),
+            bindings: Vec::new(),
         }
     }
 }
@@ -87,6 +113,10 @@ pub enum Action {
     SaveState(u8),
     /// Restore a save state from a slot.
     LoadState(u8),
-    /// Open the native file picker.
+    /// Open the native folder picker and add the chosen folder to the library.
     OpenRom,
+    /// Make the core at this `cores` index the pick for its console.
+    SelectCore(usize),
+    /// Stop scanning the library folder at this `library_dirs` index.
+    RemoveLibraryDir(usize),
 }

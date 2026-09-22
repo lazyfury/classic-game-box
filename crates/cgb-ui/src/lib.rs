@@ -13,7 +13,7 @@ mod model;
 mod view;
 
 pub use frame::{centered_fit, contain_fit, FrameImage};
-pub use model::{Action, FrameHandle, GameRow, Section, ViewModel};
+pub use model::{Action, BindingRow, CoreRow, FrameHandle, GameRow, Section, ViewModel};
 pub use view::Actions;
 
 use std::rc::Rc;

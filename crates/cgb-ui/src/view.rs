@@ -25,7 +25,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use draw_components::{
-    Badge, Button, Card, Column, Component, Divider, EmptyState, Flex, Panel, Row, Text,
+    Button, Card, Column, Component, Divider, EmptyState, Flex, Panel, Row, Text,
 };
 use draw_core::{Color, Edges};
 use draw_scene::{SceneChild, SceneTree};
@@ -104,7 +104,7 @@ fn content(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> P
     let page = match model.section {
         Section::Library => library_page(theme, model, actions),
         Section::Play => play_page(theme, model, actions),
-        Section::Settings => settings_page(theme, model),
+        Section::Settings => settings_page(theme, model, actions),
     };
     // The status line is the app's only channel for "saved", "no core",
     // "read failed" — keep it visible under every page, not just the play one.
@@ -161,7 +161,7 @@ fn library_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions)
 
     let actions = actions.clone();
     column = column.child(
-        Button::secondary("添加 ROM…", theme).on_click(move || actions.push(Action::OpenRom)),
+        Button::secondary("添加游戏目录…", theme).on_click(move || actions.push(Action::OpenRom)),
     );
     column
 }
@@ -227,40 +227,133 @@ fn play_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) ->
     column
 }
 
-fn settings_page(theme: &'static dyn Theme, model: &ViewModel) -> Column {
-    Column::new()
+fn settings_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
+    let mut column = Column::new()
         .gap(space::MD)
         .mouse_filter(MouseFilter::Ignore)
-        .child(Text::title("设置", theme))
-        .child(
-            Card::new(theme)
-                .gap(space::SM)
-                .padding(Edges::all(space::SM))
-                .child(Text::subheading("模拟器核心", theme))
-                .child(Text::small(format!("当前核心：{}", model.core_name), theme))
-                .child(
-                    Text::small("每个机种的核心选择器接回后放在这里。", theme).tone(Tone::Muted),
-                ),
-        )
-        .child(
-            Card::new(theme)
-                .gap(space::SM)
-                .padding(Edges::all(space::SM))
-                .child(Text::subheading("按键与手柄", theme))
-                .child(
-                    Text::small("键盘绑定与 gilrs 手柄映射在 cgb-input。", theme).tone(Tone::Muted),
-                )
-                .child(Badge::pill("默认布局", theme)),
-        )
+        .child(Text::title("设置", theme));
+
+    // Library folders the scanner walks.
+    let mut dirs = Column::new().gap(space::XS);
+    if model.library_dirs.is_empty() {
+        dirs = dirs.child(Text::small("还没有扫描目录。", theme).tone(Tone::Muted));
+    } else {
+        for (index, dir) in model.library_dirs.iter().enumerate() {
+            let actions = actions.clone();
+            dirs = dirs.child(
+                Row::new()
+                    .gap(space::SM)
+                    .child(
+                        Text::small(dir.as_str(), theme)
+                            .grow(1.0)
+                            .max_lines(1)
+                            .ellipsis(true),
+                    )
+                    .child(
+                        Button::ghost("移除", theme)
+                            .on_click(move || actions.push(Action::RemoveLibraryDir(index))),
+                    ),
+            );
+        }
+    }
+    let add = actions.clone();
+    column = column.child(
+        Card::new(theme)
+            .gap(space::SM)
+            .padding(Edges::all(space::SM))
+            .child(Text::subheading("游戏目录", theme))
+            .child(dirs)
+            .child(
+                Button::secondary("添加游戏目录…", theme)
+                    .on_click(move || add.push(Action::OpenRom)),
+            ),
+    );
+
+    // One core pick per console. The selected one is the core that would run
+    // the console now (the saved pick, or the manifest default).
+    let mut cores = Column::new().gap(space::SM);
+    let mut any_core = false;
+    for system in cgb_systems::SYSTEMS {
+        let mut group = Column::new().gap(space::XS);
+        let mut any = false;
+        for (index, core) in model.cores.iter().enumerate() {
+            if core.system != *system {
+                continue;
+            }
+            any = true;
+            any_core = true;
+            let actions = actions.clone();
+            let button = if core.selected {
+                Button::primary(format!("{}（当前）", core.name), theme)
+            } else {
+                Button::ghost(core.name.clone(), theme)
+            };
+            group = group.child(button.on_click(move || actions.push(Action::SelectCore(index))));
+        }
+        if any {
+            cores = cores
+                .child(Text::small(system.name(), theme).tone(Tone::Muted))
+                .child(group);
+        }
+    }
+    if !any_core {
+        cores =
+            cores.child(Text::small("没有可用核心（见 cores.json）。", theme).tone(Tone::Muted));
+    }
+    column = column.child(
+        Card::new(theme)
+            .gap(space::SM)
+            .padding(Edges::all(space::SM))
+            .child(Text::subheading("模拟器核心", theme))
+            .child(cores),
+    );
+
+    // Keyboard bindings, read-only for now.
+    let mut bindings = Column::new().gap(space::XS);
+    if model.bindings.is_empty() {
+        bindings = bindings.child(Text::small("没有绑定。", theme).tone(Tone::Muted));
+    } else {
+        for row in &model.bindings {
+            bindings = bindings.child(Text::small(
+                format!("{}   —   {}", row.button, row.keys),
+                theme,
+            ));
+        }
+    }
+    column = column.child(
+        Card::new(theme)
+            .gap(space::SM)
+            .padding(Edges::all(space::SM))
+            .child(Text::subheading("按键", theme))
+            .child(bindings)
+            .child(Text::caption("手柄走 gilrs 自动映射；重绑定后置。", theme).tone(Tone::Subtle)),
+    );
+
+    column
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::FrameHandle;
+    use crate::model::{BindingRow, CoreRow, FrameHandle};
+    use cgb_systems::SystemId;
     use draw_core::Size;
     use draw_render::{DrawCommand, PaintContext, TextureId};
     use draw_theme::{default_theme, Mode};
+
+    fn paint(model: &ViewModel) -> draw_render::DrawList {
+        let theme = default_theme(Mode::Dark);
+        let actions = Actions::default();
+        let mut tree = build(theme, model, &actions);
+        draw_ui::layout(
+            &mut tree,
+            draw_core::ViewportSize::new(Size::new(1100.0, 760.0)),
+        );
+        tree.update();
+        let mut ctx = PaintContext::new();
+        draw_ui::paint(&tree, &mut ctx);
+        ctx.into_draw_list()
+    }
 
     /// The play page must emit exactly the image command the wgpu backend turns
     /// into a texture blit; the tree/layout path is otherwise untested.
@@ -307,24 +400,52 @@ mod tests {
     /// paint it, not swallow it.
     #[test]
     fn the_status_line_is_painted() {
-        let theme = default_theme(Mode::Dark);
-        let actions = Actions::default();
         let model = ViewModel {
             status: "已存档（槽位 0）".to_string(),
             ..ViewModel::default()
         };
-
-        let mut tree = build(theme, &model, &actions);
-        draw_ui::layout(
-            &mut tree,
-            draw_core::ViewportSize::new(Size::new(1100.0, 760.0)),
-        );
-        tree.update();
-
-        let mut ctx = PaintContext::new();
-        draw_ui::paint(&tree, &mut ctx);
-        let list = ctx.into_draw_list();
+        let list = paint(&model);
         assert!(list.commands().iter().any(|command| matches!(command,
             DrawCommand::DrawText { text, .. } if text.contains("已存档"))));
+    }
+
+    /// The settings page must actually show the scanned folders and the core
+    /// choices, not the old placeholder text.
+    #[test]
+    fn the_settings_page_lists_dirs_and_cores() {
+        let model = ViewModel {
+            section: Section::Settings,
+            library_dirs: vec!["/roms/nes".to_string()],
+            cores: vec![
+                CoreRow {
+                    key: "mesen".to_string(),
+                    name: "Mesen".to_string(),
+                    system: SystemId::Nes,
+                    selected: true,
+                },
+                CoreRow {
+                    key: "nestopia".to_string(),
+                    name: "Nestopia".to_string(),
+                    system: SystemId::Nes,
+                    selected: false,
+                },
+            ],
+            bindings: vec![BindingRow {
+                button: "A".to_string(),
+                keys: "X / K".to_string(),
+            }],
+            ..ViewModel::default()
+        };
+        let list = paint(&model);
+        let has = |needle: &str| {
+            list.commands().iter().any(|command| {
+                matches!(command,
+                    DrawCommand::DrawText { text, .. } if text.contains(needle))
+            })
+        };
+        assert!(has("/roms/nes"), "the folder is listed");
+        assert!(has("Nestopia"), "every core for the console is offered");
+        assert!(has("Mesen"), "the selected core is shown");
+        assert!(has("X / K"), "the binding is shown");
     }
 }
