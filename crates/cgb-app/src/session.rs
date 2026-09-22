@@ -5,9 +5,10 @@
 //! machine* when the console changes (a GBA cannot become a Game Boy) — the
 //! old front end's rule, kept.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use cgb_audio::AudioOutput;
+use cgb_library::{battery_save_path, exists, read, save_state_path, write};
 use cgb_libretro::CoreHost;
 use cgb_systems::CoreChoice;
 use cgb_ui::FrameHandle;
@@ -31,6 +32,10 @@ pub struct Session {
     /// Time owed to the emulator, in seconds, so a 59.7fps core on a 60Hz
     /// display does not drift.
     accumulator: f64,
+    /// Where battery saves and save states for this cartridge live.
+    save_dir: PathBuf,
+    /// The cartridge path, used to name its `.srm` / `.stateN` files.
+    rom_path: PathBuf,
 }
 
 impl Session {
@@ -48,6 +53,13 @@ impl Session {
             CoreHost::new(core_path, system_dir, save_dir).map_err(|error| error.to_string())?;
         core.load_game(rom_path, data)
             .map_err(|error| error.to_string())?;
+
+        // A battery save (`.srm`) must be written back into the freshly loaded
+        // machine *before* the first frame, or the game boots without its save.
+        let battery = battery_save_path(save_dir, rom_path);
+        if let Some(bytes) = read(&battery) {
+            core.write_save_ram(&bytes);
+        }
 
         // Geometry is only trustworthy *after* load (mGBA especially).
         let av = core.av_info();
@@ -90,6 +102,8 @@ impl Session {
             core_name: choice.name.to_string(),
             frame_seconds,
             accumulator: 0.0,
+            save_dir: save_dir.to_path_buf(),
+            rom_path: rom_path.to_path_buf(),
         })
     }
 
@@ -133,8 +147,56 @@ impl Session {
         self.core.reset();
     }
 
+    /// Write a save state for `slot` to disk (`0` is the quick slot).
+    pub fn save_state(&self, slot: u8) -> Result<(), String> {
+        let bytes = self.core.serialize();
+        if bytes.is_empty() {
+            return Err("核心不支持即时存档".to_string());
+        }
+        let path = save_state_path(&self.save_dir, &self.rom_path, slot);
+        write(&path, &bytes).map_err(|error| error.to_string())
+    }
+
+    /// Restore the save state in `slot`, if one exists.
+    pub fn load_state(&self, slot: u8) -> Result<(), String> {
+        let path = save_state_path(&self.save_dir, &self.rom_path, slot);
+        let Some(bytes) = read(&path) else {
+            return Err(format!("槽位 {slot} 还没有存档"));
+        };
+        if self.core.unserialize(&bytes) {
+            Ok(())
+        } else {
+            Err("核心拒绝了这份存档".to_string())
+        }
+    }
+
+    /// Copy the core's battery RAM to `<saves>/<rom>.srm`. Called when the
+    /// session ends; a no-op for cartridges without battery RAM.
+    fn persist_battery(&self) {
+        let Some(bytes) = self.core.save_ram() else {
+            return;
+        };
+        if bytes.is_empty() {
+            return;
+        }
+        let path = battery_save_path(&self.save_dir, &self.rom_path);
+        // A battery-less cartridge can still report a zeroed region. Don't
+        // litter the saves dir with empty `.srm` files — but do overwrite an
+        // existing one, so an in-game erase is recorded.
+        if bytes.iter().all(|byte| *byte == 0) && !exists(&path) {
+            return;
+        }
+        if let Err(error) = write(&path, &bytes) {
+            eprintln!("cgb: 写入电池存档 {} 失败：{error}", path.display());
+        }
+    }
+
     pub fn toggle_pause(&mut self) {
         self.paused = !self.paused;
+        if self.paused {
+            // A pause is a natural checkpoint; write the battery save out.
+            self.persist_battery();
+        }
     }
 
     pub fn paused(&self) -> bool {
@@ -152,5 +214,12 @@ impl Session {
     /// One emulated frame, in seconds.
     pub fn frame_seconds(&self) -> f64 {
         self.frame_seconds
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        // Leaving a game (or the app) is the last chance to flush SRAM.
+        self.persist_battery();
     }
 }

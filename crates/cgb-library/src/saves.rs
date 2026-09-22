@@ -31,3 +31,34 @@ pub fn remove(path: &Path) {
 pub fn exists(path: &Path) -> bool {
     path.is_file()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    /// A uniquely named path under the OS temp dir, so tests never collide.
+    fn temp_path(name: &str) -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("cgb-test-{}-{n}-{name}", std::process::id()))
+    }
+
+    #[test]
+    fn a_save_round_trips_and_removes() {
+        let path = temp_path("save.srm");
+        assert!(!exists(&path));
+        write(&path, b"abc").expect("write");
+        assert!(exists(&path));
+        assert_eq!(read(&path).as_deref(), Some(&b"abc"[..]));
+        remove(&path);
+        assert!(!exists(&path));
+    }
+
+    #[test]
+    fn reading_a_missing_file_is_none() {
+        assert!(read(&temp_path("missing.srm")).is_none());
+    }
+}

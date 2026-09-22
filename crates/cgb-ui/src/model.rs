@@ -83,6 +83,10 @@ pub enum Action {
     Play(usize),
     TogglePause,
     Reset,
+    /// Write a save state to a slot (`0` is the quick slot).
+    SaveState(u8),
+    /// Restore a save state from a slot.
+    LoadState(u8),
     /// Open the native file picker.
     OpenRom,
 }

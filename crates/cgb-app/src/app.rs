@@ -21,7 +21,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{Key as WinitKey, NamedKey};
+use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 use winit::window::{Window, WindowId};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
@@ -68,6 +68,8 @@ struct App {
     session: Option<Session>,
     /// `--rom` path to start once the window exists.
     pending_rom: Option<PathBuf>,
+    /// Keyboard modifiers, so save-state hotkeys can tell save from load.
+    modifiers: ModifiersState,
 
     last_frame: Instant,
 }
@@ -108,6 +110,7 @@ impl App {
             gamepads: Gamepads::new().ok(),
             session: None,
             pending_rom: None,
+            modifiers: ModifiersState::empty(),
             last_frame: Instant::now(),
         };
         app.refresh_library();
@@ -266,6 +269,26 @@ impl App {
                     if let Some(session) = self.session.as_ref() {
                         session.reset();
                     }
+                }
+                Action::SaveState(slot) => {
+                    self.model.status = match self.session.as_ref() {
+                        Some(session) => match session.save_state(slot) {
+                            Ok(()) => format!("已存档（槽位 {slot}）"),
+                            Err(error) => error,
+                        },
+                        None => "没有正在运行的游戏".to_string(),
+                    };
+                    self.dirty = true;
+                }
+                Action::LoadState(slot) => {
+                    self.model.status = match self.session.as_ref() {
+                        Some(session) => match session.load_state(slot) {
+                            Ok(()) => format!("已读档（槽位 {slot}）"),
+                            Err(error) => error,
+                        },
+                        None => "没有正在运行的游戏".to_string(),
+                    };
+                    self.dirty = true;
                 }
                 Action::OpenRom => {
                     self.model.status = "打开 ROM 对话框尚未接入（Q3）".to_string();
@@ -520,7 +543,20 @@ impl ApplicationHandler for App {
                     delta: Vec2::new(0.0, delta),
                 });
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers.state();
+            }
             WindowEvent::KeyboardInput { event, .. } => {
+                // Save-state hotkeys are app commands, not joypad bindings, and
+                // only fire on press (so a held key does not re-save).
+                if event.state == ElementState::Pressed {
+                    if let Some(action) =
+                        state_shortcut(&event.logical_key, self.modifiers.shift_key())
+                    {
+                        self.actions.push(action);
+                        self.handle_actions();
+                    }
+                }
                 let Some(key) = map_key(&event.logical_key) else {
                     return;
                 };
@@ -598,6 +634,23 @@ fn pointer_button(button: MouseButton) -> PointerButton {
     }
 }
 
+/// The save-state hotkey for a key, matching the old front end's layout: `F5`
+/// quick-saves, `F6` quick-loads, `F1`–`F3` save slots 1–3, and
+/// `Shift`+`F1`–`F3` loads them.
+fn state_shortcut(key: &WinitKey, shift: bool) -> Option<Action> {
+    match key {
+        WinitKey::Named(NamedKey::F5) => Some(Action::SaveState(0)),
+        WinitKey::Named(NamedKey::F6) => Some(Action::LoadState(0)),
+        WinitKey::Named(NamedKey::F1) if shift => Some(Action::LoadState(1)),
+        WinitKey::Named(NamedKey::F2) if shift => Some(Action::LoadState(2)),
+        WinitKey::Named(NamedKey::F3) if shift => Some(Action::LoadState(3)),
+        WinitKey::Named(NamedKey::F1) => Some(Action::SaveState(1)),
+        WinitKey::Named(NamedKey::F2) => Some(Action::SaveState(2)),
+        WinitKey::Named(NamedKey::F3) => Some(Action::SaveState(3)),
+        _ => None,
+    }
+}
+
 fn map_key(key: &WinitKey) -> Option<Key> {
     match key {
         WinitKey::Named(NamedKey::Enter) => Some(Key::Enter),
@@ -626,5 +679,31 @@ fn map_key(key: &WinitKey) -> Option<Key> {
         WinitKey::Named(NamedKey::F12) => Some(Key::F12),
         WinitKey::Character(text) => text.chars().next().map(Key::Character),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_state_hotkeys_match_the_old_layout() {
+        assert_eq!(
+            state_shortcut(&WinitKey::Named(NamedKey::F5), false),
+            Some(Action::SaveState(0))
+        );
+        assert_eq!(
+            state_shortcut(&WinitKey::Named(NamedKey::F6), false),
+            Some(Action::LoadState(0))
+        );
+        assert_eq!(
+            state_shortcut(&WinitKey::Named(NamedKey::F1), false),
+            Some(Action::SaveState(1))
+        );
+        assert_eq!(
+            state_shortcut(&WinitKey::Named(NamedKey::F1), true),
+            Some(Action::LoadState(1))
+        );
+        assert_eq!(state_shortcut(&WinitKey::Named(NamedKey::F4), false), None);
     }
 }

@@ -90,3 +90,20 @@ pub fn battery_save_path(saves: &Path, rom: &Path) -> PathBuf {
         .unwrap_or_else(|| "game".to_string());
     saves.join(format!("{name}.srm"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_state_path_keeps_the_full_name_and_slot() {
+        let path = save_state_path(Path::new("/saves"), Path::new("/roms/mario.nes"), 2);
+        assert_eq!(path, PathBuf::from("/saves/mario.nes.state2"));
+    }
+
+    #[test]
+    fn a_battery_path_drops_the_extension() {
+        let path = battery_save_path(Path::new("/saves"), Path::new("/roms/mario.nes"));
+        assert_eq!(path, PathBuf::from("/saves/mario.srm"));
+    }
+}

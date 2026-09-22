@@ -8,8 +8,9 @@
 
 - 分支 `quill-native`。
 - **Q0 完成**：计划、目录结构、Rust 工作区骨架、`cargo check/test/clippy` 全绿。
-- **下一步 Q1**：Mesen arm64 spike —— 原生编译 + dlopen + 出画面 + 键盘。
-  这是整条链路风险最高的一环，先验证它。
+- **Q1 完成**：Mesen 原生 arm64 编译 + dlopen + 出画面（`cgb-ui::frame::FrameImage`）+ 键盘。
+- **Q2 进行中**：音频（cpal）+ gilrs 手柄已接线，本次补上 `.srm` 电池存档与即时存档槽
+  （`Session::{save,load}_state`，F5/F6 与 F1–F3/Shift+F1–F3），待人眼验收“能玩、能存读”。
 
 ## 硬规则
 

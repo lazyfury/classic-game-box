@@ -106,13 +106,28 @@ fn content(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> P
         Section::Play => play_page(theme, model, actions),
         Section::Settings => settings_page(theme, model),
     };
+    // The status line is the app's only channel for "saved", "no core",
+    // "read failed" — keep it visible under every page, not just the play one.
+    let mut column = Column::new()
+        .gap(space::XS)
+        .mouse_filter(MouseFilter::Ignore)
+        .child(page.padding(Edges::all(space::LG)).grow(1.0));
+    if !model.status.is_empty() {
+        column = column.child(
+            Column::new()
+                .padding(Edges::new(space::LG, space::XS, space::LG, space::SM))
+                .mouse_filter(MouseFilter::Ignore)
+                .child(Text::caption(model.status.as_str(), theme).tone(Tone::Muted)),
+        );
+    }
+
     Panel::new()
         .color(Color::TRANSPARENT)
         .flat()
         .grow(1.0)
         .clip(true)
         .mouse_filter(MouseFilter::Ignore)
-        .child(page.padding(Edges::all(space::LG)))
+        .child(column)
 }
 
 fn library_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
@@ -192,7 +207,18 @@ fn play_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) ->
     let reset = actions.clone();
     controls = controls
         .child(Button::secondary("复位", theme).on_click(move || reset.push(Action::Reset)));
+    let save = actions.clone();
+    controls = controls.child(
+        Button::secondary("快速存档", theme).on_click(move || save.push(Action::SaveState(0))),
+    );
+    let load = actions.clone();
+    controls = controls.child(
+        Button::secondary("快速读档", theme).on_click(move || load.push(Action::LoadState(0))),
+    );
     column = column.child(controls);
+    column = column.child(
+        Text::caption("F5 存档 / F6 读档；F1–F3 存槽，Shift+F1–F3 读槽", theme).tone(Tone::Subtle),
+    );
 
     if !model.core_name.is_empty() {
         column = column
@@ -275,5 +301,30 @@ mod tests {
         assert!(scale_x > 0.0);
         assert_eq!(scale_x, scale_x.floor());
         assert_eq!(scale_x, scale_y);
+    }
+
+    /// Save/load results arrive as `ViewModel::status`; the shared shell must
+    /// paint it, not swallow it.
+    #[test]
+    fn the_status_line_is_painted() {
+        let theme = default_theme(Mode::Dark);
+        let actions = Actions::default();
+        let model = ViewModel {
+            status: "已存档（槽位 0）".to_string(),
+            ..ViewModel::default()
+        };
+
+        let mut tree = build(theme, &model, &actions);
+        draw_ui::layout(
+            &mut tree,
+            draw_core::ViewportSize::new(Size::new(1100.0, 760.0)),
+        );
+        tree.update();
+
+        let mut ctx = PaintContext::new();
+        draw_ui::paint(&tree, &mut ctx);
+        let list = ctx.into_draw_list();
+        assert!(list.commands().iter().any(|command| matches!(command,
+            DrawCommand::DrawText { text, .. } if text.contains("已存档"))));
     }
 }

@@ -193,6 +193,9 @@ dlopen(dylib)
 - 电池存档：`retro_get_memory_data(RETRO_MEMORY_SAVE_RAM)` + size，落盘 `<saves>/<rom>.srm`，
   加载 ROM 后写回。mGBA/Mesen 都靠这个。
 - 存档目录/命名由 `cgb-library` 统一管理。
+- **Q2 已接线**：`cgb-app::Session` 在 `load_game` 后回写 `.srm`，暂停/退出/换游戏时落盘；
+  即时存档走 `Session::{save,load}_state(slot)`，槽位 0 为快速槽，1–3 为命名槽；
+  热键 F5/F6 = 快速存/读，F1–F3 存、Shift+F1–F3 读（沿用旧前端约定）。
 
 ---
 
@@ -271,7 +274,7 @@ ControlFlow::WaitUntil(now + frame_budget)
 |---|---|---|
 | **Q0** ✅ | 计划 + 结构 + 脚手架 | `cargo check --workspace` 通过 |
 | **Q1** | Mesen spike：原生 arm64 编译 + dlopen + 出画面 + 键盘 | ✅ 编译/ABI/dlopen/键盘齐，画面经 `frame::FrameImage` 上屏，待人眼确认 |
-| **Q2** | 音频（cpal）+ gilrs 手柄 + 存档槽 + `.srm` | 能玩、能存读 |
+| **Q2** | 音频（cpal）+ gilrs 手柄 + 存档槽 + `.srm` | 🚧 音频/手柄/`.srm`/即时存取已接线，待人眼试听与存读验收 |
 | **Q3** | `cgb-ui` 最小闭环 + 库（SQLite）+ 打开目录对话框 | 从库列表选游戏进入游玩 |
 | **Q4** | mGBA 接入（原生）+ 机种路由 + 动态分辨率/帧率/输入描述 | `.gba/.gb/.gbc` 可玩（**已推迟**） |
 | **Q5** | 打包 `.app`、无头自检、发版脚本 | 可发布，`--selfcheck` 绿 |
