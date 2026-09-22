@@ -29,8 +29,8 @@ fn manual_dir() -> PathBuf {
 fn a_real_romset_runs() {
     let dir = manual_dir();
     let dist = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../cores/dist");
-    let core_name = std::env::var("CGB_MANUAL_CORE")
-        .unwrap_or_else(|_| "fbneo_libretro.dylib".to_string());
+    let core_name =
+        std::env::var("CGB_MANUAL_CORE").unwrap_or_else(|_| "fbneo_libretro.dylib".to_string());
     let core = dist.join(&core_name);
     let rom = std::env::var("CGB_MANUAL_ROM")
         .map(|name| dir.join(name))

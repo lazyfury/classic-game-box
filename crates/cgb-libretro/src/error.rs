@@ -37,4 +37,10 @@ pub enum LibretroError {
     /// The core produced no frame when one was required.
     #[error("the core produced no frame")]
     NoFrame,
+
+    /// A second [`CoreHost`] was created while one was still live. The
+    /// callbacks reach a single host through a process-wide slot and a core is
+    /// one loaded instance, so the caller must drop the old host first.
+    #[error("a libretro host is already live; drop it before creating another")]
+    HostBusy,
 }

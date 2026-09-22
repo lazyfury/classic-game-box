@@ -6,9 +6,10 @@
 //! libretro callbacks (`video_refresh`, `input_state`, …) carry no user context
 //! pointer, so a single-instance host has to stash one somewhere reachable from
 //! an `extern "C"` function. [`HOST`] is that stash: set when a [`CoreHost`] is
-//! created, cleared when it drops. One core is live at a time by construction
-//! (switching games creates a new host), so this is not a race, but it *is* a
-//! process-wide singleton and is documented as such.
+//! created, cleared when it drops. One core is live at a time — [`CoreHost::new`]
+//! refuses a second host while one is alive, and the app drops the old session
+//! before starting a new one — so this is not a race, but it *is* a process-wide
+//! singleton and is documented as such.
 //!
 //! ## Callback ordering
 //!
@@ -297,6 +298,13 @@ impl CoreHost {
         system_dir: impl AsRef<Path>,
         save_dir: impl AsRef<Path>,
     ) -> Result<Self, LibretroError> {
+        // The callbacks reach exactly one host through `HOST`, and a core is a
+        // single loaded instance. A second live host would `retro_init` the
+        // same dylib again and then `retro_deinit` the new machine when the old
+        // host drops — a segfault. Refuse up front instead.
+        if !HOST.load(Ordering::Acquire).is_null() {
+            return Err(LibretroError::HostBusy);
+        }
         let core = CoreLibrary::open(core_path)?;
         let shared = Arc::new(HostShared::new(system_dir.as_ref(), save_dir.as_ref()));
 

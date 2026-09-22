@@ -351,6 +351,14 @@ impl App {
             return;
         }
 
+        // One core may be live at a time. The host publishes itself in a
+        // process-wide slot and a core dylib is a single instance, so starting
+        // the new session before the old one drops would `retro_init` the same
+        // core again and then `retro_deinit` the new machine when the old
+        // session falls (a segfault). Drop the old machine first; this also
+        // flushes its battery save.
+        self.session = None;
+
         let backend = match self.backend.as_mut() {
             Some(backend) => backend,
             None => return,
