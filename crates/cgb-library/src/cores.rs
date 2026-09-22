@@ -185,14 +185,14 @@ mod tests {
         }
         assert!(cores
             .iter()
-            .any(|core| core.key == "mame2003" && core.system == SystemId::Arcade));
+            .any(|core| core.key == "fbneo" && core.system == SystemId::Arcade));
     }
 
     #[test]
     fn an_arcade_entry_is_recognised() {
         let path = write_manifest(
             r#"{ "cores": [
-                { "key": "mame2003", "system": "arcade", "dylib": "mame2003_plus_libretro.dylib" }
+                { "key": "fbneo", "system": "arcade", "dylib": "fbneo_libretro.dylib" }
             ] }"#,
         );
         let cores = load_cores(&path);

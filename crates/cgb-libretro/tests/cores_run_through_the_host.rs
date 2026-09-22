@@ -123,30 +123,9 @@ fn cores_run_through_the_host() {
         eprintln!("skip: {} not built", mgba.display());
     }
 
-    // MAME 2003-Plus has no synthetic ROM: prove it opens through the loader
-    // and declares the arcade content it wants. Loading a real `.zip` romset is
-    // the manual check (its `need_fullpath` is satisfied by the app's real path).
-    let mame = dist_core("mame2003_plus_libretro.dylib");
-    if mame.is_file() {
-        let dir = std::env::temp_dir();
-        let host = CoreHost::new(&mame, &dir, &dir).expect("open mame2003");
-        let info = host.system_info();
-        assert!(info.library_name.contains("MAME"), "{}", info.library_name);
-        assert!(info.valid_extensions.iter().any(|ext| ext == "zip"));
-        assert!(info.need_fullpath);
-        eprintln!(
-            "mame2003_plus_libretro.dylib: {} ({:?})",
-            info.library_name, info.valid_extensions
-        );
-        drop(host);
-        tested += 1;
-    } else {
-        eprintln!("skip: {} not built", mame.display());
-    }
-
-    // FBNeo is the other arcade core (the one that runs the standard Neo Geo
-    // sets). Same deal: no synthetic ROM, so just prove it opens and declares
-    // zips. `need_fullpath` is false — it reads the archive itself.
+    // FBNeo has no synthetic ROM: prove it opens through the loader and
+    // declares the arcade content it wants. Loading a real `.zip` romset is the
+    // manual check (`need_fullpath` is false — it reads the archive itself).
     let fbneo = dist_core("fbneo_libretro.dylib");
     if fbneo.is_file() {
         let dir = std::env::temp_dir();
