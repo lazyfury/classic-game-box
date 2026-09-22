@@ -236,26 +236,22 @@ git clone --depth 1 https://github.com/libretro/mgba  → cmake -DBUILD_LIBRETRO
 
 > `cores/` 的产物（`cores/dist/`、`cores/sources/`）加入 `.gitignore`，按需构建。
 
-### 6.1 cores.json：核心清单（内置 + 自定义）
+### 6.1 cores.json：核心清单
 
-**所有**核心都是数据，app 启动时合并两份 `cores.json`：
-
-- [`cores/cores.json`](../../cores/cores.json)：内置 Mesen 与 mGBA（×2 机种）。
-- [`cores/custom/cores.json`](../../cores/custom/cores.json)：自定义核心。
+**所有**核心都是数据，只有一个 [`cores/cores.json`](../../cores/cores.json)：
+mesen、mGBA（×2 机种）、nestopia、custom_nes_core。
 
 条目为 `key` / `name` / `system` / `dylib`（+ 可选 `sample_rate` / `fps`）。`key`
-每机种唯一（同一模块可服务两机种，如 mGBA）；内置 `(system, key)` 冲突时优先，
-自定义不会静默覆盖；设置里记的 key 若清单没有，回退到该机种默认。
+每机种唯一（同一模块可服务两机种，如 mGBA）；重复 `(system, key)` 保留第一个。
+设置里记的 key 若清单没有，回退到该机种默认。
 
 **构建流程**：
-- 内置：`cores/mesen/build.sh`、`cores/mgba/build.sh`。
-- 自定义：`cores/custom/<name>/build.sh` 产出到 `cores/dist/` + 在
-  `custom/cores.json` 加一行。
-- `scripts/build-cores.sh` 依次跑 Mesen、mGBA、以及每个 `cores/custom/*/build.sh`
-  （`--skip-mgba` 跳过 mGBA）。详见 [`cores/README.md`](../../cores/README.md)、
-  [`cores/custom/README.md`](../../cores/custom/README.md)。仓库内置范例
-  `nestopia` 与 `custom_nes_core`（后者是 `legacy/packages/fc-*` 的自研核心，
-  clang++ 直接编译，`legacy/` 只读；`fc_*` 私有扩展被忽略）。
+- 每个核心一个目录：`cores/<name>/build.sh` 产出到 `cores/dist/`。
+- `scripts/build-cores.sh` 跑所有 `cores/*/build.sh`（`--skip-mgba` 跳过 mGBA）。
+- 加核心 = 加目录 + 在 `cores.json` 加一行，不动 Rust。详见
+  [`cores/README.md`](../../cores/README.md)。`custom_nes_core` 是唯一不用
+  cmake/第三方的：直接 clang++ 编译只读的 `legacy/packages/fc-*`
+  （`legacy/` 只读；`fc_*` 私有扩展被前端忽略）。
 
 **运行**：
 

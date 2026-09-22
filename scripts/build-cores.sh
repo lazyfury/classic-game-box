@@ -1,9 +1,13 @@
 #!/bin/bash
-# Build the native libretro cores into cores/dist.
+# Build every native libretro core into cores/dist.
 #
-# Mesen (NES) and mGBA (GB/GBA) are built by default; `--skip-mgba` skips
-# mGBA (it needs cmake). The `--with-mgba` spelling from when mGBA was
-# deferred still parses, and now changes nothing.
+# Each core is a directory with its own build.sh: cores/<name>/build.sh.
+# This script just runs them all, in name order, and leaves the modules in
+# cores/dist. Which cores the app knows about is declarative — see
+# cores/cores.json and cores/README.md.
+#
+# `--skip-mgba` skips mGBA (it needs cmake). The `--with-mgba` spelling from
+# when mGBA was deferred still parses; mGBA is the default now.
 #
 # Takes minutes per core on first run and needs the network once. Run it before
 # `cargo run`: the app refuses to start a game whose core is missing, with a
@@ -21,30 +25,24 @@ for arg in "$@"; do
     esac
 done
 
-"$ROOT/cores/mesen/build.sh"
-
-if [ "$BUILD_MGBA" = "1" ]; then
-    "$ROOT/cores/mgba/build.sh"
-else
-    echo
-    echo "==> mGBA skipped (--skip-mgba)"
-fi
-
-# Custom cores: every cores/custom/<name>/build.sh, in name order. Each one
-# drops its module in cores/dist and is declared in cores/custom/cores.json;
-# see cores/custom/README.md.
 shopt -s nullglob
-custom=("$ROOT"/cores/custom/*/build.sh)
-if [ ${#custom[@]} -eq 0 ]; then
-    echo
-    echo "==> no custom cores (add cores/custom/<name>/build.sh + cores/custom/cores.json)"
-else
-    for script in "${custom[@]}"; do
-        echo
-        echo "==> custom core: $(basename "$(dirname "$script")")"
-        "$script"
-    done
+scripts=("$ROOT"/cores/*/build.sh)
+if [ ${#scripts[@]} -eq 0 ]; then
+    echo "error: no cores/*/build.sh found" >&2
+    exit 1
 fi
+
+for script in "${scripts[@]}"; do
+    name="$(basename "$(dirname "$script")")"
+    if [ "$name" = "mgba" ] && [ "$BUILD_MGBA" = "0" ]; then
+        echo
+        echo "==> skipped: $name (--skip-mgba)"
+        continue
+    fi
+    echo
+    echo "==> core: $name"
+    "$script"
+done
 
 echo
 echo "cores:"

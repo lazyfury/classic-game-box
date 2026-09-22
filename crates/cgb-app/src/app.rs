@@ -72,8 +72,7 @@ struct App {
     /// `--core` override: a core key or a module path, applied to every game
     /// this run starts.
     core_override: Option<CoreOverride>,
-    /// Every declared core: the built-in `cores.json` plus
-    /// `cores/custom/cores.json`, in that order.
+    /// Every core declared in `cores.json`, in manifest order.
     cores: Vec<CoreSpec>,
     /// Keyboard modifiers, so save-state hotkeys can tell save from load.
     modifiers: ModifiersState,
@@ -87,7 +86,7 @@ impl App {
         let _ = paths.ensure();
         let settings = Settings::load(&paths.settings_json);
         let library = Library::open(&paths.library_db).ok();
-        let cores = load_core_manifests(&paths);
+        let cores = load_core_manifest(&paths);
 
         let actions = Actions::default();
         let theme = default_theme(Mode::Dark);
@@ -666,41 +665,15 @@ fn wheel_pixels(delta: MouseScrollDelta, scale: f32) -> f32 {
     }
 }
 
-/// Load every core manifest: the built-in `cores.json`, then the custom one.
-/// A built-in `(system, key)` wins a collision, so a custom core cannot
-/// silently shadow Mesen/mGBA. Missing files are not an error.
-fn load_core_manifests(paths: &Paths) -> Vec<CoreSpec> {
-    let mut cores = load_first(&[
-        paths.cores.join("cores.json"),
-        PathBuf::from("cores/cores.json"),
-    ]);
-    for core in load_first(&[
-        paths.cores.join("custom").join("cores.json"),
-        PathBuf::from("cores/custom/cores.json"),
-    ]) {
-        if cores
-            .iter()
-            .any(|c| c.system == core.system && c.key == core.key)
-        {
-            eprintln!(
-                "cgb: 自定义核心 {} ({}) 与内置 key 冲突，已跳过",
-                core.key,
-                core.system.short()
-            );
-            continue;
-        }
-        cores.push(core);
+/// The core manifest: the packaged `<app data>/cores/cores.json`, else the dev
+/// checkout's `cores/cores.json`. Missing is not an error — the app then just
+/// has no core to run, and says so when a game is started.
+fn load_core_manifest(paths: &Paths) -> Vec<CoreSpec> {
+    let packaged = paths.cores.join("cores.json");
+    if packaged.is_file() {
+        return load_cores(&packaged);
     }
-    cores
-}
-
-/// The first candidate path that exists, loaded; empty when none do.
-fn load_first(candidates: &[PathBuf]) -> Vec<CoreSpec> {
-    candidates
-        .iter()
-        .find(|path| path.is_file())
-        .map(|path| load_cores(path))
-        .unwrap_or_default()
+    load_cores(Path::new("cores/cores.json"))
 }
 
 fn pointer_button(button: MouseButton) -> PointerButton {
@@ -793,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn the_builtin_manifest_is_read_from_the_packaged_cores_dir() {
+    fn the_manifest_is_read_from_the_packaged_cores_dir() {
         let paths = temp_paths("manifest");
         std::fs::write(
             paths.cores.join("cores.json"),
@@ -801,9 +774,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        // The custom manifest may or may not be reachable from the test cwd,
-        // so assert on the built-in entry rather than the total count.
-        let cores = load_core_manifests(&paths);
+        let cores = load_core_manifest(&paths);
         assert!(cores.iter().any(|core| core.key == "x"));
         let _ = std::fs::remove_dir_all(&paths.root);
     }

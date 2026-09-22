@@ -2,7 +2,7 @@
 //!
 //! The built-in cores (Mesen, mGBA) and any third-party cores you add all come
 //! from `cores.json` files — one loader, no Rust change to add or move a core.
-//! See `cores/README.md` and `cores/custom/README.md`.
+//! See `cores/README.md`.
 //!
 //! ```json
 //! {

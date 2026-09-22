@@ -11,8 +11,8 @@
 - **Q1 完成**：Mesen 原生 arm64 编译 + dlopen + 出画面（`cgb-ui::frame::FrameImage`）+ 键盘。
 - **Q2 进行中**：音频（cpal）+ gilrs 手柄已接线，`.srm` 电池存档与即时存档槽
   （`Session::{save,load}_state`，F5/F6 与 F1–F3/Shift+F1–F3），待人眼验收“能玩、能存读”。
-- **核心清单统一**：Mesen / mGBA / 自定义核心都从 `cores.json` 加载
-  （`cores/cores.json` + `cores/custom/cores.json`）；`--core` 选内置或自定义 key。
+- **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
+  （mesen / mgba / nestopia / custom_nes_core）；`--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
 
 ## 硬规则
@@ -21,8 +21,8 @@
    `assets/`、`docs/`、`legacy/`。不要往根目录丢构建产物或临时文件。
 2. **只做 UI 与 libretro 兼容。** 不实现/移植自研模拟器；它已在 `legacy/`。
    新功能先问「libretro 有没有标准对应」。
-3. **libretro 是唯一对外契约。** 只加载标准 libretro core（Mesen、mGBA，
-   以及 `cores/custom/` 下的自定义核心，如 legacy 的 `custom_nes_core`）；
+3. **libretro 是唯一对外契约。** 只加载标准 libretro core（`cores/cores.json`
+   里声明的，含 Mesen、mGBA、nestopia 与 legacy 的 `custom_nes_core`）；
    不使用 `fc_*` 私有扩展（`custom_nes_core` 会导出该扩展，但被忽略）。
    ABI 头是 `cores/libretro/libretro.h`；**不要整读**（≈8700 行），`rg` 定位再看。
 4. **依赖方向单向**：`cgb-app → {cgb-ui, cgb-libretro, cgb-audio, cgb-input,
@@ -52,7 +52,7 @@ cargo test --workspace
 ./scripts/build-cores.sh   # → cores/dist/{mesen,mgba}_libretro.dylib
 cargo run -p cgb-app -- --rom /path/to/mario.nes
 cargo run -p cgb-app -- --rom mario.nes --core mesen           # 强制核心
-cargo run -p cgb-app -- --rom mario.nes --core ./custom.dylib  # 自定义核心
+cargo run -p cgb-app -- --rom mario.nes --core ./mycore_libretro.dylib  # 任意模块
 ```
 
 ## 目录地图
@@ -63,10 +63,10 @@ cargo run -p cgb-app -- --rom mario.nes --core ./custom.dylib  # 自定义核心
 | 旧架构的来龙去脉（为什么用 wasm、为什么现在不用） | `legacy/docs/architecture/libretro-migration.md` |
 | crate 职责与依赖 | `crates/README.md` |
 | libretro frontend（dlopen / 回调 / 视频音频输入存档） | `crates/cgb-libretro/src/host.rs` |
-| 机种 / 核心注册表、joypad id | `crates/cgb-systems/src/` |
+| 机种 / CoreSpec 选核、joypad id | `crates/cgb-systems/src/` |
 | UI 视图与帧循环 | `crates/cgb-ui/src/`、`crates/cgb-app/src/app.rs` |
 | 原生 core 构建 | `cores/README.md`、`cores/*/build.sh` |
-| 核心清单（内置+自定义，启动选核） | `cores/cores.json`、`cores/custom/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
+| 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
 | 旧 Electron/C++/wasm 栈 | `legacy/`（只读） |
 
 ## 已知缺口（先记录，不擅自补）

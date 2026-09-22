@@ -3,7 +3,7 @@
 # Build the legacy custom FC / NES core as a native libretro module.
 #
 # Output: cores/dist/custom_nes_core_libretro.dylib
-# Declared in cores/custom/cores.json as key `custom_nes_core`.
+# Declared in cores/cores.json as key `custom_nes_core`.
 #
 # Source lives in legacy/packages/{fc-core,fc-libretro} and is **read-only**
 # here (AGENTS.md rule 7). That tree is a CMake project, but this machine has
@@ -18,12 +18,12 @@
 # private `fc_*` extension (`fc_libretro_get_ext`) is exported but the host
 # never uses it: only the standard libretro ABI matters.
 #
-# Usage: ./cores/custom/custom_nes_core/build.sh
+# Usage: ./cores/custom_nes_core/build.sh
 # Requires: Xcode command line tools, arm64 Mac.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$ROOT/cores/dist"
 CORE="$ROOT/legacy/packages/fc-core"
 LIBRETRO="$ROOT/legacy/packages/fc-libretro"

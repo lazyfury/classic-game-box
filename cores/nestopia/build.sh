@@ -3,21 +3,21 @@
 # Build Nestopia (NES / FC) as a custom libretro core.
 #
 # Output: cores/dist/nestopia_libretro.dylib
-# Declared in cores/custom/cores.json as key `nestopia`.
+# Declared in cores/cores.json as key `nestopia`.
 #
 # This is the worked example of the custom-core flow: clone, build with the
 # project's own libretro Makefile, copy the module into cores/dist. See
-# cores/custom/README.md.
+# cores/README.md.
 #
 # Usage:
-#   ./cores/custom/nestopia/build.sh
-#   NESTOPIA_SRC=/path/to/nestopia ./cores/custom/nestopia/build.sh
+#   ./cores/nestopia/build.sh
+#   NESTOPIA_SRC=/path/to/nestopia ./cores/nestopia/build.sh
 #
 # Requires: network (once), Xcode command line tools, arm64 Mac.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$ROOT/cores/dist"
 SRC="${NESTOPIA_SRC:-$ROOT/cores/sources/nestopia}"
 JOBS="$(sysctl -n hw.ncpu 2>/dev/null || nproc)"

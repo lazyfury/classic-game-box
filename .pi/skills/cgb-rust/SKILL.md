@@ -20,9 +20,8 @@ crates/cgb-input/src/lib.rs   键盘绑定 + gilrs
 crates/cgb-library/src/       paths / settings / library / saves / cores（自定义核心清单）
 crates/cgb-ui/src/            model.rs / view.rs / frame.rs
 crates/cgb-app/src/           cli.rs（启动参数）/ app.rs（帧循环）/ session.rs（一局游戏）
-cores/cores.json              内置核心清单（Mesen / mGBA）
-cores/*/build.sh              原生核心构建（mesen / mgba）
-cores/custom/                 自定义核心：cores.json + <name>/build.sh（nestopia、legacy 的 custom_nes_core）
+cores/cores.json              核心清单（mesen / mgba / nestopia / custom_nes_core）
+cores/<name>/build.sh         每个核心的原生构建（产出到 cores/dist/）
 ```
 
 **禁读**：`target/`、`legacy/`（除非查历史决策）、`cores/sources/`、`cores/dist/`、
@@ -57,20 +56,17 @@ cargo run -p cgb-app -- --rom game.nes
 **加一个 libretro environment 命令**：`cgb-libretro/src/ffi.rs` 加常量 →
 `host.rs::environment` 加分支（返回 true/false 要诚实）→ 有副作用的加测试。
 
-**核心清单是数据（不改 Rust）**：所有核心（Mesen / mGBA / 自定义）都在
-`cores/cores.json`（内置）与 `cores/custom/cores.json`（自定义）里，
-每行 `key` / `name` / `system` / `dylib`（+ 可选 `sample_rate` / `fps`）；`key` 每机种唯一。
-清单解析在 `cgb-library/src/cores.rs::load_cores`；合并 + 选核在
-`cgb-app/src/app.rs::{load_core_manifests, resolve_core, find_module}` 与
-`cgb-systems::choose_core`。设置持久化按 key 字符串（`Settings::core_key`）。
+**核心清单是数据（不改 Rust）**：所有核心（Mesen / mGBA / nestopia / custom_nes_core）
+都在单一 `cores/cores.json` 里，每行 `key` / `name` / `system` / `dylib`
+（+ 可选 `sample_rate` / `fps`）；`key` 每机种唯一。清单解析在
+`cgb-library/src/cores.rs::load_cores`；选核在 `cgb-app/src/app.rs::{load_core_manifest,
+resolve_core, find_module}` 与 `cgb-systems::choose_core`。设置持久化按 key 字符串
+（`Settings::core_key`）。
 
-**加一个核心**：`cores/custom/<name>/build.sh`（产出到 `cores/dist/`）+ 在
-`cores/custom/cores.json` 加一行 → `./scripts/build-cores.sh` 跑每个脚本。
+**加一个核心**：建 `cores/<name>/build.sh`（产出到 `cores/dist/`）+ 在
+`cores/cores.json` 加一行 → `./scripts/build-cores.sh` 会跑每个 `cores/*/build.sh`。
 要从 `--core <path>` 直接试，连清单都不用。
 若新机种，`cgb-systems/src/system.rs` 的 `SystemId` 加变体 + extensions。UI 不需要改。
-
-**加一个内置核心**：同上，但清单放 `cores/cores.json`、构建脚本放 `cores/<name>/build.sh`
-（`build-cores.sh` 里显式调用）。
 
 **改 UI 视图**：`cgb-ui/src/model.rs` 加字段 → `view.rs` 构建树 →
 `cgb-app` 把状态投影进 `ViewModel`。回调只 push `Action`，由 app drain。

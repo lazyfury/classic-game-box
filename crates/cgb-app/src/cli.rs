@@ -25,9 +25,8 @@ pub struct Args {
 /// Which core `--core` named.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CoreOverride {
-    /// A core key: a registered one (`mesen`, `mgba`) or one declared in the
-    /// custom-core manifest. Not validated here — the manifest is only read
-    /// once the app starts.
+    /// A core key from the manifest (`mesen`, `mgba`, `nestopia`, …). Not
+    /// validated here — the manifest is only read once the app starts.
     Key(String),
     /// A path to a libretro module on disk.
     Module(PathBuf),
@@ -42,7 +41,7 @@ USAGE:
 
 OPTIONS:
     --rom <path>     Load a ROM at startup (also accepted positionally).
-    --core <value>   Force a core: a key (mesen, mgba, or a custom-core key)
+    --core <value>   Force a core: a manifest key (mesen, mgba, nestopia, …)
                      or a path to a .dylib / .so / .dll.
     -h, --help       Print this help.
 

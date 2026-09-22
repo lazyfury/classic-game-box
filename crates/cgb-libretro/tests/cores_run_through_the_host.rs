@@ -1,5 +1,5 @@
 //! Real cores through the real host: the end-to-end smoke test for everything
-//! declared in `cores/cores.json` and `cores/custom/cores.json`.
+//! declared in `cores/cores.json`.
 //!
 //! Gated on the gitignored `cores/dist/*.dylib` build products: a core that
 //! has not been built is skipped, so a fresh checkout is green without the
@@ -72,8 +72,8 @@ fn run(core: &Path, rom_name: &str, rom: &[u8]) -> (CoreHost, AvInfo) {
     (host, av)
 }
 
-/// NES cores and the sample rate each reports. `mesen` is built-in; the other
-/// two come from `cores/custom/cores.json`.
+/// NES cores and the sample rate each reports, as declared in
+/// `cores/cores.json`.
 const NES_CORES: &[(&str, f64)] = &[
     ("mesen_libretro.dylib", 48_000.0),
     ("nestopia_libretro.dylib", 48_000.0),
