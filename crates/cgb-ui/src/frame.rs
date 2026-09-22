@@ -8,9 +8,9 @@
 //! Rather than fork quill's widget enum, this module builds a leaf component on
 //! quill's public extension points — `draw_components::Component` plus the
 //! `foreground` decorator (the same hook `Divider` uses). The component carries
-//! the texture handle, reserves the available area, and paints the frame at an
-//! integer scale, letterboxed and centred, from the rectangle layout hands it.
-//! Nothing here knows about libretro: it is handed a `TextureId`.
+//! the texture handle, reserves the available area, and paints the frame scaled
+//! to fill the area's limiting dimension, centred, from the rectangle layout
+//! hands it. Nothing here knows about libretro: it is handed a `TextureId`.
 //!
 //! Git history: the clean long-term home for this is a `Widget::Image` +
 //! `draw_components::Image` pair in quill; the app-local component unblocks Q1
@@ -21,30 +21,28 @@ use draw_core::{Color, Rect, Size, Vec2};
 use draw_render::{Paint, TextureId};
 use draw_ui::{MouseFilter, Widget};
 
-/// The largest integer scale that fits `frame` inside `available`, and the
-/// resulting size in logical pixels.
+/// The size `frame` takes when scaled to fit `available`, keeping its aspect
+/// ratio: the limiting dimension is filled exactly and the other is left short.
 ///
-/// Returns `(width, height)` at the integer scale. When the frame is bigger
-/// than the area the scale floors to 1, so the caller should clip; upscaling is
-/// never fractional.
-pub fn integer_fit(frame: (u32, u32), available: (f32, f32)) -> (f32, f32) {
+/// Fractional, so the picture is as large as the area allows rather than
+/// snapping down to the nearest whole-pixel multiple. Both dimensions are
+/// floored to whole logical pixels so the result never spills past the area.
+pub fn contain_fit(frame: (u32, u32), available: (f32, f32)) -> (f32, f32) {
     let (fw, fh) = frame;
     let (aw, ah) = available;
-    if fw == 0 || fh == 0 {
+    if fw == 0 || fh == 0 || aw <= 0.0 || ah <= 0.0 {
         return (0.0, 0.0);
     }
-    let scale_x = (aw / fw as f32).floor();
-    let scale_y = (ah / fh as f32).floor();
-    let scale = scale_x.min(scale_y).max(1.0);
-    (fw as f32 * scale, fh as f32 * scale)
+    let scale = (aw / fw as f32).min(ah / fh as f32);
+    ((fw as f32 * scale).floor(), (fh as f32 * scale).floor())
 }
 
-/// The integer-scaled frame rectangle, centred inside `area`.
+/// The fitted frame rectangle, centred inside `area`.
 ///
-/// This is the destination the image is drawn into: pixels stay whole, and the
-/// slack becomes even letterbox/pillarbox bands around the picture.
+/// The destination the image is drawn into: the shorter dimension is filled and
+/// the slack becomes even letterbox/pillarbox bands around the picture.
 pub fn centered_fit(frame: (u32, u32), area: Rect) -> Rect {
-    let (width, height) = integer_fit(frame, (area.size.width, area.size.height));
+    let (width, height) = contain_fit(frame, (area.size.width, area.size.height));
     let origin = Vec2::new(
         area.left() + (area.size.width - width) * 0.5,
         area.top() + (area.size.height - height) * 0.5,
@@ -55,8 +53,8 @@ pub fn centered_fit(frame: (u32, u32), area: Rect) -> Rect {
 /// A leaf component that paints a registered framebuffer texture.
 ///
 /// Give it the texture handle from [`FrameHandle`](crate::FrameHandle) and let
-/// it grow; at paint time it computes the integer-scaled destination inside
-/// whatever rectangle the layout assigned and emits one `DrawImage`.
+/// it grow; at paint time it computes the fitted destination inside whatever
+/// rectangle the layout assigned and emits one `DrawImage`.
 pub struct FrameImage {
     spec: Spec,
     texture: TextureId,
@@ -107,27 +105,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_nes_frame_scales_by_whole_pixels() {
-        // 256x240 in a wide area: height is the limit.
-        assert_eq!(integer_fit((256, 240), (1920.0, 720.0)), (768.0, 720.0));
+    fn a_nes_frame_fills_the_short_edge() {
+        // 256x240 in a wide area: height is the limit and fills exactly.
+        assert_eq!(contain_fit((256, 240), (1920.0, 720.0)), (768.0, 720.0));
     }
 
     #[test]
-    fn a_frame_larger_than_the_area_floors_to_one() {
-        assert_eq!(integer_fit((256, 240), (128.0, 120.0)), (256.0, 240.0));
+    fn a_frame_larger_than_the_area_shrinks_to_fit() {
+        assert_eq!(contain_fit((256, 240), (128.0, 120.0)), (128.0, 120.0));
     }
 
     #[test]
-    fn a_gba_frame_letterboxes() {
-        // 240x160 in a square area: width is the limit (scale 3).
-        assert_eq!(integer_fit((240, 160), (800.0, 800.0)), (720.0, 480.0));
+    fn a_gba_frame_pillarboxes_at_a_fractional_scale() {
+        // 240x160 in a square area: width fills, height is 160 * (800/240).
+        assert_eq!(contain_fit((240, 160), (800.0, 800.0)), (800.0, 533.0));
     }
 
     #[test]
     fn centered_fit_puts_the_slack_in_even_bands() {
         let area = Rect::from_min_size(Vec2::new(100.0, 50.0), Size::new(800.0, 800.0));
         let fitted = centered_fit((240, 160), area);
-        assert_eq!(fitted.size, Size::new(720.0, 480.0));
-        assert_eq!(fitted.origin, Vec2::new(140.0, 210.0));
+        assert_eq!(fitted.size, Size::new(800.0, 533.0));
+        assert_eq!(fitted.origin, Vec2::new(100.0, 183.5));
     }
 }

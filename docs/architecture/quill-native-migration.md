@@ -169,11 +169,12 @@ dlopen(dylib)
 - 分辨率/帧率来自 `retro_get_system_av_info`（**mGBA 必须 load 之后读才准**），
   GBA 240×160、GB 160×144，都要动态处理，不能写死。
 - quill 侧：`WgpuBackend::{register_texture, update_texture}` + `TextureFilter::Nearest`
-  + `DrawImage`（整数倍缩放由宿主算 destination）。
+  + `DrawImage`（缩放由宿主算 destination）。
 - **Q1 已接（过渡方案）**：`draw_ui::Widget` 仍无 image 变体，但 `cgb-ui` 用 quill
   的公开扩展点自建了叶组件 `frame::FrameImage`（实现 `draw_components::Component`，
   在 `foreground` 装饰器里发 `DrawImage`，与 `Divider` 同一条路）。它按
-  [`integer_fit`](../../crates/cgb-ui/src/frame.rs) 整数倍缩放、居中留黑边。
+  [`contain_fit`](../../crates/cgb-ui/src/frame.rs) 按比例放大到**撑满较短的一边**、
+  较长的一边居中留黑边（非整数缩放；像素会略不均匀，换取画面尽量大）。
   **仍待做（属于 quill）**：`Widget::Image` + `draw_components::Image` 才是上游正解，
   这样任何 view 都能画图；本地组件只是不阻塞 Q1。
 

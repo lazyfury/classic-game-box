@@ -295,12 +295,12 @@ mod tests {
             _ => None,
         });
         let destination = destination.expect("the play page draws the framebuffer");
-        // The picture is on screen at an equal, whole-pixel scale on both axes.
+        // One scale for both axes: aspect ratio preserved (the fit may be
+        // fractional, so the scale is not necessarily a whole number).
         let scale_x = destination.size.width / 256.0;
         let scale_y = destination.size.height / 240.0;
         assert!(scale_x > 0.0);
-        assert_eq!(scale_x, scale_x.floor());
-        assert_eq!(scale_x, scale_y);
+        assert!((scale_x - scale_y).abs() < 0.01, "{scale_x} vs {scale_y}");
     }
 
     /// Save/load results arrive as `ViewModel::status`; the shared shell must
