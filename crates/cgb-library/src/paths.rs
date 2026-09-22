@@ -17,6 +17,9 @@ pub struct Paths {
     pub system: PathBuf,
     /// Save states and `.srm` battery saves.
     pub saves: PathBuf,
+    /// A built-in ROM folder that is always scanned (handy until the UI has an
+    /// "add folder" control). Default: `<root>/roms`.
+    pub roms: PathBuf,
     /// The SQLite game library.
     pub library_db: PathBuf,
     /// The settings JSON.
@@ -41,6 +44,7 @@ impl Paths {
         Self {
             system: root.join("system"),
             saves: root.join("saves"),
+            roms: root.join("roms"),
             library_db: root.join("library.db"),
             settings_json: root.join("settings.json"),
             cores: root.join("cores"),
@@ -53,6 +57,7 @@ impl Paths {
         std::fs::create_dir_all(&self.root)?;
         std::fs::create_dir_all(&self.system)?;
         std::fs::create_dir_all(&self.saves)?;
+        std::fs::create_dir_all(&self.roms)?;
         Ok(())
     }
 

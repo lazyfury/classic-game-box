@@ -190,8 +190,17 @@ impl App {
 
     /// Re-read the library folders and rebuild the game rows.
     fn refresh_library(&mut self) {
+        // Configured folders plus the built-in ROM folder.
+        let mut dirs: Vec<PathBuf> = self
+            .settings
+            .library_dirs
+            .iter()
+            .map(PathBuf::from)
+            .collect();
+        dirs.push(self.paths.roms.clone());
+
         let mut games = Vec::new();
-        for dir in &self.settings.library_dirs {
+        for dir in &dirs {
             for game in scan_dir(dir) {
                 if let Some(library) = &self.library {
                     let _ = library.upsert(&game);
@@ -287,7 +296,19 @@ impl App {
 
         let selection = self.settings.core_selection();
         let choice = choose_core(&rom_path.to_string_lossy(), &selection);
-        let core_path = self.paths.core_dylib(choice.dylib);
+        // Packaged app: the core lives in the app data dir. Dev (`cargo run`
+        // from the repo): fall back to the build output in `cores/dist`.
+        let packaged = self.paths.core_dylib(choice.dylib);
+        let core_path = if packaged.is_file() {
+            packaged
+        } else {
+            let dev = Path::new("cores/dist").join(choice.dylib);
+            if dev.is_file() {
+                dev
+            } else {
+                packaged
+            }
+        };
 
         if !core_path.is_file() {
             self.model.status = format!(
