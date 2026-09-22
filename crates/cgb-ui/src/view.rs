@@ -4,16 +4,38 @@
 //! deliberately small — the migration plan's "minimal closed loop" — and it
 //! uses only public `draw_components` APIs. Callbacks push [`Action`]s into an
 //! [`Actions`] queue; the app drains them after routing input.
+//!
+//! ## Layout shape (matters)
+//!
+//! quill's layout root places its direct children by **anchors**, and flex
+//! starts one level down (see `examples/file_browser/src/ui.rs`). So the tree
+//! is the canonical three layers:
+//!
+//! ```text
+//! Flex::column()                 <- root, fills the viewport
+//!   └─ Flex::row()               <- the two panes side by side
+//!        ├─ sidebar             <- fixed basis, shrink(0)
+//!        └─ content             <- grow(1.0), clip(true)
+//! ```
+//!
+//! A single `Row` mounted at the root, with panes left to size to content, is
+//! what made everything pile up at the origin.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use draw_components::{Badge, Button, Card, Column, Component, Divider, EmptyState, Row, Text};
-use draw_core::Edges;
+use draw_components::{
+    Badge, Button, Card, Column, Component, Divider, EmptyState, Flex, Panel, Row, Text,
+};
+use draw_core::{Color, Edges};
 use draw_scene::{SceneChild, SceneTree};
 use draw_theme::{space, Theme, Tone};
+use draw_ui::{MouseFilter, SizeBasis, SurfaceStyle};
 
 use crate::model::{Action, Section, ViewModel};
+
+/// The rail's fixed width in logical pixels.
+const SIDEBAR_WIDTH: f32 = 224.0;
 
 /// Where view callbacks deposit what the user did. The app drains it once per
 /// frame (see the quill UI guide's "state lives in cells" rule).
@@ -36,18 +58,33 @@ impl Actions {
 
 /// Build the whole tree for one frame.
 pub fn build(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> SceneTree {
-    Row::new()
-        .gap(space::XL)
-        .padding(Edges::all(space::LG))
-        .child(sidebar(theme, model, actions))
-        .child(content(theme, model, actions))
+    Flex::column()
+        .mouse_filter(MouseFilter::Ignore)
+        .child(
+            Flex::row()
+                .gap(0.0)
+                .padding(Edges::ZERO)
+                .mouse_filter(MouseFilter::Ignore)
+                .child(sidebar(theme, model, actions))
+                .child(content(theme, model, actions)),
+        )
         .into_tree()
 }
 
 fn sidebar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
-    let mut column = Column::new().gap(space::XS).padding(Edges::all(space::SM));
-    column = column.child(Text::heading("Classic Game Box", theme));
-    column = column.child(Text::caption("Rust + libretro", theme).tone(Tone::Muted));
+    let mut column = Column::new()
+        .gap(space::XS)
+        .padding(Edges::new(space::MD, space::LG, space::MD, space::MD))
+        .basis(SizeBasis::Px(SIDEBAR_WIDTH))
+        .shrink(0.0)
+        .surface(SurfaceStyle::new(theme.palette().surface))
+        .mouse_filter(MouseFilter::Ignore);
+    column = column.child(
+        Text::subheading("Classic Game Box", theme)
+            .max_lines(1)
+            .ellipsis(true),
+    );
+    column = column.child(Text::caption("Rust + libretro", theme).tone(Tone::Subtle));
     column = column.child(Divider::horizontal(theme));
     for section in Section::ALL {
         let actions = actions.clone();
@@ -61,16 +98,26 @@ fn sidebar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> C
     column
 }
 
-fn content(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
-    match model.section {
+/// The content column, already padded and set to take the rest of the row.
+fn content(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Panel {
+    let page = match model.section {
         Section::Library => library_page(theme, model, actions),
         Section::Play => play_page(theme, model, actions),
         Section::Settings => settings_page(theme, model),
-    }
+    };
+    Panel::new()
+        .color(Color::TRANSPARENT)
+        .flat()
+        .grow(1.0)
+        .clip(true)
+        .mouse_filter(MouseFilter::Ignore)
+        .child(page.padding(Edges::all(space::LG)))
 }
 
 fn library_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
-    let mut column = Column::new().gap(space::MD);
+    let mut column = Column::new()
+        .gap(space::MD)
+        .mouse_filter(MouseFilter::Ignore);
     column = column.child(Text::title("游戏库", theme));
 
     if model.games.is_empty() {
@@ -83,7 +130,9 @@ fn library_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions)
             let actions = actions.clone();
             let label = format!("{}   ·   {}", game.title, game.system.short());
             list = list.child(
-                Button::ghost(label, theme).on_click(move || actions.push(Action::Play(index))),
+                Button::ghost(label, theme)
+                    .min_size(0.0, 30.0)
+                    .on_click(move || actions.push(Action::Play(index))),
             );
         }
         column = column.child(
@@ -102,7 +151,9 @@ fn library_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions)
 }
 
 fn play_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
-    let mut column = Column::new().gap(space::MD);
+    let mut column = Column::new()
+        .gap(space::MD)
+        .mouse_filter(MouseFilter::Ignore);
     column = column.child(Text::title("游玩", theme));
 
     let Some(index) = model.selected else {
@@ -116,7 +167,7 @@ fn play_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) ->
         .get(index)
         .map(|game| game.title.clone())
         .unwrap_or_default();
-    column = column.child(Text::subheading(title, theme));
+    column = column.child(Text::subheading(title, theme).max_lines(1).ellipsis(true));
 
     // The framebuffer placeholder. `cgb-ui` cannot paint an image yet (the UI
     // stack has no image widget); the text is a stand-in until that lands.
@@ -153,6 +204,7 @@ fn play_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) ->
 fn settings_page(theme: &'static dyn Theme, model: &ViewModel) -> Column {
     Column::new()
         .gap(space::MD)
+        .mouse_filter(MouseFilter::Ignore)
         .child(Text::title("设置", theme))
         .child(
             Card::new(theme)
