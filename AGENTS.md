@@ -63,8 +63,8 @@ cargo run -p cgb-app -- --rom /path/to/mario.nes
 
 ## 已知缺口（先记录，不擅自补）
 
-- quill 没有 **Image 组件**：`draw_ui::Widget` 无 image 变体，view 发不出
-  `DrawCommand::DrawImage`。模拟器画面因此暂用占位文字。见
-  `crates/cgb-ui/src/frame.rs`。这是 Q1 必须解决的一处（优先给 quill 加 widget）。
+- quill 没有 **Image 组件**：`draw_ui::Widget` 无 image 变体。Q1 先用
+  `cgb-ui/src/frame.rs` 的 `FrameImage`（`draw_components::Component` +
+  `foreground` 装饰器）把画面画上去；上游补 `Widget::Image` 后应撤掉这个本地组件。
 - quill 没有 **TextInput**：搜索/标签编辑需要自建或后置。
 - quill 的 **连续帧循环（Phase 7）** 未落地，`cgb-app` 用 `WaitUntil` 自建。

@@ -32,6 +32,7 @@ use draw_scene::{SceneChild, SceneTree};
 use draw_theme::{space, Theme, Tone};
 use draw_ui::{MouseFilter, SizeBasis, SurfaceStyle};
 
+use crate::frame::FrameImage;
 use crate::model::{Action, Section, ViewModel};
 
 /// The rail's fixed width in logical pixels.
@@ -156,33 +157,32 @@ fn play_page(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) ->
         .mouse_filter(MouseFilter::Ignore);
     column = column.child(Text::title("游玩", theme));
 
-    let Some(index) = model.selected else {
-        column = column
-            .child(EmptyState::new("没有选中游戏", theme).description("先在游戏库里选一个。"));
-        return column;
-    };
-
+    // A game launched from `--rom` may not be in the library list, so the
+    // title falls back to the core name rather than the selected row.
     let title = model
-        .games
-        .get(index)
+        .selected
+        .and_then(|index| model.games.get(index))
         .map(|game| game.title.clone())
-        .unwrap_or_default();
+        .or_else(|| (!model.core_name.is_empty()).then(|| model.core_name.clone()))
+        .unwrap_or_else(|| "没有选中游戏".to_string());
     column = column.child(Text::subheading(title, theme).max_lines(1).ellipsis(true));
 
-    // The framebuffer placeholder. `cgb-ui` cannot paint an image yet (the UI
-    // stack has no image widget); the text is a stand-in until that lands.
-    let frame_note = match &model.frame {
-        Some(frame) => format!(
-            "画面 {}×{}（纹理已注册，等待 Image 组件）",
-            frame.width, frame.height
-        ),
-        None => "没有画面：还没有载入游戏。".to_string(),
-    };
-    column = column.child(
-        Card::new(theme)
-            .padding(Edges::all(space::LG))
-            .child(Text::small(frame_note, theme).tone(Tone::Muted)),
-    );
+    // The framebuffer itself. It grows into the remaining space and centres an
+    // integer-scaled, letterboxed picture inside whatever rectangle it gets.
+    match &model.frame {
+        Some(frame) => {
+            column =
+                column.child(FrameImage::new(frame.texture, frame.width, frame.height).grow(1.0));
+        }
+        None => {
+            column = column.child(
+                Card::new(theme)
+                    .grow(1.0)
+                    .padding(Edges::all(space::LG))
+                    .child(Text::small("没有画面：还没有载入游戏。", theme).tone(Tone::Muted)),
+            );
+        }
+    }
 
     let pause = if model.paused { "继续" } else { "暂停" };
     let mut controls = Row::new().gap(space::SM);
@@ -226,4 +226,54 @@ fn settings_page(theme: &'static dyn Theme, model: &ViewModel) -> Column {
                 )
                 .child(Badge::pill("默认布局", theme)),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::FrameHandle;
+    use draw_core::Size;
+    use draw_render::{DrawCommand, PaintContext, TextureId};
+    use draw_theme::{default_theme, Mode};
+
+    /// The play page must emit exactly the image command the wgpu backend turns
+    /// into a texture blit; the tree/layout path is otherwise untested.
+    #[test]
+    fn the_play_page_emits_a_draw_image() {
+        let theme = default_theme(Mode::Dark);
+        let actions = Actions::default();
+        let model = ViewModel {
+            section: Section::Play,
+            playing: true,
+            frame: Some(FrameHandle {
+                texture: TextureId::new(1),
+                width: 256,
+                height: 240,
+            }),
+            ..ViewModel::default()
+        };
+
+        let mut tree = build(theme, &model, &actions);
+        draw_ui::layout(
+            &mut tree,
+            draw_core::ViewportSize::new(Size::new(1100.0, 760.0)),
+        );
+        tree.update();
+
+        let mut ctx = PaintContext::new();
+        draw_ui::paint(&tree, &mut ctx);
+        let list = ctx.into_draw_list();
+
+        let destination = list.commands().iter().find_map(|command| match command {
+            DrawCommand::DrawImage { destination, .. } => Some(*destination),
+            _ => None,
+        });
+        let destination = destination.expect("the play page draws the framebuffer");
+        // The picture is on screen at an equal, whole-pixel scale on both axes.
+        let scale_x = destination.size.width / 256.0;
+        let scale_y = destination.size.height / 240.0;
+        assert!(scale_x > 0.0);
+        assert_eq!(scale_x, scale_x.floor());
+        assert_eq!(scale_x, scale_y);
+    }
 }

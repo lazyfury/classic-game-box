@@ -166,10 +166,12 @@ dlopen(dylib)
   GBA 240×160、GB 160×144，都要动态处理，不能写死。
 - quill 侧：`WgpuBackend::{register_texture, update_texture}` + `TextureFilter::Nearest`
   + `DrawImage`（整数倍缩放由宿主算 destination）。
-- **缺口（Q1 必解）**：`draw_ui::Widget` 没有 image 变体，`draw_components` 没有
-  `Image`，所以 view 目前**发不出** `DrawImage`。两条路：(a) 给 quill 加
-  `Widget::Image` + `draw_components::Image`（推荐，属于 quill）；(b) 过渡期在 app
-  里把画面直接画进 `PaintContext`。几何规则见 `crates/cgb-ui/src/frame.rs::integer_fit`。
+- **Q1 已接（过渡方案）**：`draw_ui::Widget` 仍无 image 变体，但 `cgb-ui` 用 quill
+  的公开扩展点自建了叶组件 `frame::FrameImage`（实现 `draw_components::Component`，
+  在 `foreground` 装饰器里发 `DrawImage`，与 `Divider` 同一条路）。它按
+  [`integer_fit`](../../crates/cgb-ui/src/frame.rs) 整数倍缩放、居中留黑边。
+  **仍待做（属于 quill）**：`Widget::Image` + `draw_components::Image` 才是上游正解，
+  这样任何 view 都能画图；本地组件只是不阻塞 Q1。
 
 ### 5.4 音频
 
@@ -242,8 +244,8 @@ git clone --depth 1 https://github.com/EmulatorJS/mgba  →  make -f Makefile.li
 结构上预留但**暂不实现**：搜索框（quill 无 TextInput，自建或后置）、截图/封面、标签、金手指。
 搜索框是已知缺口，若最小闭环需要，先在 `cgb-ui` 内自建一个轻量 `TextInput`。
 
-**画面同样有缺口**：`cgb-ui` 现在只能显示占位文字，因为 UI 栈没有 image 组件
-（见 §5.3）。Q1 的“出画面”要么先给 quill 加组件，要么用 §5.3 的过渡方案。
+**画面已能上屏**：`cgb-ui` 的 `frame::FrameImage`（见 §5.3）在 `foreground`
+装饰器里发 `DrawImage`，播放页因此显示真实画面；上游 `Image` 组件仍是待补项。
 
 ---
 
@@ -268,7 +270,7 @@ ControlFlow::WaitUntil(now + frame_budget)
 | 阶段 | 内容 | 验收 |
 |---|---|---|
 | **Q0** ✅ | 计划 + 结构 + 脚手架 | `cargo check --workspace` 通过 |
-| **Q1** | Mesen spike：原生 arm64 编译 + dlopen + 出画面 + 键盘 | ✅ 编译与 ABI 已验证，剩 dlopen 出画面 |
+| **Q1** | Mesen spike：原生 arm64 编译 + dlopen + 出画面 + 键盘 | ✅ 编译/ABI/dlopen/键盘齐，画面经 `frame::FrameImage` 上屏，待人眼确认 |
 | **Q2** | 音频（cpal）+ gilrs 手柄 + 存档槽 + `.srm` | 能玩、能存读 |
 | **Q3** | `cgb-ui` 最小闭环 + 库（SQLite）+ 打开目录对话框 | 从库列表选游戏进入游玩 |
 | **Q4** | mGBA 接入（原生）+ 机种路由 + 动态分辨率/帧率/输入描述 | `.gba/.gb/.gbc` 可玩（**已推迟**） |
@@ -281,8 +283,9 @@ ControlFlow::WaitUntil(now + frame_budget)
 1. **Mesen 1.x 的 arm64 原生编译**——最不确定，Q1 先 spike；不行则换 Mesen2 或只留 mGBA。
 2. **quill 无 TextInput / 无音频 / 无手柄**——音频手柄自建（本计划已定），TextInput 后置。
 3. **每帧 XRGB8888→RGBA swizzle** 有 CPU 成本；量大再给后端加纹理格式。
-3b. **quill 没有 Image 组件**——目前 view 画不出模拟器画面。Q1 必须先给 quill 加
-   `Widget::Image` / `draw_components::Image`，或走 app 内过渡方案。
+3b. **quill 没有 Image 组件**——Q1 已用 `cgb-ui::frame::FrameImage`（`Component` +
+   `foreground` 装饰器）绕过；上游补 `Widget::Image` / `draw_components::Image` 后，
+   这个本地组件可以撤掉。
 4. **连续帧循环** quill 未原生支持，需在 `cgb-app` 自建（方案见 §8）。
 5. **UI 功能面大**（旧前端约 1 万行 TS）——本阶段只做最小闭环，不追 1:1。
 6. **quill 以 path 依赖 `../quill`**——需要同级 checkout；后续可改成 git rev 锁定。

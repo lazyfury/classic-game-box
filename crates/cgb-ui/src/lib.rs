@@ -12,7 +12,7 @@ mod frame;
 mod model;
 mod view;
 
-pub use frame::integer_fit;
+pub use frame::{centered_fit, integer_fit, FrameImage};
 pub use model::{Action, FrameHandle, GameRow, Section, ViewModel};
 pub use view::Actions;
 

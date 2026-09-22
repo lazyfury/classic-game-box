@@ -336,6 +336,14 @@ impl App {
 
         match started {
             Ok(session) => {
+                // A `--rom` may be outside the scanned folders; match it to a
+                // library row when possible so the play page shows its title.
+                let selected = self
+                    .model
+                    .games
+                    .iter()
+                    .position(|game| Path::new(&game.path) == rom_path);
+                self.model.selected = selected;
                 self.model.core_name = session.core_name().to_string();
                 self.model.playing = true;
                 self.model.paused = false;
