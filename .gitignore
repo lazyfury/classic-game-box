@@ -1,6 +1,7 @@
 # Build output.
 /target/
-
+/build/
+/.vscode/
 # ---------------------------------------------------------------------------
 # Native libretro cores. Built on demand by cores/*/build.sh; the sources are
 # third-party clones and the dylibs are build products, so neither is tracked.
