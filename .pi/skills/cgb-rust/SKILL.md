@@ -63,10 +63,13 @@ cargo run -p cgb-app -- --rom game.nes
 resolve_core, find_module}` 与 `cgb-systems::choose_core`。设置持久化按 key 字符串
 （`Settings::core_key`）。
 
-**加一个核心**：建 `cores/<name>/build.sh`（产出到 `cores/dist/`）+ 在
-`cores/cores.json` 加一行 → `./scripts/build-cores.sh` 会跑每个 `cores/*/build.sh`。
+**加一个核心**：完整清单见 `cores/README.md` 的 "Adding a core"。简版：从
+`cores/build.sh.example` 抄一个 `cores/<name>/build.sh`（产出到 `cores/dist/`）+
+在 `cores/cores.json` 加一行 → `./scripts/build-cores.sh` 跑每个 `cores/*/build.sh`。
+新机种还要：`cgb-systems/src/system.rs` 的 `SystemId` 变体 + extensions，
+`cgb-library/src/settings.rs` 加 `<system>_core` 字段 + key 匹配；UI 不用改。
+验证：`nm -gU` 看 `retro_*`，并加进 `crates/cgb-libretro/tests/cores_run_through_the_host.rs`。
 要从 `--core <path>` 直接试，连清单都不用。
-若新机种，`cgb-systems/src/system.rs` 的 `SystemId` 加变体 + extensions。UI 不需要改。
 
 **改 UI 视图**：`cgb-ui/src/model.rs` 加字段 → `view.rs` 构建树 →
 `cgb-app` 把状态投影进 `ViewModel`。回调只 push `Action`，由 app drain。

@@ -65,7 +65,7 @@ cargo run -p cgb-app -- --rom mario.nes --core ./mycore_libretro.dylib  # 任意
 | libretro frontend（dlopen / 回调 / 视频音频输入存档） | `crates/cgb-libretro/src/host.rs` |
 | 机种 / CoreSpec 选核、joypad id | `crates/cgb-systems/src/` |
 | UI 视图与帧循环 | `crates/cgb-ui/src/`、`crates/cgb-app/src/app.rs` |
-| 原生 core 构建 | `cores/README.md`、`cores/*/build.sh` |
+| 原生 core 构建 / 加核心流程 | `cores/README.md`、`cores/build.sh.example`、`cores/*/build.sh` |
 | 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
 | 旧 Electron/C++/wasm 栈 | `legacy/`（只读） |
 

@@ -49,22 +49,80 @@ running from a checkout. `dylib` is a file name resolved in the packaged
 `cores/` dir and `dist/`, or an absolute path. The loader is
 `cgb-library::load_cores`; `cgb-systems::choose_core` makes the pick.
 
-## Add a core
+## Adding a core
 
-1. `cores/<name>/build.sh` — clone/build, drop the module in `cores/dist/`.
-   Copy an existing one (e.g. [`nestopia/build.sh`](nestopia/build.sh)) and
-   change the clone URL, source dir and final `cp`. Make it executable.
-2. Add a row to [`cores.json`](cores.json).
+Same process for a core you wrote or a third-party project. Two shapes: an
+**existing console** (data only) or a **new console** (also a small Rust
+change).
 
-`./scripts/build-cores.sh` runs every `cores/<name>/build.sh`, so adding a core
-changes no Rust. A core can also be tried without any row, straight from a path:
+**Conventions**
+
+- Directory `cores/<name>/`, where `<name>` is the manifest `key` (lower snake
+  case).
+- Script `cores/<name>/build.sh`, executable, emits `cores/dist/<dylib>`.
+- Third-party source clones into `cores/sources/<name>` (gitignored); a
+  `<NAME>_SRC` env var overrides it with a local checkout.
+- One row in [`cores.json`](cores.json).
+
+### 1. Build script
+
+Copy [`build.sh.example`](build.sh.example) to `cores/<name>/build.sh`, fill
+in the clone URL, source dir and output name, and `chmod +x` it. There are two
+shapes, both already in the tree:
+
+- **Makefile** (Mesen, Nestopia, QuickNES, Snes9x, Genesis Plus GX, PicoDrive):
+  `make -C <srcdir> -f Makefile platform=osx -j"$JOBS"`.
+  *macOS 26+ quirk:* some Makefiles derive their deployment target from the
+  macOS *minor* version and fall back to 10.4, which arm64 rejects. Pass
+  `MINVERSION=-mmacosx-version-min=11.0` (Nestopia does).
+- **CMake** (mGBA is the only one so far): configure with
+  `-DBUILD_LIBRETRO=ON`, then `cmake --build … --target <name>_libretro`.
+
+`./scripts/build-cores.sh` runs every `cores/*/build.sh` in name order;
+`--skip-mgba` skips the cmake build.
+
+### 2. Manifest row
+
+Add the entry to [`cores.json`](cores.json) (see the format above). The console
+name in `system` is what ties the core to a loader — get it right and nothing
+else is needed.
+
+### 3. New console (only if `system` is not already supported)
+
+A small, mechanical Rust change; the core itself is still just data.
+
+- `crates/cgb-systems/src/system.rs`: add the `SystemId` variant, then update
+  `SYSTEMS`, `name`, `short`, `extensions`, `key`, `from_key` and
+  `system_for_path`. Add a case to the `system_for_path` test.
+- `crates/cgb-library/src/settings.rs`: add the `<system>_core` field and the
+  `core_key` / `set_core_key` match arms, so the pick persists.
+
+No UI change: the library badge and play page read `SystemId`.
+
+### 4. Verify
 
 ```bash
-cargo run -p cgb-app -- --rom mario.nes --core ./cores/dist/mesen_libretro.dylib
+./scripts/build-cores.sh --skip-mgba
+file cores/dist/<name>_libretro.dylib                  # arm64
+nm -gU cores/dist/<name>_libretro.dylib | grep -c ' _retro_'
+cargo run -p cgb-app -- --rom game.<ext> --core <name>
 ```
 
-If it targets a new console, add the `SystemId` variant and extensions in
-`crates/cgb-systems/src/system.rs`.
+Then add the core to `crates/cgb-libretro/tests/cores_run_through_the_host.rs`:
+a synthetic ROM plus its expected geometry and sample rate. That test is the
+gate — it drives the core through the real `CoreHost`, including the pixel
+format conversion (see below). A core can also be tried with no row at all,
+straight from a path: `--core ./cores/dist/<dylib>`.
+
+### 5. Runtime notes (why most cores need no patch)
+
+- **Pixel format:** the host accepts `XRGB8888` and `RGB565` and converts both
+  to RGBA8; anything else is refused and the core keeps its `0RGB1555` default.
+  So a core that hardcodes RGB565 (mGBA, Snes9x) needs no patch.
+- **`need_fullpath`:** the app always passes the real ROM path *and* the bytes,
+  so cores that read the file (Mesen) and cores that read the buffer both work.
+- **`pitch`** is bytes per row, not pixels; the host slices each row by the
+  format's bytes-per-pixel, so a padded pitch is fine.
 
 `custom_nes_core` is the one core built without cmake or a third-party
 Makefile: it compiles the read-only `legacy/packages/fc-*` sources directly

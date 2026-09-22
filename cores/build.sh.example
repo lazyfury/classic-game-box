@@ -1,0 +1,45 @@
+#!/bin/bash
+# ---------------------------------------------------------------------------
+# TEMPLATE — copy to cores/<name>/build.sh, fill the <placeholders>, chmod +x.
+#
+# Build <name> as a native macOS libretro core.
+#
+# Output:   cores/dist/<name>_libretro.dylib
+# Manifest: add a row to cores/cores.json with key `<name>`.
+# Process:  see the "Adding a core" section of cores/README.md.
+#
+# Usage:
+#   ./cores/<name>/build.sh
+#   <NAME>_SRC=/path/to/source ./cores/<name>/build.sh   # use a local checkout
+#
+# Requires: network (once), Xcode command line tools, arm64 Mac.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+OUT="$ROOT/cores/dist"
+SRC="${<NAME>_SRC:-$ROOT/cores/sources/<name>}"
+JOBS="$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
+
+mkdir -p "$OUT" "$(dirname "$SRC")"
+
+if [ ! -d "$SRC" ]; then
+    echo "==> cloning <repo-url> into $SRC"
+    git clone --depth 1 <repo-url> "$SRC"
+fi
+
+echo "==> building <name> (platform=osx, $(uname -m))"
+# Makefile cores. If the Makefile computes its deployment target from the macOS
+# minor version it may fall back to 10.4 on macOS 26+, which arm64 rejects; then
+# pass: MINVERSION=-mmacosx-version-min=11.0
+make -C "$SRC" -f Makefile platform=osx -j"$JOBS" \
+    MINVERSION=-mmacosx-version-min=11.0
+
+cp "$SRC/<name>_libretro.dylib" "$OUT/<name>_libretro.dylib"
+echo "==> done: $OUT/<name>_libretro.dylib"
+
+# CMake cores (e.g. mGBA) instead use:
+#   cmake -S "$SRC" -B "$SRC/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_LIBRETRO=ON \
+#         -DBUILD_QT=OFF -DBUILD_SDL=OFF …
+#   cmake --build "$SRC/build" --target <name>_libretro -j"$JOBS"
+#   cp "$SRC/build/<name>_libretro.dylib" "$OUT/"
