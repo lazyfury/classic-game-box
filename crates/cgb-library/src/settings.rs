@@ -1,12 +1,13 @@
 //! The settings file: a small JSON document next to the library.
 //!
 //! Which core runs which console, and which folders the library scans. The
-//! core picks are stored as strings (see `CoreId::key`) so renaming an enum
-//! variant is a code change, not a migration.
+//! core picks are stored as manifest keys (strings), so a core can be renamed
+//! or swapped in `cores.json` without a settings migration; a key that no
+//! longer exists just falls back to the console default.
 
 use std::path::Path;
 
-use cgb_systems::{CoreId, CoreSelection, SystemId};
+use cgb_systems::SystemId;
 use serde::{Deserialize, Serialize};
 
 /// Everything remembered between runs (so far).
@@ -38,32 +39,24 @@ impl Settings {
         std::fs::write(path, text)
     }
 
-    /// The persisted picks as a [`CoreSelection`], ignoring unknown core
-    /// names so a stale file cannot select a core that no longer exists.
-    pub fn core_selection(&self) -> CoreSelection {
-        let mut selection = CoreSelection::default();
-        selection.set(
-            SystemId::Nes,
-            self.nes_core.as_deref().and_then(CoreId::from_key),
-        );
-        selection.set(
-            SystemId::Gba,
-            self.gba_core.as_deref().and_then(CoreId::from_key),
-        );
-        selection.set(
-            SystemId::Gb,
-            self.gb_core.as_deref().and_then(CoreId::from_key),
-        );
-        selection
+    /// The core key remembered for a console, if any. Validation against the
+    /// loaded manifest happens where the cores are chosen, so a stale key just
+    /// falls back to the console's default.
+    pub fn core_key(&self, system: SystemId) -> Option<&str> {
+        match system {
+            SystemId::Nes => self.nes_core.as_deref(),
+            SystemId::Gba => self.gba_core.as_deref(),
+            SystemId::Gb => self.gb_core.as_deref(),
+        }
     }
 
     /// Remember a core pick for a console.
-    pub fn set_core(&mut self, system: SystemId, core: Option<CoreId>) {
+    pub fn set_core_key(&mut self, system: SystemId, key: Option<&str>) {
         let slot = match system {
             SystemId::Nes => &mut self.nes_core,
             SystemId::Gba => &mut self.gba_core,
             SystemId::Gb => &mut self.gb_core,
         };
-        *slot = core.map(|core| core.key().to_string());
+        *slot = key.map(str::to_string);
     }
 }

@@ -5,8 +5,9 @@
 
 use std::path::Path;
 
-/// A console. One console can have more than one core (see [`crate::CoreId`]),
-/// which is exactly why selection is per console and not per file.
+/// A console. One console can have more than one core (see
+/// [`crate::CoreSpec`]), which is exactly why selection is per console and not
+/// per file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SystemId {
     Nes,

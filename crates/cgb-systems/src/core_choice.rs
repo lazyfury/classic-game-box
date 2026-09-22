@@ -1,13 +1,16 @@
-//! Which core runs which console.
+//! Picking which core runs which console.
 //!
-//! A core is more than a file name. The frame rate and the sample rate are
-//! properties of the console (and, for mGBA, of the machine it is emulating),
-//! and the audio pipeline is built around the sample rate — so they travel
-//! with the core here rather than being read from the core. mGBA's geometry
-//! only answers once a game is loaded, and the audio device has to exist
-//! before that, so the numbers are known up front.
+//! The cores are **data now**: the app loads them from `cores.json` (see
+//! `cores/README.md`) and hands the list to [`choose_core`]. This module holds
+//! only the domain shape ([`CoreSpec`]) and the pure pick — the player's saved
+//! key wins, otherwise the first core declared for the console.
 //!
-//! Values, as reported through `retro_get_system_av_info`:
+//! `cgb-systems` stays dependency-free, so it never parses JSON itself: the
+//! manifest loader lives in `cgb-library`, the file paths in `cgb-app`.
+//!
+//! The timing fields (`sample_rate`, `frame_seconds`) are hints from the
+//! manifest. The real values come from the core's own `retro_get_system_av_info`
+//! once a game is loaded, so a custom core needs no table entry:
 //!
 //! ```text
 //!   Mesen    256x240, 60.0998 fps, 48000 Hz
@@ -17,90 +20,16 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{system_for_path, SystemId};
-
-/// A libretro core.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum CoreId {
-    Mesen,
-    Mgba,
-}
-
-impl CoreId {
-    /// A stable string key for persistence. Case-insensitive on parse.
-    pub fn key(self) -> &'static str {
-        match self {
-            CoreId::Mesen => "mesen",
-            CoreId::Mgba => "mgba",
-        }
-    }
-
-    /// Parse a [`CoreId::key`]; unknown strings are `None`.
-    pub fn from_key(key: &str) -> Option<CoreId> {
-        match key.to_ascii_lowercase().as_str() {
-            "mesen" => Some(CoreId::Mesen),
-            "mgba" => Some(CoreId::Mgba),
-            _ => None,
-        }
-    }
-}
-
-/// The metadata for every `(core, console)` pair this application can run.
-#[derive(Clone, Copy, Debug)]
-pub struct CoreChoice {
-    /// Which core, for comparing one choice against another.
-    pub id: CoreId,
-    /// What the settings screen calls it.
-    pub name: &'static str,
-    /// The console it emulates.
-    pub system: SystemId,
-    /// The native libretro module file name inside the cores directory.
-    pub dylib: &'static str,
-    /// What the core produces, in samples per second.
-    pub sample_rate: u32,
-    /// One emulated frame, in seconds.
-    pub frame_seconds: f64,
-}
-
-impl CoreChoice {
-    /// One emulated frame, in milliseconds.
-    pub fn frame_millis(self) -> f64 {
-        self.frame_seconds * 1000.0
-    }
-
-    /// This registry entry with the module path the app located on disk.
-    ///
-    /// [`CoreChoice`] is `'static` and carries only a file name; the app owns
-    /// the packaged-vs-dev search, so it hands the resolved path back here.
-    pub fn with_module(self, module: impl Into<PathBuf>) -> CoreSpec {
-        CoreSpec {
-            key: self.id.key().to_string(),
-            name: self.name.to_string(),
-            system: self.system,
-            module: module.into(),
-            sample_rate: self.sample_rate,
-            frame_seconds: self.frame_seconds,
-        }
-    }
-}
-
-impl From<CoreChoice> for CoreSpec {
-    fn from(choice: CoreChoice) -> Self {
-        choice.with_module(choice.dylib)
-    }
-}
+use crate::SystemId;
 
 /// A core resolved to something the app can `dlopen`.
 ///
-/// [`CoreChoice`] is the static, `Copy` registry; this is its owned form, and
-/// it is what the session runs. It is also how a **user-supplied** libretro
-/// module enters the system (`--core <path>`): the console comes from the ROM
-/// extension, and the timing hints are refined from the core's own `av_info`
-/// once a game is loaded.
+/// Loaded from a manifest (`key` / `name` / `system` / `dylib`), or built ad
+/// hoc for `--core <path>`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CoreSpec {
-    /// The stable key a pick is stored under: a registry key or a manifest
-    /// key for a custom core.
+    /// The stable key a pick is stored under. Unique per console, not
+    /// globally: one module can serve two consoles (mGBA on GBA and GB).
     pub key: String,
     /// What the UI calls it.
     pub name: String,
@@ -115,8 +44,9 @@ pub struct CoreSpec {
 }
 
 impl CoreSpec {
-    /// A user-supplied libretro module for `system`. The key/name is the file
-    /// stem; the timing hints are placeholders the core overrides after load.
+    /// A user-supplied libretro module for `system` (`--core <path>`). The
+    /// key/name is the file stem; the timing hints are placeholders the core
+    /// overrides after load.
     pub fn custom(module: impl Into<PathBuf>, system: SystemId) -> Self {
         let module = module.into();
         let name = module
@@ -134,7 +64,7 @@ impl CoreSpec {
     }
 
     /// Whether the module looks like a loadable library by extension. Used by
-    /// `--core` to tell a registry key from a path.
+    /// `--core` to tell a key from a path.
     pub fn looks_like_module(path: &Path) -> bool {
         matches!(
             path.extension().and_then(|ext| ext.to_str()),
@@ -143,160 +73,124 @@ impl CoreSpec {
     }
 }
 
-/// Every `(core, console)` pair, with the rates the video/audio pipelines are
-/// built around. mGBA appears twice: a GBA and a Game Boy are different
-/// machines, with different sample rates.
-pub const CORES: &[CoreChoice] = &[
-    CoreChoice {
-        id: CoreId::Mesen,
-        name: "Mesen",
-        system: SystemId::Nes,
-        dylib: "mesen_libretro.dylib",
-        sample_rate: 48_000,
-        frame_seconds: 1.0 / 60.0998,
-    },
-    CoreChoice {
-        id: CoreId::Mgba,
-        name: "mGBA",
-        system: SystemId::Gba,
-        dylib: "mgba_libretro.dylib",
-        sample_rate: 65_536,
-        frame_seconds: 1.0 / 59.7275,
-    },
-    CoreChoice {
-        id: CoreId::Mgba,
-        name: "mGBA",
-        system: SystemId::Gb,
-        dylib: "mgba_libretro.dylib",
-        sample_rate: 131_072,
-        frame_seconds: 1.0 / 59.7275,
-    },
-];
-
-/// Which cores a console has, in the order the settings screen lists them.
-/// **Order is default**: the first entry is what runs without a player choice.
-///
-/// There is one core per console today (the custom FC core was removed on
-/// purpose), but the table is kept as a list so adding a second core later is
-/// a data change, not a code change. That was the whole point of the old
-/// `CORES_BY_SYSTEM` table, and it still is.
-pub const CORES_BY_SYSTEM: &[(SystemId, &[CoreId])] = &[
-    (SystemId::Nes, &[CoreId::Mesen]),
-    (SystemId::Gba, &[CoreId::Mgba]),
-    (SystemId::Gb, &[CoreId::Mgba]),
-];
-
-/// The player's core pick per console. `None` means "use the default".
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct CoreSelection {
-    nes: Option<CoreId>,
-    gba: Option<CoreId>,
-    gb: Option<CoreId>,
+/// Every core that can run `system`, in manifest order.
+pub fn cores_for_system(cores: &[CoreSpec], system: SystemId) -> Vec<&CoreSpec> {
+    cores.iter().filter(|core| core.system == system).collect()
 }
 
-impl CoreSelection {
-    pub fn get(&self, system: SystemId) -> Option<CoreId> {
-        match system {
-            SystemId::Nes => self.nes,
-            SystemId::Gba => self.gba,
-            SystemId::Gb => self.gb,
+/// The core to run `system`: the player's saved `key` when it names a core for
+/// that console, otherwise the first one declared. `None` when the list has no
+/// core for the console.
+pub fn choose_core<'a>(
+    cores: &'a [CoreSpec],
+    system: SystemId,
+    key: Option<&str>,
+) -> Option<&'a CoreSpec> {
+    if let Some(key) = key {
+        if let Some(choice) = cores
+            .iter()
+            .find(|core| core.system == system && core.key == key)
+        {
+            return Some(choice);
         }
     }
-
-    pub fn set(&mut self, system: SystemId, core: Option<CoreId>) {
-        match system {
-            SystemId::Nes => self.nes = core,
-            SystemId::Gba => self.gba = core,
-            SystemId::Gb => self.gb = core,
-        }
-    }
-}
-
-/// The `(core, console)` entry for this pair, if the registry has one.
-fn core(system: SystemId, id: CoreId) -> Option<&'static CoreChoice> {
-    CORES.iter().find(|c| c.system == system && c.id == id)
-}
-
-/// The cores that can run a console, in listing order. A pair the shared table
-/// lists but this file has no entry for is dropped rather than offered and
-/// then failed.
-pub fn cores_for(system: SystemId) -> Vec<&'static CoreChoice> {
-    CORES_BY_SYSTEM
-        .iter()
-        .find(|(s, _)| *s == system)
-        .map(|(_, ids)| ids.iter().filter_map(|id| core(system, *id)).collect())
-        .unwrap_or_default()
-}
-
-/// The core to run a game on. The player's pick wins; without one, or with an
-/// id that does not target the console, the default is used. Never panics:
-/// every supported console has at least one core.
-pub fn choose_core(path: &str, selection: &CoreSelection) -> &'static CoreChoice {
-    let system = system_for_path(path);
-    let available = cores_for(system);
-    selection
-        .get(system)
-        .and_then(|wanted| available.iter().copied().find(|c| c.id == wanted))
-        .unwrap_or_else(|| {
-            *available
-                .first()
-                .expect("every supported console has at least one core")
-        })
-}
-
-/// Whether two choices need different machines. Two cores differ when they are
-/// different modules, or when the same module renders a different console (mGBA
-/// on a GBA versus a Game Boy — different sample rate, and the previous machine
-/// cannot become the other).
-pub fn same_core(a: Option<&CoreChoice>, b: &CoreChoice) -> bool {
-    a.is_some_and(|a| a.id == b.id && a.system == b.system)
+    cores.iter().find(|core| core.system == system)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn every_supported_console_has_a_core() {
-        for system in crate::SYSTEMS {
-            assert!(!cores_for(*system).is_empty(), "{system:?} has no core");
+    fn spec(key: &str, system: SystemId, sample_rate: u32) -> CoreSpec {
+        CoreSpec {
+            key: key.to_string(),
+            name: key.to_string(),
+            system,
+            module: PathBuf::from(format!("{key}_libretro.dylib")),
+            sample_rate,
+            frame_seconds: 1.0 / 60.0,
         }
     }
 
-    #[test]
-    fn a_nes_game_defaults_to_mesen() {
-        let choice = choose_core("mario.nes", &CoreSelection::default());
-        assert_eq!(choice.id, CoreId::Mesen);
-        assert_eq!(choice.system, SystemId::Nes);
+    /// The shapes the built-in manifest actually has: Mesen + two mGBA rows.
+    fn builtin() -> Vec<CoreSpec> {
+        vec![
+            spec("mesen", SystemId::Nes, 48_000),
+            spec("mgba", SystemId::Gba, 65_536),
+            spec("mgba", SystemId::Gb, 131_072),
+        ]
     }
 
     #[test]
-    fn a_gba_game_defaults_to_mgba_at_the_gba_rate() {
-        let choice = choose_core("pokemon.gba", &CoreSelection::default());
-        assert_eq!(choice.id, CoreId::Mgba);
-        assert_eq!(choice.sample_rate, 65_536);
+    fn the_first_core_for_a_console_is_the_default() {
+        let cores = builtin();
+        assert_eq!(
+            choose_core(&cores, SystemId::Nes, None).unwrap().key,
+            "mesen"
+        );
+        assert_eq!(
+            choose_core(&cores, SystemId::Gba, None)
+                .unwrap()
+                .sample_rate,
+            65_536
+        );
     }
 
     #[test]
-    fn a_game_boy_defaults_to_mgba_at_the_gb_rate() {
-        let choice = choose_core("tetris.gb", &CoreSelection::default());
-        assert_eq!(choice.id, CoreId::Mgba);
-        assert_eq!(choice.sample_rate, 131_072);
-        // Same module, different machine: same_core is false across systems.
-        let gba = choose_core("pokemon.gba", &CoreSelection::default());
-        assert!(!same_core(Some(gba), choice));
-        assert!(same_core(Some(gba), gba));
+    fn a_saved_key_picks_that_core() {
+        let mut cores = builtin();
+        cores.push(spec("nestopia", SystemId::Nes, 48_000));
+        assert_eq!(
+            choose_core(&cores, SystemId::Nes, Some("nestopia"))
+                .unwrap()
+                .key,
+            "nestopia"
+        );
     }
 
     #[test]
-    fn a_registry_choice_resolves_to_a_spec_with_the_module() {
-        let choice = choose_core("mario.nes", &CoreSelection::default());
-        let spec = choice.with_module("/dist/mesen_libretro.dylib");
-        assert_eq!(spec.key, "mesen");
-        assert_eq!(spec.name, "Mesen");
-        assert_eq!(spec.system, SystemId::Nes);
-        assert_eq!(spec.module, PathBuf::from("/dist/mesen_libretro.dylib"));
-        assert_eq!(spec.sample_rate, 48_000);
+    fn the_same_key_can_target_two_consoles() {
+        let cores = builtin();
+        assert_eq!(
+            choose_core(&cores, SystemId::Gba, Some("mgba"))
+                .unwrap()
+                .sample_rate,
+            65_536
+        );
+        assert_eq!(
+            choose_core(&cores, SystemId::Gb, Some("mgba"))
+                .unwrap()
+                .sample_rate,
+            131_072
+        );
+    }
+
+    #[test]
+    fn a_key_for_the_wrong_console_falls_back_to_the_default() {
+        let cores = builtin();
+        // mGBA never targets NES; a stale pick must not fail the launch.
+        assert_eq!(
+            choose_core(&cores, SystemId::Nes, Some("mgba"))
+                .unwrap()
+                .key,
+            "mesen"
+        );
+    }
+
+    #[test]
+    fn no_core_for_a_console_is_none() {
+        assert!(choose_core(&[], SystemId::Nes, None).is_none());
+    }
+
+    #[test]
+    fn cores_for_system_keeps_manifest_order() {
+        let mut cores = builtin();
+        cores.push(spec("nestopia", SystemId::Nes, 48_000));
+        let nes: Vec<&str> = cores_for_system(&cores, SystemId::Nes)
+            .iter()
+            .map(|core| core.key.as_str())
+            .collect();
+        assert_eq!(nes, ["mesen", "nestopia"]);
     }
 
     #[test]
@@ -311,15 +205,6 @@ mod tests {
     #[test]
     fn a_key_is_not_mistaken_for_a_module() {
         assert!(!CoreSpec::looks_like_module(Path::new("mesen")));
-    }
-
-    #[test]
-    fn a_saved_selection_for_the_wrong_console_is_ignored() {
-        let mut selection = CoreSelection::default();
-        // mGBA targets GBA/GB, never NES; a saved mismatch must not crash.
-        selection.set(SystemId::Nes, Some(CoreId::Mgba));
-        let choice = choose_core("mario.nes", &selection);
-        assert_eq!(choice.system, SystemId::Nes);
-        assert_eq!(choice.id, CoreId::Mesen);
+        assert!(CoreSpec::looks_like_module(Path::new("x.dylib")));
     }
 }

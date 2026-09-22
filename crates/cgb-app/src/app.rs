@@ -25,8 +25,8 @@ use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 use winit::window::{Window, WindowId};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
-use cgb_library::{load_custom_cores, scan_dir, CustomCore, Library, Paths, Settings};
-use cgb_systems::{choose_core, cores_for, system_for_path, CoreSpec, SystemId};
+use cgb_library::{load_cores, scan_dir, Library, Paths, Settings};
+use cgb_systems::{choose_core, system_for_path, CoreSpec};
 use cgb_ui::{Action, Actions, GameRow, Section, Ui, ViewModel};
 
 use crate::cli::{Args, CoreOverride};
@@ -72,9 +72,9 @@ struct App {
     /// `--core` override: a core key or a module path, applied to every game
     /// this run starts.
     core_override: Option<CoreOverride>,
-    /// Custom cores declared in `cores/custom/cores.json`, merged with the
-    /// registry when resolving a key.
-    custom_cores: Vec<CustomCore>,
+    /// Every declared core: the built-in `cores.json` plus
+    /// `cores/custom/cores.json`, in that order.
+    cores: Vec<CoreSpec>,
     /// Keyboard modifiers, so save-state hotkeys can tell save from load.
     modifiers: ModifiersState,
 
@@ -87,7 +87,7 @@ impl App {
         let _ = paths.ensure();
         let settings = Settings::load(&paths.settings_json);
         let library = Library::open(&paths.library_db).ok();
-        let custom_cores = load_manifest(&paths);
+        let cores = load_core_manifests(&paths);
 
         let actions = Actions::default();
         let theme = default_theme(Mode::Dark);
@@ -119,7 +119,7 @@ impl App {
             session: None,
             pending_rom: args.rom,
             core_override: args.core,
-            custom_cores,
+            cores,
             modifiers: ModifiersState::empty(),
             last_frame: Instant::now(),
         };
@@ -381,44 +381,27 @@ impl App {
         self.dirty = true;
     }
 
-    /// Every core that can run `system`: the registry first (its order is the
-    /// default order), then custom cores from the manifest.
-    fn available_cores(&self, system: SystemId) -> Vec<CoreSpec> {
-        let mut cores: Vec<CoreSpec> = cores_for(system)
-            .into_iter()
-            .map(|choice| choice.with_module(choice.dylib))
-            .collect();
-        cores.extend(
-            self.custom_cores
-                .iter()
-                .filter(|core| core.system == system)
-                .map(CustomCore::spec),
-        );
-        cores
-    }
-
     /// Resolve which core runs this ROM. `--core` wins over the saved pick,
-    /// which wins over the console default. A key is looked up in the registry
-    /// **and** the custom manifest; a `--core <path>` module is used as given.
+    /// which wins over the manifest's first core for the console. A key is
+    /// looked up in the merged manifests; a `--core <path>` module is used as
+    /// given.
     fn resolve_core(&self, rom_path: &Path) -> Result<CoreSpec, String> {
         let path = rom_path.to_string_lossy();
         let system = system_for_path(&path);
-        match &self.core_override {
-            Some(CoreOverride::Key(key)) => self
-                .available_cores(system)
-                .into_iter()
-                .find(|spec| spec.key == *key)
-                .map(|mut spec| {
-                    spec.module = self.find_module(&spec.module);
-                    spec
-                })
-                .ok_or_else(|| format!("没有核心 `{key}` 支持 {}", system.short())),
-            Some(CoreOverride::Module(module)) => Ok(CoreSpec::custom(module.clone(), system)),
-            None => {
-                let choice = choose_core(&path, &self.settings.core_selection());
-                Ok(choice.with_module(self.find_module(Path::new(choice.dylib))))
+        let spec = match &self.core_override {
+            Some(CoreOverride::Key(key)) => choose_core(&self.cores, system, Some(key))
+                .ok_or_else(|| {
+                    format!("没有核心 `{key}` 支持 {}（见 cores.json）", system.short())
+                })?,
+            Some(CoreOverride::Module(module)) => {
+                return Ok(CoreSpec::custom(module.clone(), system));
             }
-        }
+            None => choose_core(&self.cores, system, self.settings.core_key(system))
+                .ok_or_else(|| format!("{} 没有可用核心（见 cores.json）", system.short()))?,
+        };
+        let mut spec = spec.clone();
+        spec.module = self.find_module(&spec.module);
+        Ok(spec)
     }
 
     /// Locate a module: an absolute or existing path is used as given; a bare
@@ -683,18 +666,41 @@ fn wheel_pixels(delta: MouseScrollDelta, scale: f32) -> f32 {
     }
 }
 
-/// The custom-core manifest: the packaged `cores/cores.json`, else the dev
-/// checkout's `cores/custom/cores.json`. Missing is not an error.
-fn load_manifest(paths: &Paths) -> Vec<CustomCore> {
-    let packaged = paths.cores.join("cores.json");
-    if packaged.is_file() {
-        return load_custom_cores(&packaged);
+/// Load every core manifest: the built-in `cores.json`, then the custom one.
+/// A built-in `(system, key)` wins a collision, so a custom core cannot
+/// silently shadow Mesen/mGBA. Missing files are not an error.
+fn load_core_manifests(paths: &Paths) -> Vec<CoreSpec> {
+    let mut cores = load_first(&[
+        paths.cores.join("cores.json"),
+        PathBuf::from("cores/cores.json"),
+    ]);
+    for core in load_first(&[
+        paths.cores.join("custom").join("cores.json"),
+        PathBuf::from("cores/custom/cores.json"),
+    ]) {
+        if cores
+            .iter()
+            .any(|c| c.system == core.system && c.key == core.key)
+        {
+            eprintln!(
+                "cgb: 自定义核心 {} ({}) 与内置 key 冲突，已跳过",
+                core.key,
+                core.system.short()
+            );
+            continue;
+        }
+        cores.push(core);
     }
-    let dev = Path::new("cores/custom/cores.json");
-    if dev.is_file() {
-        return load_custom_cores(dev);
-    }
-    Vec::new()
+    cores
+}
+
+/// The first candidate path that exists, loaded; empty when none do.
+fn load_first(candidates: &[PathBuf]) -> Vec<CoreSpec> {
+    candidates
+        .iter()
+        .find(|path| path.is_file())
+        .map(|path| load_cores(path))
+        .unwrap_or_default()
 }
 
 fn pointer_button(button: MouseButton) -> PointerButton {
@@ -787,7 +793,7 @@ mod tests {
     }
 
     #[test]
-    fn the_manifest_is_read_from_the_packaged_cores_dir() {
+    fn the_builtin_manifest_is_read_from_the_packaged_cores_dir() {
         let paths = temp_paths("manifest");
         std::fs::write(
             paths.cores.join("cores.json"),
@@ -795,9 +801,10 @@ mod tests {
         )
         .expect("write manifest");
 
-        let cores = load_manifest(&paths);
-        assert_eq!(cores.len(), 1);
-        assert_eq!(cores[0].key, "x");
+        // The custom manifest may or may not be reachable from the test cwd,
+        // so assert on the built-in entry rather than the total count.
+        let cores = load_core_manifests(&paths);
+        assert!(cores.iter().any(|core| core.key == "x"));
         let _ = std::fs::remove_dir_all(&paths.root);
     }
 }

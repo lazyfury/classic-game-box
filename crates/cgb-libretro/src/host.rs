@@ -124,10 +124,23 @@ impl HostShared {
         let format = self.pixel_format.load(Ordering::Relaxed);
         let w = width as usize;
         let h = height as usize;
+        // Bytes per source pixel: 32-bit XRGB8888, 16-bit RGB565/0RGB1555.
+        // The row slice must use this, not a hardcoded 4 — mGBA hands over
+        // RGB565 at pitch 512 for a 240-wide frame, where `w * 4` overruns.
+        let bpp = match format {
+            RETRO_PIXEL_FORMAT_XRGB8888 => 4,
+            _ => 2,
+        };
+        // A row must hold the pixels we are about to read. Refuse rather than
+        // panic: this runs inside an `extern "C"` callback, where a panic
+        // aborts the process.
+        if pitch < w * bpp {
+            return;
+        }
         let bytes = std::slice::from_raw_parts(data as *const u8, pitch * h);
         let mut rgba = vec![0u8; w * h * 4];
         for y in 0..h {
-            let row = &bytes[y * pitch..y * pitch + w * 4];
+            let row = &bytes[y * pitch..y * pitch + w * bpp];
             for x in 0..w {
                 let px = &mut rgba[(y * w + x) * 4..(y * w + x) * 4 + 4];
                 match format {
@@ -187,8 +200,17 @@ impl HostShared {
                     return false;
                 }
                 let format = *(data as *const c_uint);
-                self.pixel_format.store(format, Ordering::Relaxed);
-                format == RETRO_PIXEL_FORMAT_XRGB8888
+                // Accept what `on_video` can convert. Only record the format
+                // when accepted: returning false tells the core to keep
+                // 0RGB1555, and recording RGB565 anyway would then read its
+                // output with the wrong conversion.
+                match format {
+                    RETRO_PIXEL_FORMAT_XRGB8888 | RETRO_PIXEL_FORMAT_RGB565 => {
+                        self.pixel_format.store(format, Ordering::Relaxed);
+                        true
+                    }
+                    _ => false,
+                }
             }
             RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY => {
                 if data.is_null() {

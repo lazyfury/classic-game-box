@@ -9,8 +9,11 @@
 - 分支 `quill-native`。
 - **Q0 完成**：计划、目录结构、Rust 工作区骨架、`cargo check/test/clippy` 全绿。
 - **Q1 完成**：Mesen 原生 arm64 编译 + dlopen + 出画面（`cgb-ui::frame::FrameImage`）+ 键盘。
-- **Q2 进行中**：音频（cpal）+ gilrs 手柄已接线，本次补上 `.srm` 电池存档与即时存档槽
+- **Q2 进行中**：音频（cpal）+ gilrs 手柄已接线，`.srm` 电池存档与即时存档槽
   （`Session::{save,load}_state`，F5/F6 与 F1–F3/Shift+F1–F3），待人眼验收“能玩、能存读”。
+- **核心清单统一**：Mesen / mGBA / 自定义核心都从 `cores.json` 加载
+  （`cores/cores.json` + `cores/custom/cores.json`）；`--core` 选内置或自定义 key。
+  mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
 
 ## 硬规则
 
@@ -63,7 +66,7 @@ cargo run -p cgb-app -- --rom mario.nes --core ./custom.dylib  # 自定义核心
 | 机种 / 核心注册表、joypad id | `crates/cgb-systems/src/` |
 | UI 视图与帧循环 | `crates/cgb-ui/src/`、`crates/cgb-app/src/app.rs` |
 | 原生 core 构建 | `cores/README.md`、`cores/*/build.sh` |
-| 自定义/第三方核心（构建 + 清单 + 启动选核） | `cores/custom/README.md`、`cores/custom/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
+| 核心清单（内置+自定义，启动选核） | `cores/cores.json`、`cores/custom/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
 | 旧 Electron/C++/wasm 栈 | `legacy/`（只读） |
 
 ## 已知缺口（先记录，不擅自补）

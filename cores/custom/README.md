@@ -41,11 +41,14 @@ Two cores ship as examples, both already declared in
    }
    ```
 
-   `key` is what `--core` and the settings picker use; it must be unique.
-   `name` defaults to `key`. `sample_rate` / `fps` are hints only — the real
-   values come from the core's own `av_info` after a game loads (`nestopia`
-   reports 256×240 @ 60.099 fps / 48000 Hz). `system` is `nes`, `gba`, `gb`
-   or `gbc`; an unknown system is skipped with a warning.
+   `key` is what `--core` and the settings picker use; it must be unique
+   **per console** (one module can serve two consoles, like mGBA). `name`
+   defaults to `key`. `sample_rate` / `fps` are hints only — the real values
+   come from the core's own `av_info` after a game loads (`nestopia` reports
+   256×240 @ 60.099 fps / 48000 Hz). `system` is `nes`, `gba`, `gb` or `gbc`;
+   an unknown system is skipped with a warning. A `(system, key)` that the
+   built-in [`../cores.json`](../cores.json) already declares is skipped: a
+   custom core cannot silently shadow Mesen/mGBA.
 
 3. Build and run:
 
@@ -59,7 +62,9 @@ Two cores ship as examples, both already declared in
 
 ## Where the app looks
 
-`cores/custom/cores.json` is read at startup: the packaged
-`<app data>/cores/cores.json` first, then this repo's
-`cores/custom/cores.json` when running from a checkout. `dylib` is a file name
-resolved in the packaged `cores/` dir and `cores/dist/`, or an absolute path.
+Two manifests are merged at startup: the built-in [`../cores.json`](../cores.json)
+(Mesen, mGBA), then this one. Each is read from the packaged data dir first
+(`<app data>/cores/cores.json` and `<app data>/cores/custom/cores.json`), then
+from the checkout (`cores/cores.json`, `cores/custom/cores.json`) when running
+development. `dylib` is a file name resolved in the packaged `cores/` dir and
+`cores/dist/`, or an absolute path.

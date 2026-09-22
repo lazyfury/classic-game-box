@@ -1,0 +1,28 @@
+{
+  "cores": [
+    {
+      "key": "mesen",
+      "name": "Mesen",
+      "system": "nes",
+      "dylib": "mesen_libretro.dylib",
+      "sample_rate": 48000,
+      "fps": 60.0998
+    },
+    {
+      "key": "mgba",
+      "name": "mGBA",
+      "system": "gba",
+      "dylib": "mgba_libretro.dylib",
+      "sample_rate": 65536,
+      "fps": 59.7275
+    },
+    {
+      "key": "mgba",
+      "name": "mGBA",
+      "system": "gb",
+      "dylib": "mgba_libretro.dylib",
+      "sample_rate": 131072,
+      "fps": 59.7275
+    }
+  ]
+}

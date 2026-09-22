@@ -62,11 +62,6 @@ impl Paths {
         std::fs::create_dir_all(&self.cores)?;
         Ok(())
     }
-
-    /// The path of a native core inside the cores directory.
-    pub fn core_dylib(&self, file_name: &str) -> PathBuf {
-        self.cores.join(file_name)
-    }
 }
 
 impl Default for Paths {

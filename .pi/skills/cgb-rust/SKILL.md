@@ -13,15 +13,16 @@ description: Classic Game Box 的 Rust 前端（分支 quill-native）：crates/
 
 ```
 Cargo.toml                    工作区与依赖
-crates/cgb-systems/src/       纯领域：机种、核心注册表、joypad id（无依赖）
+crates/cgb-systems/src/       纯领域：机种、CoreSpec、选核、joypad id（无依赖）
 crates/cgb-libretro/src/      ffi.rs / loader.rs / host.rs（libretro frontend）
 crates/cgb-audio/src/lib.rs   cpal + ringbuf
 crates/cgb-input/src/lib.rs   键盘绑定 + gilrs
 crates/cgb-library/src/       paths / settings / library / saves / cores（自定义核心清单）
 crates/cgb-ui/src/            model.rs / view.rs / frame.rs
 crates/cgb-app/src/           cli.rs（启动参数）/ app.rs（帧循环）/ session.rs（一局游戏）
-cores/*/build.sh              原生核心构建
-cores/custom/                 自定义核心：cores.json + <name>/build.sh（含 legacy 的 custom_nes_core）
+cores/cores.json              内置核心清单（Mesen / mGBA）
+cores/*/build.sh              原生核心构建（mesen / mgba）
+cores/custom/                 自定义核心：cores.json + <name>/build.sh（nestopia、legacy 的 custom_nes_core）
 ```
 
 **禁读**：`target/`、`legacy/`（除非查历史决策）、`cores/sources/`、`cores/dist/`、
@@ -48,7 +49,7 @@ cgb-systems   → 无
 ./scripts/dev.sh                       # fmt --check + clippy -D warnings + test
 cargo check --workspace
 cargo run -p cgb-app -- --rom game.nes
-./scripts/build-cores.sh               # 原生核心（需网络一次）
+./scripts/build-cores.sh               # Mesen + mGBA + 自定义核心（需网络一次；mGBA 需 cmake）
 ```
 
 ## 3. 任务菜谱
@@ -56,20 +57,20 @@ cargo run -p cgb-app -- --rom game.nes
 **加一个 libretro environment 命令**：`cgb-libretro/src/ffi.rs` 加常量 →
 `host.rs::environment` 加分支（返回 true/false 要诚实）→ 有副作用的加测试。
 
-**试一个新核心**（不改代码）：`cargo run -p cgb-app -- --rom game.nes --core ./foo_libretro.dylib`
-或仓库内置的 `--core custom_nes_core`（legacy 自研核心，见 `cores/custom/README.md`）。
-`--core` 也收注册表 key（`mesen`/`mgba`）或 `cores/custom/cores.json` 里声明的 key。
-路径按原样 dlopen；机种由 ROM 扩展名推断，帧率/采样率在 load 后从核心 `av_info` 读。
-解析在 `cgb-app/src/app.rs::{resolve_core, find_module}`；清单解析在
-`cgb-library/src/cores.rs`。
+**核心清单是数据（不改 Rust）**：所有核心（Mesen / mGBA / 自定义）都在
+`cores/cores.json`（内置）与 `cores/custom/cores.json`（自定义）里，
+每行 `key` / `name` / `system` / `dylib`（+ 可选 `sample_rate` / `fps`）；`key` 每机种唯一。
+清单解析在 `cgb-library/src/cores.rs::load_cores`；合并 + 选核在
+`cgb-app/src/app.rs::{load_core_manifests, resolve_core, find_module}` 与
+`cgb-systems::choose_core`。设置持久化按 key 字符串（`Settings::core_key`）。
 
-**正式接一个自定义核心（不改 Rust）**：建 `cores/custom/<name>/build.sh`（产出到
-`cores/dist/`）+ 在 `cores/custom/cores.json` 加一行（key/name/system/dylib）→
-`./scripts/build-cores.sh` 会跑每个 `cores/custom/*/build.sh`。
+**加一个核心**：`cores/custom/<name>/build.sh`（产出到 `cores/dist/`）+ 在
+`cores/custom/cores.json` 加一行 → `./scripts/build-cores.sh` 跑每个脚本。
+要从 `--core <path>` 直接试，连清单都不用。
+若新机种，`cgb-systems/src/system.rs` 的 `SystemId` 加变体 + extensions。UI 不需要改。
 
-**把核心做成内置**（进注册表、设置页可选）：`cores/<name>/build.sh`（platform=osx）→
-`cgb-systems/src/core_choice.rs` 的 `CORES` / `CORES_BY_SYSTEM` 加一行 →
-若新机种，`SystemId` 加变体 + extensions。UI 不需要改。
+**加一个内置核心**：同上，但清单放 `cores/cores.json`、构建脚本放 `cores/<name>/build.sh`
+（`build-cores.sh` 里显式调用）。
 
 **改 UI 视图**：`cgb-ui/src/model.rs` 加字段 → `view.rs` 构建树 →
 `cgb-app` 把状态投影进 `ViewModel`。回调只 push `Action`，由 app drain。
@@ -81,8 +82,12 @@ cargo run -p cgb-app -- --rom game.nes
 
 ## 4. 陷阱
 
-- core 的 `pitch` 是行字节数，不是 `width*4`；按 pitch 逐行拷。
+- core 的 `pitch` 是行字节数；每像素字节数（`bpp`）由像素格式决定，
+  行切片按 `width * bpp`（不是写死 4）。
+- `SET_PIXEL_FORMAT` 只在接受时才记录格式：`XRGB8888` 与 `RGB565` 接受，
+  其余返回 false 并保持 `0RGB1555`（上游 mGBA 输出 RGB565）。
 - `retro_get_system_av_info` **必须在 load 之后读**（mGBA 尤其）。
+- 部分 core（Mesen）声明 `need_fullpath`，会读 `game_info.path` 而非内存指针。
 - XRGB8888 内存里是 `B,G,R,X`，要 swizzle 成 RGBA8。
 - 分辨率/帧率/采样率随 core 变，不能写死（GBA 240×160、GB 160×144）。
 - quill 没有 Image 组件，`cgb-ui` 目前发不出 `DrawImage`（见 `frame.rs`）。

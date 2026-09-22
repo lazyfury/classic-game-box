@@ -114,7 +114,7 @@ legacy/                     # 旧栈整体搬家，只读参考，不参与构�
 | `cgb-app` | bin | winit 事件循环、wgpu surface、帧循环、接线 | winit, draw_backend_wgpu, 全部内部 crate |
 | `cgb-ui` | lib | quill 视图：侧栏、库列表、播放页、设置页、存档 | draw_{core,scene,ui,render,theme,components}, cgb-systems |
 | `cgb-libretro` | lib | libretro frontend：dlopen、回调、ABI 类型 | libloading, cgb-systems |
-| `cgb-systems` | lib | 纯领域：SystemId/CoreId/CoreChoice 注册表、joypad id、AV 表 | 无 |
+| `cgb-systems` | lib | 纯领域：SystemId、CoreSpec、选核、joypad id | 无 |
 | `cgb-audio` | lib | cpal 输出 + 无锁样本队列（int16 stereo） | cpal, ringbuf |
 | `cgb-input` | lib | 键盘绑定 + gilrs → joypad 位掩码 | gilrs, cgb-systems |
 | `cgb-library` | lib | SQLite 库、设置 JSON、存档槽、`.srm` | rusqlite, serde_json |
@@ -144,7 +144,7 @@ dlopen(dylib)
 
 | 命令 | 处理 |
 |---|---|
-| `SET_PIXEL_FORMAT` | 记下格式；只接受 `XRGB8888`（余下拒绝，core 退化） |
+| `SET_PIXEL_FORMAT` | 接受 `XRGB8888` 与 `RGB565`；其余拒绝，core 保持 `0RGB1555` |
 | `GET_SYSTEM_DIRECTORY` / `GET_SAVE_DIRECTORY` | 返回 `<app_data>/system` / `<app_data>/saves` |
 | `SET_INPUT_DESCRIPTORS` | 存起来，供输入绑定 UI |
 | `SET_CONTROLLER_INFO` | 存起来，供设置页列端口 |
@@ -161,6 +161,10 @@ dlopen(dylib)
 - 格式 `XRGB8888`（内存里 little-endian 是 `B,G,R,X`）→ 转成 quill 后端要的 RGBA8：
   每像素 swizzle（`swap R/B`）。256×240 ≈ 61k 像素/帧，CPU 可接受；
   后续可在 `draw_backend_wgpu` 增加纹理格式参数省掉这一步（记在风险里）。
+- 也接受 **`RGB565`**（上游 mGBA 的输出）：每像素 2 字节。每像素字节数（`bpp`）
+  由格式决定，**行切片按 `width * bpp`**，不是写死的 `width * 4`；
+  否则 mGBA（240 宽、pitch 512）会越界。`SET_PIXEL_FORMAT` 只在接受时才记录格式，
+  被拒时保持 `0RGB1555`，否则会按错误的格式解读核心输出。
 - `data == null` 且允许 dupe 时表示重复上一帧。
 - 分辨率/帧率来自 `retro_get_system_av_info`（**mGBA 必须 load 之后读才准**），
   GBA 240×160、GB 160×144，都要动态处理，不能写死。
@@ -206,63 +210,68 @@ dlopen(dylib)
   `make -f Makefile platform=osx` 在 arm64 上编译通过，产出
   `mesen_libretro.dylib`（3.1MB arm64），`nm -gU` 确认导出全部 `retro_*`。
   这是 Q1 的“通”。wasm 版的内存卡带 patch 与异常 flag 原生都不需要。
-- **mGBA：推迟到 Q4。** 上游 `libretro/mgba` 已不再提供 `Makefile.libretro`，
-  改用 CMake（`-DBUILD_LIBRETRO=ON`，需要 cmake）；本机没有 cmake。
-  暂定回用 `EmulatorJS/mgba` fork（它仍带 `Makefile.libretro` + `osx` 分支，
-  且与 `legacy/wasm/mgba/build.sh` 同源），脚本未验证。
-  另：上游 CMake 硬编码 `COLOR_16_BIT;COLOR_5_6_5`（RGB565），等接入 mGBA 时
-  宿主要接受 RGB565（`cgb-libretro` 已会转换，但 `environment` 现在只接受
-  XRGB8888，需要放开）。
+- **mGBA：已构建。** 上游 `libretro/mgba` 现在只有 CMake
+  （`-DBUILD_LIBRETRO=ON`），需要 cmake。产出 240×160 @ 59.73fps / 65536Hz，
+  arm64 + `retro_*` 导出齐全。
+  上游硬编码 `COLOR_16_BIT;COLOR_5_6_5`（**RGB565**），**不再打 patch**：
+  宿主接受并转换 RGB565（见 §5.2 / §5.3）。旧的 `EmulatorJS/mgba` +
+  `Makefile.libretro` 路径已弃用。
 
 `cores/` 的构建脚本把这两个第三方的逻辑从 wasm 移植成原生版：
 
 ```bash
 # cores/mesen/build.sh（已验证）
-git clone --depth 1 https://github.com/libretro/Mesen   →  make -f Libretro/Makefile platform=osx
-# cores/mgba/build.sh（推迟，未验证）
-git clone --depth 1 https://github.com/EmulatorJS/mgba  →  make -f Makefile.libretro platform=osx
+git clone --depth 1 https://github.com/libretro/Mesen → make -f Libretro/Makefile platform=osx
+# cores/mgba/build.sh（已验证）
+git clone --depth 1 https://github.com/libretro/mgba  → cmake -DBUILD_LIBRETRO=ON …
 # 产物 → cores/dist/{mesen,mgba}_libretro.dylib
 ```
 
-需要保留的 patch（与 wasm 版相同理由）：
-- mGBA：去掉 `-DCOLOR_16_BIT`、去掉 `-DHAVE_CRC32`（fork 的 Makefile 路径）。
+需要保留的 patch：
 - Mesen：wasm 版的「内存卡带」patch 与 C++ 异常 flag **原生都不需要**
   （有文件系统、异常默认开）。
-- 两者都要求 Apple Silicon arm64。Mesen 已验证；mGBA 待 Q4 验证。
+- mGBA：不需要 patch（RGB565 由宿主转换）。
+- 都要求 Apple Silicon arm64，均已 `nm -gU` 验证 `retro_*`。`cores/dist/*.dylib`
+  过 `crates/cgb-libretro/tests/cores_run_through_the_host.rs`（合成 ROM）。
 
 > `cores/` 的产物（`cores/dist/`、`cores/sources/`）加入 `.gitignore`，按需构建。
 
-### 6.1 自定义 / 第三方核心（清单驱动）
+### 6.1 cores.json：核心清单（内置 + 自定义）
 
-任何标准 libretro 模块都能跑，不改注册表、不重编 app：
+**所有**核心都是数据，app 启动时合并两份 `cores.json`：
+
+- [`cores/cores.json`](../../cores/cores.json)：内置 Mesen 与 mGBA（×2 机种）。
+- [`cores/custom/cores.json`](../../cores/custom/cores.json)：自定义核心。
+
+条目为 `key` / `name` / `system` / `dylib`（+ 可选 `sample_rate` / `fps`）。`key`
+每机种唯一（同一模块可服务两机种，如 mGBA）；内置 `(system, key)` 冲突时优先，
+自定义不会静默覆盖；设置里记的 key 若清单没有，回退到该机种默认。
+
+**构建流程**：
+- 内置：`cores/mesen/build.sh`、`cores/mgba/build.sh`。
+- 自定义：`cores/custom/<name>/build.sh` 产出到 `cores/dist/` + 在
+  `custom/cores.json` 加一行。
+- `scripts/build-cores.sh` 依次跑 Mesen、mGBA、以及每个 `cores/custom/*/build.sh`
+  （`--skip-mgba` 跳过 mGBA）。详见 [`cores/README.md`](../../cores/README.md)、
+  [`cores/custom/README.md`](../../cores/custom/README.md)。仓库内置范例
+  `nestopia` 与 `custom_nes_core`（后者是 `legacy/packages/fc-*` 的自研核心，
+  clang++ 直接编译，`legacy/` 只读；`fc_*` 私有扩展被忽略）。
+
+**运行**：
 
 ```bash
 cargo run -p cgb-app -- --rom mario.nes --core mesen
 cargo run -p cgb-app -- --rom mario.nes --core nestopia              # 清单里的 key
-cargo run -p cgb-app -- --rom mario.nes --core ./nestopia_libretro.dylib  # 直接指模块
+cargo run -p cgb-app -- --rom mario.nes --core ./x_libretro.dylib    # 直接指模块
 ```
 
-**构建流程**：
-- 每个自定义核心一个 `cores/custom/<name>/build.sh`，产出模块到 `cores/dist/`；
-  `scripts/build-cores.sh` 在内置核心之后逐个执行。
-- 用 `cores/custom/cores.json` 声明（`key` / `name` / `system` / `dylib` +
-  可选 `sample_rate` / `fps`）。加核心 = 数据，不动 Rust。详见
-  [`cores/custom/README.md`](../../cores/custom/README.md)。
-- 仓库内置两个范例：`nestopia`（上游）与 `custom_nes_core`（`legacy/packages/fc-*`
-  里的自研 FC/NES 核心，用 clang++ 直接编译，不依赖 cmake，`legacy/` 只读；
-  前端只用标准 libretro ABI，`fc_*` 私有扩展被忽略）。
-
-**运行**：
-- app 启动时读清单：打包 `<app data>/cores/cores.json`，否则 dev
-  `cores/custom/cores.json`（`cgb-library::load_custom_cores`）。
-- `--core <key>` 在「注册表 + 清单」里按 key 查；`--core <path>` 按原样 dlopen。
-  机种由 ROM 扩展名推断，帧率/采样率在 load 后从核心自己的 `av_info` 读。
-- 类型分层：静态注册表仍是 `CoreChoice`（`'static` + `Copy`），可运行的是
-  owned `CoreSpec`（带 `key`）；`App::find_module` 负责 dlopen 前的路径解析
+- `--core <key>` 在合并后的清单里按 `(机种, key)` 查；`--core <path>` 按原样 dlopen。
+  机种由 ROM 扩展名推断，帧率/采样率在 load 后从核心 `av_info` 读。
+- 类型：`cgb-systems::CoreSpec`（owned，带 `key`）+ 纯函数 `choose_core`；
+  清单解析在 `cgb-library::load_cores`；`App::find_module` 解析 dlopen 路径
   （绝对/存在的路径→原样，否则打包 `cores/` → dev `cores/dist/`）。
-  `App::available_cores(system)` = 注册表 + 清单，是 Q3 设置页选核列表的数据源。
-- 今天只有 `--core` 能选到自定义核心（按 key 或路径）；设置页持久化目前仍是
-  `CoreSelection`（按 `CoreId`），Q3 要把每机种的选核改成存任意 key 字符串。
+  `cores_for_system` 是 Q3 设置页选核列表的数据源。
+- 设置持久化按**任意 key 字符串**（`Settings::core_key`），不再是枚举。
 
 ---
 
@@ -308,7 +317,7 @@ ControlFlow::WaitUntil(now + frame_budget)
 | **Q1** | Mesen spike：原生 arm64 编译 + dlopen + 出画面 + 键盘 | ✅ 编译/ABI/dlopen/键盘齐，画面经 `frame::FrameImage` 上屏，待人眼确认 |
 | **Q2** | 音频（cpal）+ gilrs 手柄 + 存档槽 + `.srm` | 🚧 音频/手柄/`.srm`/即时存取已接线，待人眼试听与存读验收 |
 | **Q3** | `cgb-ui` 最小闭环 + 库（SQLite）+ 打开目录对话框 | 从库列表选游戏进入游玩 |
-| **Q4** | mGBA 接入（原生）+ 机种路由 + 动态分辨率/帧率/输入描述 | `.gba/.gb/.gbc` 可玩（**已推迟**） |
+| **Q4** | mGBA 接入（原生）+ 机种路由 + 动态分辨率/帧率/输入描述 | 🚧 上游 mGBA 已构建并过 host（RGB565）；`.gba` 整机与输入描述待做 |
 | **Q5** | 打包 `.app`、无头自检、发版脚本 | 可发布，`--selfcheck` 绿 |
 
 ---
@@ -317,7 +326,7 @@ ControlFlow::WaitUntil(now + frame_budget)
 
 1. **Mesen 1.x 的 arm64 原生编译**——最不确定，Q1 先 spike；不行则换 Mesen2 或只留 mGBA。
 2. **quill 无 TextInput / 无音频 / 无手柄**——音频手柄自建（本计划已定），TextInput 后置。
-3. **每帧 XRGB8888→RGBA swizzle** 有 CPU 成本；量大再给后端加纹理格式。
+3. **每帧 XRGB8888/RGB565→RGBA 转换** 有 CPU 成本；量大再给后端加纹理格式。
 3b. **quill 没有 Image 组件**——Q1 已用 `cgb-ui::frame::FrameImage`（`Component` +
    `foreground` 装饰器）绕过；上游补 `Widget::Image` / `draw_components::Image` 后，
    这个本地组件可以撤掉。

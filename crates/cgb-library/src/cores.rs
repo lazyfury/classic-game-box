@@ -1,9 +1,8 @@
-//! The custom-core manifest: libretro modules that live beside the built-ins.
+//! Core manifests: which libretro modules exist, as data.
 //!
-//! Adding a third-party core is data, not a rebuild — a JSON file and a module
-//! on disk. The manifest is the source of truth the app reads at startup, so a
-//! custom core shows up for `--core <key>` (and, later, the settings picker)
-//! with no Rust change.
+//! The built-in cores (Mesen, mGBA) and any third-party cores you add all come
+//! from `cores.json` files — one loader, no Rust change to add or move a core.
+//! See `cores/README.md` and `cores/custom/README.md`.
 //!
 //! ```json
 //! {
@@ -23,38 +22,13 @@
 //! `name` defaults to `key`; `sample_rate` and `fps` are hints only — the real
 //! values come from the core's own `av_info` after a game loads. The `dylib`
 //! is a file name the app searches for (packaged `cores/`, then `cores/dist/`)
-//! or a path.
+//! or a path. `key` must be unique **per console**: one module can serve two
+//! consoles (mGBA appears once for GBA and once for GB).
 
 use std::path::{Path, PathBuf};
 
 use cgb_systems::{CoreSpec, SystemId};
 use serde::Deserialize;
-
-/// One entry of the custom-core manifest, resolved to a [`CoreSpec`].
-#[derive(Clone, Debug, PartialEq)]
-pub struct CustomCore {
-    pub key: String,
-    pub name: String,
-    pub system: SystemId,
-    pub dylib: String,
-    pub sample_rate: u32,
-    pub frame_seconds: f64,
-}
-
-impl CustomCore {
-    /// The runnable spec. `module` keeps the declared file name; the app
-    /// resolves it against the cores directories.
-    pub fn spec(&self) -> CoreSpec {
-        CoreSpec {
-            key: self.key.clone(),
-            name: self.name.clone(),
-            system: self.system,
-            module: PathBuf::from(&self.dylib),
-            sample_rate: self.sample_rate,
-            frame_seconds: self.frame_seconds,
-        }
-    }
-}
 
 #[derive(Debug, Deserialize)]
 struct Manifest {
@@ -74,21 +48,22 @@ struct Entry {
     fps: f64,
 }
 
-/// Read a manifest, or `[]` when it is missing. A malformed file is reported
-/// and treated as empty rather than crashing startup.
-pub fn load_custom_cores(path: &Path) -> Vec<CustomCore> {
+/// Read a manifest into specs, or `[]` when it is missing. A malformed file is
+/// reported and treated as empty rather than crashing startup. Entries are
+/// deduped by `(system, key)`, first wins.
+pub fn load_cores(path: &Path) -> Vec<CoreSpec> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return Vec::new();
     };
     let manifest: Manifest = match serde_json::from_str(&text) {
         Ok(manifest) => manifest,
         Err(error) => {
-            eprintln!("cgb: 自定义核心清单 {} 解析失败：{error}", path.display());
+            eprintln!("cgb: 核心清单 {} 解析失败：{error}", path.display());
             return Vec::new();
         }
     };
 
-    let mut out: Vec<CustomCore> = Vec::new();
+    let mut out: Vec<CoreSpec> = Vec::new();
     for entry in manifest.cores {
         let Some(system) = system_of(&entry.system) else {
             eprintln!(
@@ -99,16 +74,25 @@ pub fn load_custom_cores(path: &Path) -> Vec<CustomCore> {
             );
             continue;
         };
-        if out.iter().any(|core| core.key == entry.key) {
-            eprintln!("cgb: 清单 {} 有重复的 key：{}", path.display(), entry.key);
+        if out
+            .iter()
+            .any(|core| core.system == system && core.key == entry.key)
+        {
+            eprintln!(
+                "cgb: 清单 {} 有重复的 key：{} ({})",
+                path.display(),
+                entry.key,
+                system.short()
+            );
             continue;
         }
         let fps = if entry.fps > 0.0 { entry.fps } else { 60.0 };
-        out.push(CustomCore {
-            name: entry.name.unwrap_or_else(|| entry.key.clone()),
+        let name = entry.name.unwrap_or_else(|| entry.key.clone());
+        out.push(CoreSpec {
             key: entry.key,
+            name,
             system,
-            dylib: entry.dylib,
+            module: PathBuf::from(entry.dylib),
             sample_rate: entry.sample_rate,
             frame_seconds: 1.0 / fps,
         });
@@ -144,20 +128,20 @@ mod tests {
 
     #[test]
     fn a_missing_manifest_is_empty() {
-        assert!(load_custom_cores(Path::new("/no/such/cores.json")).is_empty());
+        assert!(load_cores(Path::new("/no/such/cores.json")).is_empty());
     }
 
     #[test]
-    fn a_manifest_entry_becomes_a_spec() {
+    fn an_entry_becomes_a_spec() {
         let path = write_manifest(
             r#"{ "cores": [
                 { "key": "nestopia", "name": "Nestopia", "system": "nes",
                   "dylib": "nestopia_libretro.dylib", "sample_rate": 48000, "fps": 60.098 }
             ] }"#,
         );
-        let cores = load_custom_cores(&path);
+        let cores = load_cores(&path);
         assert_eq!(cores.len(), 1);
-        let spec = cores[0].spec();
+        let spec = &cores[0];
         assert_eq!(spec.key, "nestopia");
         assert_eq!(spec.name, "Nestopia");
         assert_eq!(spec.system, SystemId::Nes);
@@ -176,7 +160,7 @@ mod tests {
                 { "key": "bare", "system": "gb", "dylib": "bare.dylib" }
             ] }"#,
         );
-        let cores = load_custom_cores(&path);
+        let cores = load_cores(&path);
         assert_eq!(cores.len(), 1);
         assert_eq!(cores[0].key, "bare");
         assert_eq!(cores[0].name, "bare");
@@ -186,14 +170,31 @@ mod tests {
     }
 
     #[test]
-    fn a_duplicate_key_is_dropped() {
+    fn one_key_may_serve_two_consoles() {
+        let path = write_manifest(
+            r#"{ "cores": [
+                { "key": "mgba", "system": "gba", "dylib": "mgba_libretro.dylib" },
+                { "key": "mgba", "system": "gb", "dylib": "mgba_libretro.dylib" }
+            ] }"#,
+        );
+        let cores = load_cores(&path);
+        assert_eq!(cores.len(), 2);
+        assert_eq!(cores[0].system, SystemId::Gba);
+        assert_eq!(cores[1].system, SystemId::Gb);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_duplicate_key_within_one_console_is_dropped() {
         let path = write_manifest(
             r#"{ "cores": [
                 { "key": "dup", "system": "nes", "dylib": "a.dylib" },
-                { "key": "dup", "system": "gba", "dylib": "b.dylib" }
+                { "key": "dup", "system": "nes", "dylib": "b.dylib" }
             ] }"#,
         );
-        assert_eq!(load_custom_cores(&path).len(), 1);
+        let cores = load_cores(&path);
+        assert_eq!(cores.len(), 1);
+        assert_eq!(cores[0].module, PathBuf::from("a.dylib"));
         let _ = std::fs::remove_file(&path);
     }
 }
