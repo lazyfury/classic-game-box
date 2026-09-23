@@ -9,11 +9,13 @@
 //! `docs/ui-guide.md` for the frame loop this wraps.
 
 mod frame;
+mod icons;
 mod model;
 mod view;
 
-pub use frame::{centered_fit, contain_fit, FrameImage};
-pub use model::{Action, BindingRow, CoreRow, FrameHandle, GameRow, Section, ViewModel};
+pub use frame::{centered_fit, contain_fit, cover_fit, FrameImage};
+pub use icons::{Icon, IconName};
+pub use model::{Action, BindingRow, CoreRow, FrameHandle, GameRow, Section, SortKey, ViewModel};
 pub use view::Actions;
 
 use std::rc::Rc;

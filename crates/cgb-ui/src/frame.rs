@@ -50,6 +50,23 @@ pub fn centered_fit(frame: (u32, u32), area: Rect) -> Rect {
     Rect::from_min_size(origin, Size::new(width, height))
 }
 
+/// The rectangle that makes `frame` *fill* `area`, cropping the overflow (the
+/// CSS `object-fit: cover`). The destination is at least as large as `area` on
+/// both axes, centred; the caller clips it to `area`.
+pub fn cover_fit(frame: (u32, u32), area: Rect) -> Rect {
+    let (fw, fh) = frame;
+    if fw == 0 || fh == 0 || area.size.width <= 0.0 || area.size.height <= 0.0 {
+        return Rect::from_min_size(area.origin, Size::ZERO);
+    }
+    let scale = (area.size.width / fw as f32).max(area.size.height / fh as f32);
+    let size = Size::new(fw as f32 * scale, fh as f32 * scale);
+    let origin = Vec2::new(
+        area.left() + (area.size.width - size.width) * 0.5,
+        area.top() + (area.size.height - size.height) * 0.5,
+    );
+    Rect::from_min_size(origin, size)
+}
+
 /// A leaf component that paints a registered framebuffer texture.
 ///
 /// Give it the texture handle from [`FrameHandle`](crate::FrameHandle) and let
@@ -127,5 +144,16 @@ mod tests {
         let fitted = centered_fit((240, 160), area);
         assert_eq!(fitted.size, Size::new(800.0, 533.0));
         assert_eq!(fitted.origin, Vec2::new(100.0, 183.5));
+    }
+
+    #[test]
+    fn cover_fit_fills_the_area_and_crops_the_overflow() {
+        let area = Rect::from_min_size(Vec2::new(10.0, 20.0), Size::new(100.0, 100.0));
+        // A 4:3 frame in a square area: the height fills, the width overflows.
+        let fitted = cover_fit((256, 240), area);
+        assert!((fitted.size.height - 100.0).abs() < 0.001);
+        assert!(fitted.size.width > 100.0);
+        assert!(fitted.origin.x < area.left(), "cropped on both sides");
+        assert!((fitted.origin.y - area.top()).abs() < 0.001);
     }
 }

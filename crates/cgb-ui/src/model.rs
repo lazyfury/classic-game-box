@@ -28,9 +28,90 @@ impl Section {
 /// One row in the library list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GameRow {
-    pub title: String,
+    /// Database id; screenshots reference it.
+    pub id: i64,
+    /// The display name (editable; from the file stem until renamed).
+    pub name: String,
+    /// The actual file name (`mario.nes`).
+    pub file_name: String,
     pub system: SystemId,
     pub path: String,
+    pub size: u64,
+    /// Whether the game is pinned to the top of the library.
+    pub pinned: bool,
+    /// How many times the game has been run.
+    pub play_count: i64,
+    /// Total time played, in seconds.
+    pub play_seconds: i64,
+    /// When it was last run, in epoch milliseconds (0 = never).
+    pub last_played_at: i64,
+    /// The player's labels, alphabetical and without duplicates.
+    pub tags: Vec<String>,
+    /// The game's cover texture, when it has a screenshot set as cover. The
+    /// app registers it; the view draws it behind the card controls.
+    pub cover: Option<FrameHandle>,
+}
+
+/// How the library is ordered. Pinned games always come first, whatever the
+/// key; this only decides the order within the pinned and unpinned groups.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SortKey {
+    Name,
+    Size,
+    LastPlayed,
+    Playtime,
+    Added,
+}
+
+impl SortKey {
+    /// The sort modes, in the order the library bar lists them.
+    pub const ALL: [SortKey; 5] = [
+        SortKey::Name,
+        SortKey::Size,
+        SortKey::LastPlayed,
+        SortKey::Playtime,
+        SortKey::Added,
+    ];
+
+    /// What the sort button says.
+    pub fn label(self) -> &'static str {
+        match self {
+            SortKey::Name => "名称",
+            SortKey::Size => "大小",
+            SortKey::LastPlayed => "最近",
+            SortKey::Playtime => "时长",
+            SortKey::Added => "加入",
+        }
+    }
+
+    /// The stable key stored in settings.
+    pub fn key(self) -> &'static str {
+        match self {
+            SortKey::Name => "name",
+            SortKey::Size => "size",
+            SortKey::LastPlayed => "last_played",
+            SortKey::Playtime => "playtime",
+            SortKey::Added => "added",
+        }
+    }
+
+    /// Parse a stored key; anything unknown (including empty) is the name
+    /// order, so a setting written by an older build still loads.
+    pub fn from_key(key: &str) -> Self {
+        match key {
+            "size" => SortKey::Size,
+            "last_played" => SortKey::LastPlayed,
+            "playtime" => SortKey::Playtime,
+            "added" => SortKey::Added,
+            _ => SortKey::Name,
+        }
+    }
+
+    /// The direction this key starts in when it becomes active: names read
+    /// A–Z, everything else starts with the largest or most recent first.
+    pub fn default_desc(self) -> bool {
+        !matches!(self, SortKey::Name)
+    }
 }
 
 /// A core the settings page can pick for a console.
@@ -55,7 +136,7 @@ pub struct BindingRow {
 /// The texture is registered in the wgpu backend by the app; the view only
 /// carries the handle. Drawing it is the one thing the current UI stack cannot
 /// do yet — see `frame.rs`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FrameHandle {
     pub texture: TextureId,
     pub width: u32,
@@ -68,6 +149,9 @@ pub struct ViewModel {
     pub section: Section,
     pub games: Vec<GameRow>,
     pub selected: Option<usize>,
+    /// The active library sort key, and whether it is descending.
+    pub sort: SortKey,
+    pub sort_desc: bool,
     pub playing: bool,
     pub paused: bool,
     pub core_name: String,
@@ -87,6 +171,8 @@ impl Default for ViewModel {
             section: Section::Library,
             games: Vec::new(),
             selected: None,
+            sort: SortKey::Name,
+            sort_desc: false,
             playing: false,
             paused: false,
             core_name: String::new(),
@@ -120,4 +206,14 @@ pub enum Action {
     SelectCore(usize),
     /// Stop scanning the library folder at this `library_dirs` index.
     RemoveLibraryDir(usize),
+    /// Pin or unpin the game at this library index.
+    TogglePin(usize),
+    /// Delete the game at this library index, file and all.
+    DeleteGame(usize),
+    /// Sort the library by this key.
+    Sort(SortKey),
+    /// Flip the library between ascending and descending.
+    ToggleSortOrder,
+    /// Take a screenshot of the running game and add it to the library.
+    Screenshot,
 }

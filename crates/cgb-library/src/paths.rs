@@ -17,6 +17,8 @@ pub struct Paths {
     pub system: PathBuf,
     /// Save states and `.srm` battery saves.
     pub saves: PathBuf,
+    /// Screenshot PNGs (one directory per library; a sibling of the database).
+    pub screenshots: PathBuf,
     /// A built-in ROM folder that is always scanned (handy until the UI has an
     /// "add folder" control). Default: `<root>/roms`.
     pub roms: PathBuf,
@@ -44,6 +46,7 @@ impl Paths {
         Self {
             system: root.join("system"),
             saves: root.join("saves"),
+            screenshots: root.join("screenshots"),
             roms: root.join("roms"),
             library_db: root.join("library.db"),
             settings_json: root.join("settings.json"),
@@ -57,6 +60,7 @@ impl Paths {
         std::fs::create_dir_all(&self.root)?;
         std::fs::create_dir_all(&self.system)?;
         std::fs::create_dir_all(&self.saves)?;
+        std::fs::create_dir_all(&self.screenshots)?;
         std::fs::create_dir_all(&self.roms)?;
         // Holds the shipped cores and, beside them, `cores.json`.
         std::fs::create_dir_all(&self.cores)?;

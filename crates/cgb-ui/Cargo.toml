@@ -13,3 +13,4 @@ draw_scene.workspace = true
 draw_theme.workspace = true
 draw_ui.workspace = true
 draw_components.workspace = true
+draw_svg.workspace = true

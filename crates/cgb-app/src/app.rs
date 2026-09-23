@@ -7,6 +7,7 @@
 //! `Wait` and does no work. See `docs/architecture/quill-native-migration.md`
 //! §8.
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -14,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use draw_backend_wgpu::{wgpu, FontConfig, FontMetrics, FontMode, WgpuBackend};
 use draw_core::{FontWeight, InputEvent, Key, PointerButton, Size, Vec2, ViewportSize};
-use draw_render::{PaintContext, RenderBackend};
+use draw_render::{PaintContext, RenderBackend, TextureId};
 use draw_theme::{default_theme, Mode, Theme};
 use draw_ui::TextMeasurer;
 use winit::application::ApplicationHandler;
@@ -25,15 +26,27 @@ use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 use winit::window::{Window, WindowId};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
-use cgb_library::{collect_games, load_cores, seed_dir, Game, Library, Paths, Settings};
+use cgb_library::{
+    collect_games, decode_png, encode_png, load_cores, seed_dir, DiskGame, Game, Library, Paths,
+    Settings,
+};
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton};
-use cgb_ui::{Action, Actions, BindingRow, CoreRow, GameRow, Ui, ViewModel};
+use cgb_ui::{Action, Actions, BindingRow, CoreRow, FrameHandle, GameRow, SortKey, Ui, ViewModel};
 
 use crate::cli::{Args, CoreOverride};
 use crate::session::Session;
 
 /// One wheel notch scrolls about three text lines.
 const WHEEL_LINE_HEIGHT: f32 = 48.0;
+
+/// Cover textures start above the game framebuffer's id, one per game.
+const COVER_TEXTURE_BASE: u32 = 0x1000;
+
+/// A registered cover texture and the screenshot row it came from.
+struct CoverTexture {
+    cover_id: i64,
+    handle: FrameHandle,
+}
 
 /// Arcade BIOS bundled in the checkout (`assets/roms/<system>/system`). The
 /// core is pointed at the writable `<app data>/system` directory, so its
@@ -69,6 +82,12 @@ struct App {
     paths: Paths,
     settings: Settings,
     library: Option<Library>,
+    /// Every scanned/added game, before the view sort and pin order. Kept so
+    /// sorting and pinning can rebuild the view without touching disk again.
+    game_source: Vec<Game>,
+    /// Registered cover textures, keyed by game id. Reused across refreshes so
+    /// a cover is decoded and uploaded once.
+    cover_textures: HashMap<i64, CoverTexture>,
     input: InputState,
     bindings: KeyboardBindings,
     gamepads: Option<Gamepads>,
@@ -87,6 +106,8 @@ struct App {
     pending_drops: Vec<PathBuf>,
 
     last_frame: Instant,
+    /// When the running game's play time was last flushed to the database.
+    last_play_flush: Instant,
 }
 
 impl App {
@@ -125,6 +146,8 @@ impl App {
             paths,
             settings,
             library,
+            game_source: Vec::new(),
+            cover_textures: HashMap::new(),
             input: InputState::new(),
             bindings: KeyboardBindings::default_bindings(),
             gamepads: match Gamepads::new() {
@@ -141,6 +164,7 @@ impl App {
             modifiers: ModifiersState::empty(),
             pending_drops: Vec::new(),
             last_frame: Instant::now(),
+            last_play_flush: Instant::now(),
         };
         app.refresh_library(rescan);
         app.rebuild_settings_view();
@@ -209,6 +233,10 @@ impl App {
         // The real font metrics can only be installed once the backend exists.
         self.dirty = true;
 
+        // Covers could not be uploaded before the backend existed; do it now.
+        self.refresh_cover_textures();
+        self.rebuild_game_rows();
+
         // A `--rom` on the command line starts eagerly, before the first frame.
         if let Some(pending) = self.pending_rom.take() {
             self.start_path(&pending);
@@ -220,11 +248,12 @@ impl App {
 
     /// Re-read the library folders and rebuild the game rows.
     ///
-    /// With `rescan`, also reconcile the database against disk: rows whose file
-    /// is gone are dropped, so moving or deleting ROMs outside the app stays in
-    /// sync. Without it the scan only upserts, which is enough for a normal
-    /// start.
-    fn refresh_library(&mut self, rescan: bool) {
+    /// The folder is the truth about what exists, so every refresh rescans it
+    /// and reconciles the database: new files are inserted, vanished files are
+    /// dropped, changed files have their facts refreshed. The rows then come
+    /// from the database, which is the model — the name, pin, play statistics,
+    /// screenshots and cover a scan cannot know live there.
+    fn refresh_library(&mut self, _rescan: bool) {
         // Configured folders plus the built-in ROM folder.
         let mut dirs: Vec<PathBuf> = self
             .settings
@@ -236,30 +265,107 @@ impl App {
 
         // Individually added files (dragged in or chosen in the dialog) merge
         // in, and are pruned from the settings once their file is gone.
-        let (games, kept) = collect_games(&dirs, &self.settings.added_roms);
+        let (disk, kept) = collect_games(&dirs, &self.settings.added_roms);
         if kept != self.settings.added_roms {
             self.settings.added_roms = kept;
             let _ = self.settings.save(&self.paths.settings_json);
         }
 
-        if let Some(library) = &self.library {
-            if rescan {
-                let _ = library.sync(&games);
-            } else {
-                for game in &games {
-                    let _ = library.upsert(game);
-                }
+        self.game_source = match &self.library {
+            Some(library) => {
+                let _ = library.sync(&disk);
+                library.games().unwrap_or_default()
+            }
+            // No database: fall back to the scan, with no metadata to show.
+            None => disk.iter().map(Game::from_disk).collect(),
+        };
+        self.refresh_cover_textures();
+        self.rebuild_game_rows();
+    }
+
+    /// Decode and upload a texture for each game whose cover changed, reusing
+    /// the previous upload when it did not. Covers whose game is gone are
+    /// dropped from the cache (their texture stays on the GPU — the backend
+    /// has no remove).
+    fn refresh_cover_textures(&mut self) {
+        let Some(backend) = self.backend.as_mut() else {
+            return;
+        };
+        let Some(library) = &self.library else {
+            return;
+        };
+        let live: HashSet<i64> = self.game_source.iter().map(|game| game.id).collect();
+        self.cover_textures.retain(|id, _| live.contains(id));
+
+        for game in &self.game_source {
+            let Some(cover_id) = game.cover else {
+                self.cover_textures.remove(&game.id);
+                continue;
+            };
+            if self
+                .cover_textures
+                .get(&game.id)
+                .is_some_and(|cover| cover.cover_id == cover_id)
+            {
+                continue;
+            }
+            let Ok(Some(path)) = library.screenshot_path(cover_id) else {
+                continue;
+            };
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
+            let Ok((width, height, rgba)) = decode_png(&bytes) else {
+                continue;
+            };
+            let texture = TextureId::new(COVER_TEXTURE_BASE + game.id as u32);
+            if backend
+                .register_texture(texture, width, height, &rgba)
+                .is_ok()
+            {
+                self.cover_textures.insert(
+                    game.id,
+                    CoverTexture {
+                        cover_id,
+                        handle: FrameHandle {
+                            texture,
+                            width,
+                            height,
+                        },
+                    },
+                );
             }
         }
+    }
 
+    /// Rebuild the library rows from [`App::game_source`], applying the saved
+    /// sort order. Pinned games always come first; the sort key only orders
+    /// within the pinned and unpinned groups. Cheap enough to run on every sort
+    /// click, since it does not touch disk.
+    fn rebuild_game_rows(&mut self) {
+        let key = SortKey::from_key(&self.settings.library_sort);
+        let desc = self.settings.library_sort_desc;
+        // The selection is an index into the rows, so reordering moves it.
+        // Remember the path and re-point the index after the sort.
+        let selected = self
+            .model
+            .selected
+            .and_then(|index| self.model.games.get(index))
+            .map(|game| game.path.clone());
+        let mut games = self.game_source.clone();
+        order_games(&mut games, key, desc);
+        let covers = &self.cover_textures;
         self.model.games = games
             .into_iter()
-            .map(|game| GameRow {
-                title: game.title,
-                system: game.system,
-                path: game.path,
+            .map(|game| {
+                let cover = covers.get(&game.id).map(|cover| cover.handle);
+                game_row(game, cover)
             })
             .collect();
+        self.model.selected =
+            selected.and_then(|path| self.model.games.iter().position(|game| game.path == path));
+        self.model.sort = key;
+        self.model.sort_desc = desc;
         self.dirty = true;
     }
 
@@ -336,7 +442,7 @@ impl App {
                 }
                 continue;
             }
-            match Game::from_path(&path) {
+            match DiskGame::from_path(&path) {
                 Some(game) if !self.settings.added_roms.contains(&game.path) => {
                     self.settings.added_roms.push(game.path);
                     added += 1;
@@ -375,6 +481,87 @@ impl App {
         self.reload_library();
     }
 
+    /// Pin or unpin a game, then re-sort so it moves to (or leaves) the top.
+    fn toggle_pin(&mut self, index: usize) {
+        let Some(game) = self.model.games.get(index) else {
+            return;
+        };
+        let path = game.path.clone();
+        let pinned = !game.pinned;
+        if let Some(library) = &self.library {
+            let _ = library.set_pinned(&path, pinned);
+        }
+        if let Some(source) = self.game_source.iter_mut().find(|game| game.path == path) {
+            source.pinned = pinned;
+        }
+        self.rebuild_game_rows();
+        let verb = if pinned {
+            "已置顶"
+        } else {
+            "已取消置顶"
+        };
+        let message = format!("{verb}：{}", self.name_of(&path));
+        self.model.status = message;
+    }
+
+    /// Delete a game outright: remove the ROM file, forget it in the settings
+    /// and the database. If it was the running game, stop the machine first.
+    fn delete_game(&mut self, index: usize) {
+        let Some(game) = self.model.games.get(index) else {
+            return;
+        };
+        let path = game.path.clone();
+        let name = game.name.clone();
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                self.model.status = format!("删除失败：{error}");
+                self.dirty = true;
+                return;
+            }
+        }
+        if self.model.selected == Some(index) {
+            self.flush_playtime();
+            self.session = None;
+            self.model.selected = None;
+            self.model.playing = false;
+            self.model.paused = false;
+            self.model.frame = None;
+        }
+        self.settings.added_roms.retain(|rom| rom != &path);
+        let _ = self.settings.save(&self.paths.settings_json);
+        if let Some(library) = &self.library {
+            let _ = library.remove(&path);
+        }
+        self.reload_library();
+        self.model.status = format!("已删除：{name}");
+    }
+
+    /// The display name of a library path, for status messages; falls back to
+    /// the path itself when the game is no longer listed.
+    fn name_of(&self, path: &str) -> String {
+        self.model
+            .games
+            .iter()
+            .find(|game| game.path == path)
+            .map(|game| game.name.clone())
+            .unwrap_or_else(|| path.to_string())
+    }
+
+    /// Pick a sort key. Choosing the active key again flips the direction;
+    /// choosing a new key starts it in that key's natural direction.
+    fn set_sort(&mut self, key: SortKey) {
+        if self.model.sort == key {
+            self.settings.library_sort_desc = !self.settings.library_sort_desc;
+        } else {
+            self.settings.library_sort = key.key().to_string();
+            self.settings.library_sort_desc = key.default_desc();
+        }
+        let _ = self.settings.save(&self.paths.settings_json);
+        self.rebuild_game_rows();
+    }
+
     /// Remember a core pick for its console.
     fn select_core(&mut self, index: usize) {
         let Some(row) = self.model.cores.get(index) else {
@@ -391,6 +578,99 @@ impl App {
     fn reload_library(&mut self) {
         self.refresh_library(true);
         self.rebuild_settings_view();
+    }
+
+    /// Write the running game's accumulated play time to the library. Safe to
+    /// call often: whole seconds are drained and the fraction is kept.
+    fn flush_playtime(&mut self) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let path = session.rom_path().to_path_buf();
+        let seconds = session.take_played_seconds();
+        if seconds <= 0 {
+            return;
+        }
+        let path_str = path.to_string_lossy().into_owned();
+        if let Some(library) = &self.library {
+            let _ = library.note_playtime(&path_str, seconds);
+        }
+        if let Some(source) = self
+            .game_source
+            .iter_mut()
+            .find(|game| game.path == path_str)
+        {
+            source.play_seconds += seconds;
+        }
+    }
+
+    /// Record a game start: bump the play count, stamp the time, and refresh
+    /// the rows so the "recent"/"playtime" orders move the game.
+    fn note_started(&mut self, rom_path: &Path) {
+        let path = rom_path.to_string_lossy().into_owned();
+        let now = now_millis();
+        if let Some(library) = &self.library {
+            let _ = library.note_played(&path, now);
+        }
+        if let Some(source) = self.game_source.iter_mut().find(|game| game.path == path) {
+            source.play_count += 1;
+            source.last_played_at = now;
+        }
+        self.rebuild_game_rows();
+        self.model.selected = self
+            .model
+            .games
+            .iter()
+            .position(|game| Path::new(&game.path) == rom_path);
+    }
+
+    /// Take a screenshot of the running game: encode its last frame, store it
+    /// under the game in the library, and refresh so a first screenshot becomes
+    /// the cover.
+    fn capture_screenshot(&mut self) {
+        let Some(session) = self.session.as_ref() else {
+            self.model.status = "没有正在运行的游戏".to_string();
+            self.dirty = true;
+            return;
+        };
+        let rom_path = session.rom_path().to_string_lossy().into_owned();
+        let Some((width, height, pixels)) = session.last_pixels() else {
+            self.model.status = "还没有画面可以截图".to_string();
+            self.dirty = true;
+            return;
+        };
+        let png = match encode_png(width, height, pixels) {
+            Ok(png) => png,
+            Err(error) => {
+                self.model.status = format!("截图失败：{error}");
+                self.dirty = true;
+                return;
+            }
+        };
+        let saved = match &self.library {
+            Some(library) => {
+                library.save_screenshot(&rom_path, &png, i64::from(width), i64::from(height), false)
+            }
+            None => {
+                self.model.status = "游戏库不可用".to_string();
+                self.dirty = true;
+                return;
+            }
+        };
+        match saved {
+            Ok(Some(_)) => {
+                self.model.status = "已截图".to_string();
+                self.refresh_library(false);
+            }
+            Ok(None) => {
+                self.model.status = "该游戏不在游戏库中".to_string();
+                self.dirty = true;
+            }
+            Err(error) => {
+                self.model.status = format!("截图失败：{error}");
+                self.dirty = true;
+            }
+        }
     }
 
     fn resize(&mut self, width: u32, height: u32) {
@@ -437,6 +717,14 @@ impl App {
                     if let Some(session) = self.session.as_mut() {
                         session.toggle_pause();
                     }
+                    // A pause stops the clock, so bank what it has run.
+                    if self
+                        .session
+                        .as_ref()
+                        .is_some_and(|session| session.paused())
+                    {
+                        self.flush_playtime();
+                    }
                     self.dirty = true;
                 }
                 Action::Reset => {
@@ -468,6 +756,11 @@ impl App {
                 Action::OpenRom => self.add_library_dir(),
                 Action::SelectCore(index) => self.select_core(index),
                 Action::RemoveLibraryDir(index) => self.remove_library_dir(index),
+                Action::TogglePin(index) => self.toggle_pin(index),
+                Action::DeleteGame(index) => self.delete_game(index),
+                Action::Sort(key) => self.set_sort(key),
+                Action::ToggleSortOrder => self.set_sort(self.model.sort),
+                Action::Screenshot => self.capture_screenshot(),
             }
         }
     }
@@ -515,7 +808,8 @@ impl App {
         // the new session before the old one drops would `retro_init` the same
         // core again and then `retro_deinit` the new machine when the old
         // session falls (a segfault). Drop the old machine first; this also
-        // flushes its battery save.
+        // flushes its battery save and its play time.
+        self.flush_playtime();
         self.session = None;
 
         let backend = match self.backend.as_mut() {
@@ -533,19 +827,14 @@ impl App {
 
         match started {
             Ok(session) => {
-                // A `--rom` may be outside the scanned folders; match it to a
-                // library row when possible so the play page shows its title.
-                let selected = self
-                    .model
-                    .games
-                    .iter()
-                    .position(|game| Path::new(&game.path) == rom_path);
-                self.model.selected = selected;
                 self.model.core_name = session.core_name().to_string();
                 self.model.playing = true;
                 self.model.paused = false;
                 self.model.status.clear();
                 self.session = Some(session);
+                // Count the run and stamp it; this also re-points the selection
+                // at the row, which a sort by "recent" may have moved.
+                self.note_started(rom_path);
             }
             Err(error) => {
                 self.model.status = error;
@@ -625,6 +914,13 @@ impl App {
             if !session.paused() {
                 session.advance(dt, backend, masks);
             }
+        }
+
+        // Bank play time every so often, so a crash or a kill loses at most
+        // this window rather than the whole session.
+        if self.last_play_flush.elapsed() >= Duration::from_secs(15) {
+            self.flush_playtime();
+            self.last_play_flush = Instant::now();
         }
 
         if let Some(session) = self.session.as_ref() {
@@ -724,6 +1020,7 @@ impl ApplicationHandler for App {
 
         match event {
             WindowEvent::CloseRequested => {
+                self.flush_playtime();
                 event_loop.exit();
                 return;
             }
@@ -771,6 +1068,10 @@ impl ApplicationHandler for App {
                     {
                         self.actions.push(action);
                         self.handle_actions();
+                    }
+                    // F12 is the screenshot key (the old front end's layout).
+                    if matches!(event.logical_key, WinitKey::Named(NamedKey::F12)) {
+                        self.capture_screenshot();
                     }
                 }
                 let Some(key) = map_key(&event.logical_key) else {
@@ -832,6 +1133,14 @@ impl TextMeasurer for BackendTextMeasurer {
     }
 }
 
+/// Wall-clock milliseconds since the Unix epoch.
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 /// Platform wheel -> logical pixels (`y > 0` scrolls down).
 fn wheel_pixels(delta: MouseScrollDelta, scale: f32) -> f32 {
     match delta {
@@ -851,6 +1160,40 @@ fn load_core_manifest(paths: &Paths) -> Vec<CoreSpec> {
         return load_cores(&packaged);
     }
     load_cores(Path::new("cores/cores.json"))
+}
+
+/// Order games the way the library shows them: pinned first, then the sort
+/// key within each group. Pure, so the ordering can be tested without a window.
+fn order_games(games: &mut [Game], key: SortKey, desc: bool) {
+    games.sort_by(|a, b| {
+        let order = match key {
+            SortKey::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            SortKey::Size => a.size.cmp(&b.size),
+            SortKey::LastPlayed => a.last_played_at.cmp(&b.last_played_at),
+            SortKey::Playtime => a.play_seconds.cmp(&b.play_seconds),
+            SortKey::Added => a.added_at.cmp(&b.added_at),
+        };
+        let order = if desc { order.reverse() } else { order };
+        b.pinned.cmp(&a.pinned).then(order)
+    });
+}
+
+/// Project a library row into the view model's row.
+fn game_row(game: Game, cover: Option<FrameHandle>) -> GameRow {
+    GameRow {
+        id: game.id,
+        name: game.name,
+        file_name: game.file_name,
+        system: game.system,
+        path: game.path,
+        size: game.size,
+        pinned: game.pinned,
+        play_count: game.play_count,
+        play_seconds: game.play_seconds,
+        last_played_at: game.last_played_at,
+        tags: game.tags,
+        cover,
+    }
 }
 
 fn pointer_button(button: MouseButton) -> PointerButton {
@@ -962,6 +1305,45 @@ fn map_key(key: &WinitKey) -> Option<Key> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn db_game(name: &str, size: u64, pinned: bool) -> Game {
+        Game {
+            id: 0,
+            path: format!("/{name}.nes"),
+            file_name: format!("{name}.nes"),
+            name: name.to_string(),
+            system: cgb_systems::SystemId::Nes,
+            size,
+            mtime_ms: 0,
+            added_at: 0,
+            last_played_at: 0,
+            play_count: 0,
+            play_seconds: 0,
+            pinned,
+            cover: None,
+            screenshots: 0,
+            tags: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn order_games_keeps_pinned_first_then_sorts() {
+        let names =
+            |games: &[Game]| -> Vec<String> { games.iter().map(|g| g.name.clone()).collect() };
+        let mut games = vec![
+            db_game("b", 10, false),
+            db_game("a", 30, false),
+            db_game("c", 20, true),
+        ];
+        order_games(&mut games, SortKey::Name, false);
+        assert_eq!(names(&games), ["c", "a", "b"]);
+
+        order_games(&mut games, SortKey::Size, true);
+        assert_eq!(names(&games), ["c", "a", "b"]);
+
+        order_games(&mut games, SortKey::Size, false);
+        assert_eq!(names(&games), ["c", "b", "a"]);
+    }
 
     #[test]
     fn save_state_hotkeys_match_the_old_layout() {

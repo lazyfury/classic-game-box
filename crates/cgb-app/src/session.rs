@@ -36,6 +36,11 @@ pub struct Session {
     save_dir: PathBuf,
     /// The cartridge path, used to name its `.srm` / `.stateN` files.
     rom_path: PathBuf,
+    /// Wall-clock seconds played while unpaused; drained to the library.
+    played_seconds: f64,
+    /// The most recent frame's RGBA8 pixels, kept for a screenshot. Moved here
+    /// from the frame callback (not copied), so it costs nothing per frame.
+    last_pixels: Option<(u32, u32, Vec<u8>)>,
 }
 
 impl Session {
@@ -103,11 +108,17 @@ impl Session {
             accumulator: 0.0,
             save_dir: save_dir.to_path_buf(),
             rom_path: rom_path.to_path_buf(),
+            played_seconds: 0.0,
+            last_pixels: None,
         })
     }
 
     /// Advance the emulator by `dt` seconds, running whole frames to catch up.
     pub fn advance(&mut self, dt: f64, backend: &mut WgpuBackend, masks: [u16; 2]) {
+        // Play time is wall clock while unpaused: the app only calls `advance`
+        // for a running, unpaused session, so a pause or a minimised window
+        // adds nothing.
+        self.played_seconds += dt.clamp(0.0, 0.25);
         self.accumulator += dt.clamp(0.0, 0.25);
         let mut steps = 0;
         while self.accumulator >= self.frame_seconds && steps < 4 {
@@ -134,6 +145,8 @@ impl Session {
                 width: frame.width,
                 height: frame.height,
             });
+            // Keep the pixels for a screenshot; moving the buffer costs nothing.
+            self.last_pixels = Some((frame.width, frame.height, frame.rgba));
         }
 
         let audio = self.core.take_audio();
@@ -204,6 +217,30 @@ impl Session {
 
     pub fn frame(&self) -> Option<FrameHandle> {
         self.frame
+    }
+
+    /// The cartridge path this session loaded.
+    pub fn rom_path(&self) -> &Path {
+        &self.rom_path
+    }
+
+    /// The most recent frame's size and RGBA8 pixels, for a screenshot.
+    pub fn last_pixels(&self) -> Option<(u32, u32, &[u8])> {
+        self.last_pixels
+            .as_ref()
+            .map(|(width, height, pixels)| (*width, *height, pixels.as_slice()))
+    }
+
+    /// Take the whole seconds played since the last call, keeping the
+    /// fractional remainder so repeated flushes do not lose time.
+    pub fn take_played_seconds(&mut self) -> i64 {
+        let whole = self.played_seconds.floor();
+        self.played_seconds -= whole;
+        if whole > 0.0 {
+            whole as i64
+        } else {
+            0
+        }
     }
 
     pub fn core_name(&self) -> &str {

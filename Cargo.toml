@@ -30,6 +30,7 @@ draw_ui = { path = "../quill/crates/draw_ui" }
 draw_render = { path = "../quill/crates/draw_render" }
 draw_theme = { path = "../quill/crates/draw_theme" }
 draw_components = { path = "../quill/crates/draw_components" }
+draw_svg = { path = "../quill/crates/draw_svg" }
 draw_backend_wgpu = { path = "../quill/crates/draw_backend_wgpu" }
 draw_backend_recording = { path = "../quill/crates/draw_backend_recording" }
 draw_profile = { path = "../quill/crates/draw_profile" }
@@ -52,6 +53,7 @@ cpal = "0.15"
 ringbuf = "0.4"
 gilrs = "0.11"
 rusqlite = { version = "0.32", features = ["bundled"] }
+png = "0.17"
 dirs = "5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

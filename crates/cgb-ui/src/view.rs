@@ -30,17 +30,19 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use draw_components::{
-    Button, Card, Column, Component, Divider, EmptyState, Flex, Glyph, Grid, Icon, Panel, Row,
-    ScrollView, ScrollViewState, Text,
+    Badge, Button, Card, Column, Component, Divider, EmptyState, Flex, Glyph, Grid, Icon, Panel,
+    Row, ScrollView, ScrollViewState, Text,
 };
 use draw_core::{Color, Edges};
+use draw_render::Paint;
 use draw_scene::{SceneChild, SceneTree};
 use draw_theme::radius::MD;
 use draw_theme::{radius, space, Theme, Tone};
 use draw_ui::{Align, Justify, MouseFilter, SizeBasis, SurfaceStyle, Track};
 
-use crate::frame::FrameImage;
-use crate::model::{Action, GameRow, Section, ViewModel};
+use crate::frame::{cover_fit, FrameImage};
+use crate::icons::{Icon as SvgIcon, IconName};
+use crate::model::{Action, GameRow, Section, SortKey, ViewModel};
 
 /// The rail's fixed width in logical pixels.
 const RAIL_WIDTH: f32 = 64.0;
@@ -55,6 +57,12 @@ const LIBRARY_COLUMNS: usize = 2;
 /// Height of a card's cover placeholder in logical pixels.
 const PLACEHOLDER_HEIGHT: f32 = 112.0;
 
+/// The card controls' icon size, and the square tap target around them.
+const CARD_ICON: f32 = 12.0;
+const CARD_ICON_BUTTON: f32 = 18.0;
+
+/// The pinned pin's colour (the old front end's `#ffd60a`).
+const PIN_COLOR: Color = Color::new(1.0, 0.84, 0.04, 1.0);
 
 /// Where view callbacks deposit what the user did. The app drains it once per
 /// frame (see the quill UI guide's "state lives in cells" rule).
@@ -217,7 +225,7 @@ fn play_column(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) 
     let title = model
         .selected
         .and_then(|index| model.games.get(index))
-        .map(|game| game.title.clone())
+        .map(|game| game.name.clone())
         .or_else(|| (!model.core_name.is_empty()).then(|| model.core_name.clone()))
         .unwrap_or_else(|| "没有选中游戏".to_string());
     column = column.child(Text::subheading(title, theme).max_lines(1).ellipsis(true));
@@ -257,6 +265,9 @@ fn play_column(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) 
     controls = controls.child(
         Button::secondary("快速读档", theme).on_click(move || load.push(Action::LoadState(0))),
     );
+    let shot = actions.clone();
+    controls = controls
+        .child(Button::ghost("截图", theme).on_click(move || shot.push(Action::Screenshot)));
     column = column.child(controls);
 
     if !model.core_name.is_empty() {
@@ -277,6 +288,7 @@ fn library_page(
         .padding(Edges::all(MD))
         .mouse_filter(MouseFilter::Ignore);
     column = column.child(Text::heading("游戏库", theme));
+    column = column.child(sort_bar(theme, model, actions));
 
     if model.games.is_empty() {
         column = column.child(
@@ -310,6 +322,40 @@ fn library_page(
     column
 }
 
+/// The library's sort controls: one chip per key, then a direction toggle.
+/// Pinned games are always on top, so the key only orders within the groups.
+fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Row {
+    let mut bar = Row::new()
+        .align(Align::Center)
+        .gap(space::XS)
+        .child(Text::caption("排序", theme).tone(Tone::Muted));
+    for key in SortKey::ALL {
+        let actions = actions.clone();
+        let button = if model.sort == key {
+            Button::primary(key.label(), theme)
+        } else {
+            Button::ghost(key.label(), theme)
+        };
+        bar = bar.child(
+            button
+                .mini()
+                .on_click(move || actions.push(Action::Sort(key))),
+        );
+    }
+    let toggle = actions.clone();
+    let arrow = if model.sort_desc {
+        IconName::ArrowDown
+    } else {
+        IconName::ArrowUp
+    };
+    bar.child(
+        Button::ghost("", theme)
+            .mini()
+            .child(SvgIcon::new(arrow, theme.palette().foreground, CARD_ICON))
+            .on_click(move || toggle.push(Action::ToggleSortOrder)),
+    )
+}
+
 /// The library as a fixed-column grid of cover cards. The whole grid is the
 /// content of the library page's [`ScrollView`].
 fn library_grid(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Grid {
@@ -322,8 +368,10 @@ fn library_grid(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions)
     grid
 }
 
-/// One library cell: the cover, then the name and console under it. The whole
-/// cell is the button; the playing game is marked like a Finder selection.
+/// One library cell: the cover (with the console badge and the card controls
+/// over it), then the name under it. Clicking the cover or name starts the
+/// game; the controls are their own buttons, so they never start it (the
+/// nearest callback wins).
 fn game_card(
     theme: &'static dyn Theme,
     model: &ViewModel,
@@ -331,9 +379,9 @@ fn game_card(
     index: usize,
     actions: &Actions,
 ) -> Column {
-    let actions = actions.clone();
+    let click = actions.clone();
     let playing = model.selected == Some(index);
-    Column::new()
+    let mut card = Column::new()
         .gap(space::XXS)
         .padding(Edges::all(space::XXS))
         .dynamic_background(move |state| {
@@ -346,37 +394,237 @@ fn game_card(
             };
             SurfaceStyle::new(fill).radius(radius::MD)
         })
-        .on_click(move || actions.push(Action::Play(index)))
-        .child(cover(theme, game))
+        .on_click(move || click.push(Action::Play(index)))
+        .child(cover(theme, game, index, actions))
         .child(
-            Row::new()
-                .gap(space::XXS)
-                .child(
-                    Text::small(game.title.as_str(), theme)
-                        .grow(1.0)
-                        .max_lines(1)
-                        .ellipsis(true),
-                )
-                .child(Text::caption(game.system.short(), theme).tone(Tone::Subtle)),
-        )
-}
-
-/// A card's cover. There is no artwork yet, so the placeholder is a block of
-/// surface colour with the game's name clipped into it — the old front end's
-/// blank cover. A screenshot slot replaces this later (see `frame.rs`).
-fn cover(theme: &'static dyn Theme, game: &GameRow) -> Flex {
-    Flex::row()
-        .align(Align::Center)
-        .justify(Justify::Center)
-        .padding(Edges::all(space::XS))
-        .min_size(0.0, PLACEHOLDER_HEIGHT)
-        .surface(SurfaceStyle::new(theme.palette().surface).radius(radius::SM))
-        .child(
-            Text::caption(game.title.as_str(), theme)
-                .tone(Tone::Muted)
-                .max_lines(3)
+            Text::small(game.name.as_str(), theme)
+                .max_lines(1)
                 .ellipsis(true),
         )
+        .child(
+            Text::caption(meta_label(game), theme)
+                .tone(Tone::Subtle)
+                .max_lines(1)
+                .ellipsis(true),
+        );
+    if !game.tags.is_empty() {
+        card = card.child(
+            Text::caption(tags_label(game), theme)
+                .tone(Tone::Muted)
+                .max_lines(1)
+                .ellipsis(true),
+        );
+    }
+    card
+}
+
+/// A card's tags as one line: the first few `#words`, then a `+N` count. A
+/// single ellipsized line, because the cells are narrow and a wrapping row of
+/// chips would make every card in the row taller.
+fn tags_label(game: &GameRow) -> String {
+    const SHOWN: usize = 3;
+    let shown: Vec<String> = game
+        .tags
+        .iter()
+        .take(SHOWN)
+        .map(|tag| format!("#{tag}"))
+        .collect();
+    let label = shown.join(" ");
+    let hidden = game.tags.len().saturating_sub(SHOWN);
+    if hidden > 0 {
+        format!("{label} +{hidden}")
+    } else {
+        label
+    }
+}
+
+/// A card's cover: the console badge top-left and the pin / delete controls
+/// top-right, over either the game's cover screenshot or a deterministic colour
+/// drawn from its ROM path (so a game without artwork keeps the same colour
+/// between runs). Without a screenshot the title is clipped in and centred.
+fn cover(theme: &'static dyn Theme, game: &GameRow, index: usize, actions: &Actions) -> Column {
+    let mut cover = Column::new()
+        .gap(space::XXS)
+        .padding(Edges::all(space::XS))
+        .min_size(0.0, PLACEHOLDER_HEIGHT)
+        .surface(SurfaceStyle::new(cover_color(&game.path)).radius(radius::SM))
+        .child(
+            Row::new()
+                .align(Align::Center)
+                .gap(space::XXS)
+                .child(system_badge(theme, game))
+                .child(Flex::row().grow(1.0))
+                .child(card_controls(theme, game, index, actions)),
+        );
+
+    match game.cover {
+        // A real cover fills the whole cell behind the controls. The foreground
+        // paints before the children, so the badge and buttons stay on top; the
+        // clip crops the overflow to the cell.
+        Some(handle) => {
+            cover = cover.clip(true).foreground(move |ctx, rect, _state| {
+                let destination = cover_fit((handle.width, handle.height), rect);
+                ctx.draw_image(handle.texture, destination, None, Paint::default());
+            });
+        }
+        // No artwork: the name stands in for it, centred on the colour.
+        None => {
+            cover = cover.child(
+                Flex::row()
+                    .align(Align::Center)
+                    .justify(Justify::Center)
+                    .grow(1.0)
+                    .child(
+                        Text::caption(game.name.as_str(), theme)
+                            .color(Color::WHITE.with_alpha(0.92))
+                            .max_lines(3)
+                            .ellipsis(true),
+                    ),
+            );
+        }
+    }
+    cover
+}
+
+/// The console badge, top-left on the cover: the short name the console is
+/// known by ("NES", "GBA", "GB").
+fn system_badge(theme: &'static dyn Theme, game: &GameRow) -> Badge {
+    Badge::new(game.system.short(), theme)
+        .fill(Color::new(0.11, 0.11, 0.13, 0.72))
+        .text_color(Color::WHITE.with_alpha(0.88))
+        .radius(radius::SM)
+}
+
+/// The card's controls, top-right on the cover: pin, then delete. The pin is
+/// yellow when the game is pinned; delete destroys the ROM.
+fn card_controls(
+    theme: &'static dyn Theme,
+    game: &GameRow,
+    index: usize,
+    actions: &Actions,
+) -> Row {
+    Row::new()
+        .align(Align::Center)
+        .gap(space::XXS)
+        .child(icon_button(
+            theme,
+            IconName::Pin,
+            if game.pinned {
+                PIN_COLOR
+            } else {
+                Color::WHITE.with_alpha(0.85)
+            },
+            {
+                let actions = actions.clone();
+                move || actions.push(Action::TogglePin(index))
+            },
+        ))
+        .child(icon_button(
+            theme,
+            IconName::Trash,
+            Color::WHITE.with_alpha(0.85),
+            {
+                let actions = actions.clone();
+                move || actions.push(Action::DeleteGame(index))
+            },
+        ))
+}
+
+/// A small, transparent-until-hovered icon button on a coloured cover. The
+/// icon is `Ignore` for input, so the click lands on the button.
+fn icon_button(
+    theme: &'static dyn Theme,
+    icon: IconName,
+    color: Color,
+    on_click: impl FnMut() + 'static,
+) -> Button {
+    Button::ghost("", theme)
+        .mini()
+        .min_size(CARD_ICON_BUTTON, CARD_ICON_BUTTON)
+        .child(SvgIcon::new(icon, color, CARD_ICON))
+        .dynamic_background(move |state| {
+            let fill = if state.hovered || state.pressed {
+                Color::WHITE.with_alpha(0.16)
+            } else {
+                Color::TRANSPARENT
+            };
+            SurfaceStyle::new(fill).radius(radius::SM)
+        })
+        .on_click(on_click)
+}
+
+/// A card's meta line: its size, and either the play count and time or the
+/// fact that it has never been run.
+fn meta_label(game: &GameRow) -> String {
+    let mut parts = vec![format_size(game.size)];
+    if game.play_count > 0 {
+        parts.push(format!("玩过 {} 次", game.play_count));
+        parts.push(format_duration(game.play_seconds));
+    } else {
+        parts.push("未玩过".to_string());
+    }
+    parts.join(" · ")
+}
+
+/// Bytes into the short string a card has room for.
+fn format_size(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = 1024 * 1024;
+    if bytes < KIB {
+        format!("{bytes} B")
+    } else if bytes < MIB {
+        format!("{} KB", (bytes as f64 / KIB as f64).round() as u64)
+    } else {
+        format!("{:.1} MB", bytes as f64 / MIB as f64)
+    }
+}
+
+/// A total play time in the units an interface has room for.
+fn format_duration(seconds: i64) -> String {
+    let whole = seconds.max(0);
+    if whole < 60 {
+        return format!("{whole} 秒");
+    }
+    let minutes = whole / 60;
+    if minutes < 60 {
+        return format!("{minutes} 分");
+    }
+    let hours = minutes / 60;
+    let rest = minutes % 60;
+    if hours >= 100 || rest == 0 {
+        format!("{hours} 时")
+    } else {
+        format!("{hours} 时 {rest} 分")
+    }
+}
+
+/// A stable, readable cover colour for a ROM path: hash it to a hue with a
+/// fixed saturation and value, so the whole grid stays legible against light
+/// text. FNV-1a, because it is short and stable across runs.
+fn cover_color(path: &str) -> Color {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in path.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hsv((hash % 360) as f32, 0.45, 0.55)
+}
+
+/// HSV (h in degrees) to an RGB [`Color`]. Only used for cover hues.
+fn hsv(hue: f32, saturation: f32, value: f32) -> Color {
+    let chroma = value * saturation;
+    let h = hue / 60.0;
+    let x = chroma * (1.0 - (h % 2.0 - 1.0).abs());
+    let (r, g, b) = match h as u32 {
+        0 => (chroma, x, 0.0),
+        1 => (x, chroma, 0.0),
+        2 => (0.0, chroma, x),
+        3 => (0.0, x, chroma),
+        4 => (x, 0.0, chroma),
+        _ => (chroma, 0.0, x),
+    };
+    let m = value - chroma;
+    Color::rgb(r + m, g + m, b + m)
 }
 
 /// The bottom status line: the last app message, plus the save hotkeys.
@@ -402,7 +650,7 @@ fn status_bar(theme: &'static dyn Theme, model: &ViewModel) -> Column {
                         .max_lines(1)
                         .ellipsis(true),
                 )
-                .child(Text::caption("F5 存档 / F6 读档", theme).tone(Tone::Subtle)),
+                .child(Text::caption("F5 存档 / F6 读档 / F12 截图", theme).tone(Tone::Subtle)),
         )
 }
 
@@ -518,7 +766,10 @@ fn settings_page(
     );
 
     // Only the settings bodies scroll; the title stays put.
-    let view = ScrollView::new(theme).grow(1.0).scrollbar(false).child(body);
+    let view = ScrollView::new(theme)
+        .grow(1.0)
+        .scrollbar(false)
+        .child(body);
     *scroll = Some(view.state());
     column = column.child(view);
 
@@ -563,16 +814,30 @@ mod tests {
             .unwrap_or_else(|| panic!("no text {needle:?}"))
     }
 
+    /// A minimal library row for the view tests.
+    fn game_row(name: &str, path: &str) -> GameRow {
+        GameRow {
+            id: 0,
+            name: name.to_string(),
+            file_name: path.rsplit('/').next().unwrap_or(path).to_string(),
+            system: SystemId::Nes,
+            path: path.to_string(),
+            size: 0,
+            pinned: false,
+            play_count: 0,
+            play_seconds: 0,
+            last_played_at: 0,
+            tags: Vec::new(),
+            cover: None,
+        }
+    }
+
     /// A card is a click target: a press and release inside it starts the game.
     #[test]
     fn clicking_a_card_plays_it() {
         let actions = Actions::default();
         let model = ViewModel {
-            games: vec![GameRow {
-                title: "Game 0".to_string(),
-                system: SystemId::Nes,
-                path: "/roms/game0.nes".to_string(),
-            }],
+            games: vec![game_row("Game 0", "/roms/game0.nes")],
             ..ViewModel::default()
         };
         let (mut tree, list) = laid_out(&model, &actions);
@@ -598,6 +863,183 @@ mod tests {
             },
         );
         assert_eq!(actions.drain(), vec![Action::Play(0)]);
+    }
+
+    /// Press and release at `point`, the way a mouse click arrives.
+    fn click(tree: &mut SceneTree, point: Vec2) {
+        for event in [
+            InputEvent::PointerDown {
+                position: point,
+                button: PointerButton::Left,
+            },
+            InputEvent::PointerUp {
+                position: point,
+                button: PointerButton::Left,
+            },
+        ] {
+            draw_ui::handle_input(tree, &event);
+        }
+    }
+
+    fn one_game() -> ViewModel {
+        ViewModel {
+            games: vec![game_row("Game 0", "/roms/game0.nes")],
+            ..ViewModel::default()
+        }
+    }
+
+    /// Lay out a single card cover (no shell chrome around it), so its two
+    /// icon buttons can be located by the lines their SVGs draw.
+    fn isolated_cover(game: &GameRow, actions: &Actions) -> (SceneTree, draw_render::DrawList) {
+        let theme = default_theme(Mode::Dark);
+        let mut tree = SceneTree::new();
+        let root = tree.root();
+        tree.add_child(
+            root,
+            Flex::column()
+                .gap(0.0)
+                .padding(Edges::ZERO)
+                .mouse_filter(MouseFilter::Ignore)
+                .child(cover(theme, game, 0, actions)),
+        );
+        draw_ui::layout(
+            &mut tree,
+            draw_core::ViewportSize::new(Size::new(320.0, 240.0)),
+        );
+        tree.update();
+        let mut ctx = PaintContext::new();
+        draw_ui::paint(&tree, &mut ctx);
+        (tree, ctx.into_draw_list())
+    }
+
+    /// The centres of the two SVG icons in a cover, split left/right by their
+    /// drawn lines: the pin is left, the delete is right.
+    fn icon_centres(list: &draw_render::DrawList) -> (Vec2, Vec2) {
+        let mut points = Vec::new();
+        for command in list.commands() {
+            if let DrawCommand::Line { from, to, .. } = command {
+                points.push(*from);
+                points.push(*to);
+            }
+        }
+        assert!(!points.is_empty(), "the cover drew no icon lines");
+        let min = points.iter().map(|p| p.x).fold(f32::MAX, f32::min);
+        let max = points.iter().map(|p| p.x).fold(f32::MIN, f32::max);
+        let mid = (min + max) / 2.0;
+        let mean = |left: bool| {
+            let picked: Vec<Vec2> = points
+                .iter()
+                .copied()
+                .filter(|p| (p.x < mid) == left)
+                .collect();
+            let count = picked.len() as f32;
+            Vec2::new(
+                picked.iter().map(|p| p.x).sum::<f32>() / count,
+                picked.iter().map(|p| p.y).sum::<f32>() / count,
+            )
+        };
+        (mean(true), mean(false))
+    }
+
+    fn one_game_row() -> GameRow {
+        one_game().games.remove(0)
+    }
+
+    /// The pin icon is its own button and toggles the pin.
+    #[test]
+    fn clicking_pin_toggles_it() {
+        let actions = Actions::default();
+        let (mut tree, list) = isolated_cover(&one_game_row(), &actions);
+        let (pin, _delete) = icon_centres(&list);
+        click(&mut tree, pin);
+        assert_eq!(actions.drain(), vec![Action::TogglePin(0)]);
+    }
+
+    /// The delete icon is its own button: it deletes, it does not start the
+    /// game (the nearest callback wins over the card's play callback).
+    #[test]
+    fn clicking_delete_deletes_without_playing() {
+        let actions = Actions::default();
+        let (mut tree, list) = isolated_cover(&one_game_row(), &actions);
+        let (_pin, delete) = icon_centres(&list);
+        click(&mut tree, delete);
+        assert_eq!(actions.drain(), vec![Action::DeleteGame(0)]);
+    }
+
+    /// The sort bar offers every key and the direction toggle.
+    #[test]
+    fn the_sort_bar_switches_the_key() {
+        let actions = Actions::default();
+        let (mut tree, list) = laid_out(&ViewModel::default(), &actions);
+        let point = text_position(&list, "大小");
+        click(&mut tree, point);
+        assert_eq!(actions.drain(), vec![Action::Sort(SortKey::Size)]);
+    }
+
+    /// Covers are a stable colour per path, so a game keeps its colour between
+    /// runs; different games get different colours.
+    #[test]
+    fn cover_colours_are_stable_and_varied() {
+        assert_eq!(cover_color("/roms/a.nes"), cover_color("/roms/a.nes"));
+        assert_ne!(cover_color("/roms/a.nes"), cover_color("/roms/b.nes"));
+    }
+
+    /// A card's tag line shows a few words then a count.
+    #[test]
+    fn tags_label_lists_a_few_words() {
+        let mut game = game_row("Game 0", "/roms/game0.nes");
+        game.tags = [
+            "RPG".to_string(),
+            "Action".to_string(),
+            "Long".to_string(),
+            "Extra".to_string(),
+        ]
+        .to_vec();
+        assert_eq!(tags_label(&game), "#RPG #Action #Long +1");
+        game.tags.truncate(2);
+        assert_eq!(tags_label(&game), "#RPG #Action");
+    }
+
+    /// A card with a cover texture draws it (the only image when no game is
+    /// playing).
+    #[test]
+    fn a_card_with_a_cover_draws_its_texture() {
+        let mut game = game_row("Game 0", "/roms/game0.nes");
+        game.cover = Some(FrameHandle {
+            texture: TextureId::new(0x1000),
+            width: 256,
+            height: 240,
+        });
+        let model = ViewModel {
+            games: vec![game],
+            ..ViewModel::default()
+        };
+        let list = paint(&model);
+        assert!(list
+            .commands()
+            .iter()
+            .any(|command| matches!(command, DrawCommand::DrawImage { .. })));
+    }
+
+    /// The meta line reads the file size and the play count/time.
+    #[test]
+    fn card_meta_reads_size_and_play_time() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(1536), "2 KB");
+        assert_eq!(format_size(3 * 1024 * 1024), "3.0 MB");
+        assert_eq!(format_duration(45), "45 秒");
+        assert_eq!(format_duration(90), "1 分");
+        assert_eq!(format_duration(3660), "1 时 1 分");
+
+        let mut game = game_row("Game 0", "/roms/game0.nes");
+        assert!(meta_label(&game).contains("未玩过"));
+        game.play_count = 3;
+        game.play_seconds = 120;
+        game.size = 2048;
+        let meta = meta_label(&game);
+        assert!(meta.contains("2 KB"), "{meta}");
+        assert!(meta.contains("玩过 3 次"), "{meta}");
+        assert!(meta.contains("2 分"), "{meta}");
     }
 
     /// The rail is the only way to change what the middle column shows, so it
@@ -730,11 +1172,7 @@ mod tests {
     #[test]
     fn the_library_page_lays_games_out_in_a_grid() {
         let games: Vec<GameRow> = (0..LIBRARY_COLUMNS + 1)
-            .map(|index| GameRow {
-                title: format!("Game {index}"),
-                system: SystemId::Nes,
-                path: format!("/roms/game{index}.nes"),
-            })
+            .map(|index| game_row(&format!("Game {index}"), &format!("/roms/game{index}.nes")))
             .collect();
         let model = ViewModel {
             games,
@@ -766,11 +1204,7 @@ mod tests {
     #[test]
     fn the_shell_is_three_columns() {
         let model = ViewModel {
-            games: vec![GameRow {
-                title: "Game 0".to_string(),
-                system: SystemId::Nes,
-                path: "/roms/game0.nes".to_string(),
-            }],
+            games: vec![game_row("Game 0", "/roms/game0.nes")],
             playing: true,
             frame: Some(FrameHandle {
                 texture: TextureId::new(1),

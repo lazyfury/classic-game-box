@@ -24,6 +24,11 @@ pub struct Settings {
     /// dialog), outside any scanned folder. Kept as long as the file exists,
     /// so they survive a rescan without being copied into the ROM folder.
     pub added_roms: Vec<String>,
+    /// Library sort key (`"name"` / `"size"`). An unknown key falls back to
+    /// the name order, so a removed sort mode needs no migration.
+    pub library_sort: String,
+    /// Whether the library sort runs descending.
+    pub library_sort_desc: bool,
 }
 
 impl Settings {
