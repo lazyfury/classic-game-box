@@ -953,6 +953,14 @@ fn cheats_page(
     column = column.child(
         Button::secondary("导入 .cht…", theme).on_click(move || import.push(Action::ImportCheats)),
     );
+    column = column.child(
+        Text::caption(
+            "码的语法由核心决定：Mesen 认 Game Genie / PAR / AAAA:VV，mGBA 认 GBA 码；FBNeo 不支持金手指。",
+            theme,
+        )
+        .tone(Tone::Subtle)
+        .max_lines(2),
+    );
     column
 }
 
