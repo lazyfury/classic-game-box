@@ -14,7 +14,7 @@ mod model;
 mod view;
 
 pub use frame::{centered_fit, contain_fit, cover_fit, FrameImage};
-pub use icons::{Icon, IconName};
+pub use icons::{clear_textures, rasterize_icon, set_texture, Icon, IconName};
 pub use model::{
     Action, BindingRow, Confirm, CoreRow, FrameHandle, GameRow, SafeArea, ScreenshotRow, Section,
     SortKey, ViewModel,
@@ -43,6 +43,10 @@ pub struct Ui {
     /// The offset to restore on the next layout, set by a rebuild. It is
     /// applied *after* the first sync, once the content height is known.
     scroll_target: Option<f32>,
+    /// Set when the tree changed and a layout + paint is needed before the
+    /// next present. A running game redraws every frame; if nothing changed,
+    /// the host can re-submit the previous draw list instead of rebuilding it.
+    repaint: bool,
 }
 
 impl Ui {
@@ -54,6 +58,7 @@ impl Ui {
             middle_scroll,
             middle_section: model.section,
             scroll_target: None,
+            repaint: true,
         }
     }
 
@@ -76,6 +81,35 @@ impl Ui {
         };
         self.middle_scroll = middle_scroll;
         self.middle_section = model.section;
+        self.repaint = true;
+    }
+
+    /// Ask for a layout + paint before the next present (e.g. the viewport
+    /// changed on a resize).
+    pub fn request_repaint(&mut self) {
+        self.repaint = true;
+    }
+
+    /// Take the pending repaint flag.
+    pub fn take_repaint(&mut self) -> bool {
+        std::mem::take(&mut self.repaint)
+    }
+
+    /// The middle column's scroll offset, for the host to feed back into the
+    /// model so the view can mount only the visible rows.
+    pub fn scroll_offset(&self) -> f32 {
+        self.middle_scroll
+            .as_ref()
+            .map(ScrollViewState::offset)
+            .unwrap_or(0.0)
+    }
+
+    /// The middle column's viewport height, or `0` before the first layout.
+    pub fn scroll_viewport(&self) -> f32 {
+        self.middle_scroll
+            .as_ref()
+            .map(ScrollViewState::viewport_height)
+            .unwrap_or(0.0)
     }
 
     /// The mounted tree.
@@ -127,6 +161,9 @@ impl Ui {
     /// [`InputEvent`] first.
     pub fn route_input(&mut self, event: &InputEvent) {
         let _ = draw_ui::route_input(&mut self.tree, event);
+        // Input can change hover / press / focus / the scroll offset, so the
+        // next present must rebuild the draw list.
+        self.repaint = true;
     }
 }
 

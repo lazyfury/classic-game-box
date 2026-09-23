@@ -218,6 +218,11 @@ pub struct ViewModel {
     /// The game whose screenshots the section shows, by game id. `None` falls
     /// back to the playing/selected game.
     pub screenshot_game: Option<i64>,
+    /// The library grid's scroll offset and viewport height. The view mounts
+    /// only the rows they cover, so a long library does not lay out and
+    /// re-measure every card on each scroll step.
+    pub library_offset: f32,
+    pub library_viewport: f32,
     /// The screenshot being previewed in the play column, by id.
     pub preview: Option<i64>,
     /// A destructive action waiting for confirmation, shown in a bar.
@@ -246,6 +251,8 @@ impl Default for ViewModel {
             status: String::new(),
             screenshots: Vec::new(),
             screenshot_game: None,
+            library_offset: 0.0,
+            library_viewport: 0.0,
             preview: None,
             confirm: None,
             cores: Vec::new(),

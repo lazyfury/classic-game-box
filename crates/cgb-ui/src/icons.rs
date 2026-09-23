@@ -14,10 +14,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use draw_components::{Component, Spec};
-use draw_core::{Color, Rect, Size};
-use draw_render::PaintContext;
+use draw_core::{Color, Rect, Size, Vec2};
+use draw_render::{DrawCommand, Paint, PaintContext};
 use draw_svg::SvgDocument;
 use draw_ui::{InteractState, MouseFilter, Widget};
+
+use crate::model::FrameHandle;
 
 /// Which vendored icon to draw.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -93,6 +95,113 @@ thread_local! {
     /// are rebuilt on every model change, so the result is kept per thread
     /// (the UI is single-threaded).
     static CACHE: RefCell<HashMap<IconName, Rc<SvgDocument>>> = RefCell::new(HashMap::new());
+
+    /// Rasterized icon textures, registered by the host. When an icon has one,
+    /// it is drawn as a single image instead of re-stroking its SVG every
+    /// frame — a card's controls are most of a frame's draw commands.
+    static TEXTURES: RefCell<HashMap<IconName, FrameHandle>> = RefCell::new(HashMap::new());
+}
+
+/// Register a rasterized texture for an icon (see [`rasterize_icon`]). The host
+/// calls this once after the backend exists.
+pub fn set_texture(name: IconName, handle: FrameHandle) {
+    TEXTURES.with(|textures| textures.borrow_mut().insert(name, handle));
+}
+
+/// Drop every registered icon texture (used by tests).
+pub fn clear_textures() {
+    TEXTURES.with(|textures| textures.borrow_mut().clear());
+}
+
+fn texture(name: IconName) -> Option<FrameHandle> {
+    TEXTURES.with(|textures| textures.borrow().get(&name).copied())
+}
+
+/// Rasterize an icon to white RGBA8, `size_px` square, ready for
+/// `register_texture`. The stroke is anti-aliased; the host tints it at draw
+/// time, so one texture serves every colour. `None` if the SVG fails to parse.
+pub fn rasterize_icon(name: IconName, size_px: u32) -> Option<(u32, u32, Vec<u8>)> {
+    let document = document(name)?;
+    if size_px == 0 {
+        return None;
+    }
+    let target = Rect::from_min_size(Vec2::ZERO, Size::splat(size_px as f32));
+    let mut ctx = PaintContext::new();
+    document.draw(&mut ctx, target, Color::WHITE);
+    let list = ctx.into_draw_list();
+
+    let side = size_px as usize;
+    let mut coverage = vec![0.0f32; side * side];
+    for command in list.commands() {
+        match command {
+            DrawCommand::Line {
+                from, to, width, ..
+            } => raster_segment(&mut coverage, side, *from, *to, width * 0.5),
+            DrawCommand::FillCircle { center, radius, .. } => {
+                raster_disc(&mut coverage, side, *center, *radius)
+            }
+            _ => {}
+        }
+    }
+
+    let mut rgba = vec![0u8; side * side * 4];
+    for (index, cover) in coverage.iter().enumerate() {
+        rgba[index * 4] = 255;
+        rgba[index * 4 + 1] = 255;
+        rgba[index * 4 + 2] = 255;
+        rgba[index * 4 + 3] = (cover.clamp(0.0, 1.0) * 255.0) as u8;
+    }
+    Some((size_px, size_px, rgba))
+}
+
+/// A thick line segment into the coverage buffer, anti-aliased at the edges.
+fn raster_segment(coverage: &mut [f32], side: usize, from: Vec2, to: Vec2, half_width: f32) {
+    let (min_x, max_x, min_y, max_y) = bounds(side, from, to, half_width);
+    let edge = to - from;
+    let length_sq = edge.x * edge.x + edge.y * edge.y;
+    for y in min_y..max_y {
+        for x in min_x..max_x {
+            let point = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
+            let offset = point - from;
+            let t = if length_sq > 0.0 {
+                ((offset.x * edge.x + offset.y * edge.y) / length_sq).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let closest = from + edge * t;
+            let distance = ((point.x - closest.x).powi(2) + (point.y - closest.y).powi(2)).sqrt();
+            let cover = (half_width + 0.5 - distance).clamp(0.0, 1.0);
+            let slot = &mut coverage[y * side + x];
+            if cover > *slot {
+                *slot = cover;
+            }
+        }
+    }
+}
+
+/// A filled circle into the coverage buffer (round caps and joins).
+fn raster_disc(coverage: &mut [f32], side: usize, center: Vec2, radius: f32) {
+    let (min_x, max_x, min_y, max_y) = bounds(side, center, center, radius);
+    for y in min_y..max_y {
+        for x in min_x..max_x {
+            let point = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
+            let distance = ((point.x - center.x).powi(2) + (point.y - center.y).powi(2)).sqrt();
+            let cover = (radius + 0.5 - distance).clamp(0.0, 1.0);
+            let slot = &mut coverage[y * side + x];
+            if cover > *slot {
+                *slot = cover;
+            }
+        }
+    }
+}
+
+/// The pixel bounds of a primitive, padded for anti-aliasing.
+fn bounds(side: usize, a: Vec2, b: Vec2, pad: f32) -> (usize, usize, usize, usize) {
+    let min_x = (a.x.min(b.x) - pad - 1.0).floor().max(0.0) as usize;
+    let max_x = (a.x.max(b.x) + pad + 1.0).ceil().min(side as f32) as usize;
+    let min_y = (a.y.min(b.y) - pad - 1.0).floor().max(0.0) as usize;
+    let max_y = (a.y.max(b.y) + pad + 1.0).ceil().min(side as f32) as usize;
+    (min_x, max_x, min_y, max_y)
 }
 
 /// The parsed (and cached) document for an icon, or `None` if it failed to
@@ -150,12 +259,24 @@ impl Component for Icon {
     fn prepare(&mut self) {
         self.spec.data.min_size = Size::splat(self.size);
         self.spec.data.mouse_filter = MouseFilter::Ignore;
+        let color = self.color;
+        let size = self.size;
+
+        // A registered texture is one draw command; the vector fallback is many
+        // (used until the host installs textures, and by tests).
+        if let Some(handle) = texture(self.name) {
+            self.spec.foreground = Some(Box::new(
+                move |ctx: &mut PaintContext, rect: Rect, _state: InteractState| {
+                    let target = Rect::from_center_size(rect.center(), Size::splat(size));
+                    ctx.draw_image(handle.texture, target, None, Paint::new(color));
+                },
+            ));
+            return;
+        }
 
         let Some(document) = document(self.name) else {
             return;
         };
-        let color = self.color;
-        let size = self.size;
         self.spec.foreground = Some(Box::new(
             move |ctx: &mut PaintContext, rect: Rect, _state: InteractState| {
                 let target = Rect::from_center_size(rect.center(), Size::splat(size));
@@ -172,6 +293,16 @@ mod tests {
     use super::*;
     use draw_core::{Rect, Vec2};
     use draw_render::PaintContext;
+
+    #[test]
+    fn rasterizing_an_icon_fills_some_pixels() {
+        let (width, height, rgba) = rasterize_icon(IconName::Camera, 32).expect("rasterize");
+        assert_eq!((width, height), (32, 32));
+        assert_eq!(rgba.len(), 32 * 32 * 4);
+        let covered = rgba.chunks(4).filter(|pixel| pixel[3] > 0).count();
+        assert!(covered > 0, "the icon covers some pixels");
+        assert!(covered < 32 * 32, "but not every pixel");
+    }
 
     #[test]
     fn every_icon_parses_and_draws() {

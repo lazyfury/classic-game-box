@@ -57,6 +57,11 @@ const LIBRARY_COLUMNS: usize = 2;
 /// Height of a card's cover placeholder in logical pixels.
 const PLACEHOLDER_HEIGHT: f32 = 112.0;
 
+/// A library card's fixed height. Uniform rows let the grid mount only the
+/// visible ones: the content is padded to this, and every card's text is one
+/// line, so it is never taller.
+const CARD_HEIGHT: f32 = 184.0;
+
 /// The card controls' icon size, and the square tap target around them.
 const CARD_ICON: f32 = 12.0;
 const CARD_ICON_BUTTON: f32 = 16.0;
@@ -411,16 +416,74 @@ fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> 
     )
 }
 
-/// The library as a fixed-column grid of cover cards. The whole grid is the
-/// content of the library page's [`ScrollView`].
-fn library_grid(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Grid {
+/// The library as a fixed-column grid of cover cards, mounted a window at a
+/// time. The whole thing is the content of the library page's [`ScrollView`].
+///
+/// Only the rows the viewport covers are built (plus one row of slack), with
+/// spacers above and below standing in for the rest, so the scrollbar and the
+/// offset stay correct while the cost of a scroll step depends on the viewport
+/// rather than on how many games the library holds.
+fn library_grid(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
+    let total = model.games.len();
+    let mut column = Column::new().gap(0.0).padding(Edges::ZERO);
+    if total == 0 {
+        return column;
+    }
+    let rows = total.div_ceil(LIBRARY_COLUMNS);
+    let stride = CARD_HEIGHT + space::SM;
+    // Before the first layout the viewport is unknown; assume a screenful.
+    let viewport = if model.library_viewport > 0.0 {
+        model.library_viewport
+    } else {
+        640.0
+    };
+    let (first, last) = visible_rows(model.library_offset, viewport, rows, stride);
+
+    let top = first as f32 * stride;
+    if top > 0.0 {
+        column = column.child(spacer(top));
+    }
+
     let mut grid = Grid::new(vec![Track::Fr(1.0); LIBRARY_COLUMNS])
         .gap(space::SM)
         .padding(Edges::ZERO);
-    for (index, game) in model.games.iter().enumerate() {
-        grid = grid.child(game_card(theme, model, game, index, actions));
+    for row in first..=last {
+        for column_index in 0..LIBRARY_COLUMNS {
+            let index = row * LIBRARY_COLUMNS + column_index;
+            if index >= total {
+                break;
+            }
+            grid = grid.child(game_card(theme, model, &model.games[index], index, actions));
+        }
     }
-    grid
+    column = column.child(grid);
+
+    let bottom = rows.saturating_sub(last + 1) as f32 * stride;
+    if bottom > 0.0 {
+        column = column.child(spacer(bottom));
+    }
+    column
+}
+
+/// An empty block of `height` logical pixels, standing in for unmounted rows.
+fn spacer(height: f32) -> Flex {
+    Flex::column()
+        .gap(0.0)
+        .padding(Edges::ZERO)
+        .min_size(0.0, height)
+}
+
+/// The inclusive row range to mount for a scroll `offset` and `viewport`,
+/// given the row count and stride. One row of slack past each edge keeps a
+/// partly visible row from popping in.
+fn visible_rows(offset: f32, viewport: f32, rows: usize, stride: f32) -> (usize, usize) {
+    if rows == 0 || stride <= 0.0 {
+        return (0, 0);
+    }
+    let last = rows - 1;
+    let first = (offset.max(0.0) / stride).floor() as usize;
+    let end = ((offset + viewport) / stride).ceil() as usize + 1;
+    (first.min(last), end.min(last).max(first.min(last)))
 }
 
 /// One library cell: the cover (with the console badge and the card controls
@@ -436,9 +499,12 @@ fn game_card(
 ) -> Column {
     let click = actions.clone();
     let playing = model.selected == Some(index);
-    let mut card = Column::new()
+    Column::new()
         .gap(space::XXS)
         .padding(Edges::all(space::XXS))
+        // A fixed height keeps the rows uniform for the virtualized grid; the
+        // tags line is always present so a card with no tags is not shorter.
+        .min_size(0.0, CARD_HEIGHT)
         .dynamic_background(move |state| {
             let fill = if playing {
                 theme.palette().selection
@@ -461,16 +527,13 @@ fn game_card(
                 .tone(Tone::Subtle)
                 .max_lines(1)
                 .ellipsis(true),
-        );
-    if !game.tags.is_empty() {
-        card = card.child(
+        )
+        .child(
             Text::caption(tags_label(game), theme)
                 .tone(Tone::Muted)
                 .max_lines(1)
                 .ellipsis(true),
-        );
-    }
-    card
+        )
 }
 
 /// A card's tags as one line: the first few `#words`, then a `+N` count. A
@@ -1674,6 +1737,18 @@ mod tests {
         assert!(has("Nestopia"), "every core for the console is offered");
         assert!(has("Mesen"), "the selected core is shown");
         assert!(has("X / K"), "the binding is shown");
+    }
+
+    /// The grid mounts a window of rows, not the whole library.
+    #[test]
+    fn visible_rows_windows_the_grid() {
+        // 10 rows, 100px stride, 250px viewport: the visible rows plus slack.
+        assert_eq!(visible_rows(0.0, 250.0, 10, 100.0), (0, 4));
+        assert_eq!(visible_rows(500.0, 250.0, 10, 100.0), (5, 9));
+        // Past the end clamps to the last row.
+        assert_eq!(visible_rows(5000.0, 250.0, 10, 100.0), (9, 9));
+        // Nothing to show.
+        assert_eq!(visible_rows(0.0, 250.0, 0, 100.0), (0, 0));
     }
 
     /// The library is a grid, not a list: the first `LIBRARY_COLUMNS` cells

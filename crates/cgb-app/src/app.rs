@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use draw_backend_wgpu::{wgpu, FontConfig, FontMetrics, FontMode, WgpuBackend};
 use draw_core::{FontWeight, InputEvent, Key, PointerButton, Size, Vec2, ViewportSize};
-use draw_render::{PaintContext, RenderBackend, TextureId};
+use draw_render::{DrawList, PaintContext, RenderBackend, TextureId};
 use draw_theme::{default_theme, Mode, Theme};
 use draw_ui::TextMeasurer;
 use winit::application::ApplicationHandler;
@@ -49,6 +49,13 @@ const COVER_TEXTURE_BASE: u32 = 0x1000;
 
 /// Screenshot thumbnails live in their own id space, above the covers.
 const SCREENSHOT_TEXTURE_BASE: u32 = 0x1_0000;
+
+/// Rasterized icon textures, above the screenshots.
+const ICON_TEXTURE_BASE: u32 = 0x2_0000;
+
+/// The pixel size icons are rasterized at. They are drawn smaller, so the
+/// bilinear downscale stays smooth.
+const ICON_TEXTURE_PX: u32 = 32;
 
 /// macOS title bar height, in logical points. The window uses a full-size
 /// content view, so the UI runs under the title bar and the header must clear
@@ -118,6 +125,12 @@ struct App {
     ui: Ui,
     /// Set when the model changed and the tree must be rebuilt.
     dirty: bool,
+    /// The last painted draw list. Re-submitted when nothing changed (a running
+    /// game updates its texture in place), so the UI is not laid out and
+    /// painted every frame.
+    draw_list: Option<DrawList>,
+    /// Whether to print per-frame phase timings (`CGB_PERF=1`).
+    perf: bool,
 
     paths: Paths,
     settings: Settings,
@@ -188,6 +201,8 @@ impl App {
             model,
             ui,
             dirty: true,
+            draw_list: None,
+            perf: std::env::var_os("CGB_PERF").is_some(),
             paths,
             settings,
             library,
@@ -294,6 +309,7 @@ impl App {
         self.dirty = true;
 
         // Covers could not be uploaded before the backend existed; do it now.
+        self.install_icon_textures();
         self.refresh_cover_textures();
         self.refresh_screenshot_textures();
         self.rebuild_game_rows();
@@ -402,7 +418,34 @@ impl App {
         }
     }
 
-    /// Decode and upload a thumbnail for every screenshot, reusing uploads
+    /// Decode and upload a texture for every icon, so the UI draws each one as
+    /// a single image instead of re-stroking its SVG every frame.
+    fn install_icon_textures(&mut self) {
+        let Some(backend) = self.backend.as_mut() else {
+            return;
+        };
+        for (index, name) in cgb_ui::IconName::ALL.into_iter().enumerate() {
+            let Some((width, height, rgba)) = cgb_ui::rasterize_icon(name, ICON_TEXTURE_PX) else {
+                continue;
+            };
+            let texture = TextureId::new(ICON_TEXTURE_BASE + index as u32);
+            if backend
+                .register_texture(texture, width, height, &rgba)
+                .is_ok()
+            {
+                cgb_ui::set_texture(
+                    name,
+                    FrameHandle {
+                        texture,
+                        width,
+                        height,
+                    },
+                );
+            }
+        }
+    }
+
+    /// Decode and upload a texture for every screenshot, reusing uploads
     /// whose file is unchanged. The backend has no `remove_texture`, so
     /// deleted screenshots leave their texture behind.
     fn refresh_screenshot_textures(&mut self) {
@@ -958,13 +1001,21 @@ impl App {
         if width == 0 || height == 0 {
             return;
         }
+        // A resize event often repeats the same size; reconfiguring the surface
+        // for each one is the expensive part, so skip it when nothing changed.
+        if config.width == width && config.height == height {
+            return;
+        }
         config.width = width;
         config.height = height;
         surface.configure(backend.device(), config);
+        // The viewport changed, so the layout and the draw list must be redone.
+        self.ui.request_repaint();
     }
 
     /// Route one input event: the UI first, then the emulator bindings.
     fn feed(&mut self, event: &InputEvent) {
+        let scroll_before = self.ui.scroll_offset();
         self.ui.route_input(event);
         match event {
             InputEvent::KeyDown { key } => {
@@ -976,6 +1027,13 @@ impl App {
             _ => {}
         }
         self.handle_actions();
+        // A wheel or scrollbar move changes the offset; feed it back so the
+        // grid rebuilds with the new visible window.
+        let scroll_after = self.ui.scroll_offset();
+        if self.model.section == Section::Library && scroll_after != scroll_before {
+            self.model.library_offset = scroll_after;
+            self.dirty = true;
+        }
     }
 
     /// Act on whatever the UI recorded this event.
@@ -983,11 +1041,17 @@ impl App {
         for action in self.actions.drain() {
             match action {
                 Action::Show(section) => {
+                    let changed = self.model.section != section;
                     self.model.section = section;
                     // The screenshots section follows the playing game unless a
                     // card sent it to a specific one.
                     if section == Section::Screenshots && self.model.screenshot_game.is_none() {
                         self.model.screenshot_game = self.selected_game_id();
+                    }
+                    // A page switch starts its scroll at the top; keep the
+                    // grid's window in step with that.
+                    if changed && section == Section::Library {
+                        self.model.library_offset = 0.0;
                     }
                     self.dirty = true;
                 }
@@ -1260,10 +1324,39 @@ impl App {
         );
         let viewport = ViewportSize::new(logical);
 
-        self.ui.layout(viewport);
-        let mut ctx = PaintContext::new();
-        self.ui.paint(&mut ctx);
-        let list = ctx.into_draw_list();
+        // Rebuild the draw list only when something changed. A running game
+        // updates its texture in place, so its frames re-submit the previous
+        // list instead of laying out and painting the whole UI again.
+        let repaint = self.ui.take_repaint() || self.draw_list.is_none();
+        let mut layout_time = Duration::ZERO;
+        let mut paint_time = Duration::ZERO;
+        if repaint {
+            let started = Instant::now();
+            self.ui.layout(viewport);
+            layout_time = started.elapsed();
+            // The library grid mounts only the rows the viewport covers, so
+            // the resolved offset and viewport go back into the model; a change
+            // asks for one more rebuild.
+            if self.model.section == Section::Library {
+                let offset = self.ui.scroll_offset();
+                let viewport_height = self.ui.scroll_viewport();
+                if offset != self.model.library_offset
+                    || viewport_height != self.model.library_viewport
+                {
+                    self.model.library_offset = offset;
+                    self.model.library_viewport = viewport_height;
+                    self.dirty = true;
+                    if let Some(window) = self.window.as_ref() {
+                        window.request_redraw();
+                    }
+                }
+            }
+            let started = Instant::now();
+            let mut ctx = PaintContext::new();
+            self.ui.paint(&mut ctx);
+            self.draw_list = Some(ctx.into_draw_list());
+            paint_time = started.elapsed();
+        }
 
         let surface_texture = match surface.get_current_texture() {
             Ok(texture) => texture,
@@ -1285,8 +1378,22 @@ impl App {
             .begin_frame_with_view(view, config.width, config.height, config.format, viewport)
             .is_ok()
         {
-            let _ = backend.submit(&list);
+            let started = Instant::now();
+            if let Some(list) = self.draw_list.as_ref() {
+                let _ = backend.submit(list);
+            }
             let _ = backend.end_frame();
+            if self.perf {
+                let commands = self
+                    .draw_list
+                    .as_ref()
+                    .map_or(0, |list| list.commands().len());
+                eprintln!(
+                    "cgb perf: repaint={repaint} layout={layout_time:?} paint={paint_time:?} \
+                     submit={:?} commands={commands}",
+                    started.elapsed()
+                );
+            }
         }
         surface_texture.present();
     }
@@ -1344,6 +1451,7 @@ impl ApplicationHandler for App {
                 if let Some(backend) = self.backend.as_mut() {
                     backend.set_scale_factor(scale_factor as f32);
                 }
+                self.ui.request_repaint();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = self.to_logical(position);
