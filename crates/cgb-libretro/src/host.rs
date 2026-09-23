@@ -477,6 +477,12 @@ impl CoreHost {
         }
     }
 
+    /// The number of bytes `serialize` would produce, or `0` when the core does
+    /// not implement save states.
+    pub fn serialize_size(&self) -> usize {
+        unsafe { (self.core.api().serialize_size)() }
+    }
+
     /// Restore a save state. Returns whether the core accepted it.
     pub fn unserialize(&self, bytes: &[u8]) -> bool {
         if bytes.is_empty() {

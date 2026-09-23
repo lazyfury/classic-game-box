@@ -10,18 +10,25 @@ use draw_render::TextureId;
 pub enum Section {
     Library,
     Screenshots,
+    Saves,
     Settings,
 }
 
 impl Section {
     /// The pages, in the order the rail lists them.
-    pub const ALL: [Section; 3] = [Section::Library, Section::Screenshots, Section::Settings];
+    pub const ALL: [Section; 4] = [
+        Section::Library,
+        Section::Screenshots,
+        Section::Saves,
+        Section::Settings,
+    ];
 
     /// What the rail says.
     pub fn label(self) -> &'static str {
         match self {
             Section::Library => "游戏库",
             Section::Screenshots => "截图",
+            Section::Saves => "存档",
             Section::Settings => "设置",
         }
     }
@@ -112,6 +119,17 @@ pub struct GameRow {
     /// The game's cover texture, when it has a screenshot set as cover. The
     /// app registers it; the view draws it behind the card controls.
     pub cover: Option<FrameHandle>,
+}
+
+/// One save-state slot in the saves section.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SaveSlotRow {
+    pub slot: u8,
+    pub exists: bool,
+    /// When it was written, epoch milliseconds (0 = never).
+    pub modified_ms: i64,
+    /// The registered thumbnail texture, when the slot has one.
+    pub thumb: Option<FrameHandle>,
 }
 
 /// One screenshot in the screenshots section.
@@ -252,6 +270,11 @@ pub struct ViewModel {
     /// The game whose screenshots the section shows, by game id. `None` falls
     /// back to the playing/selected game.
     pub screenshot_game: Option<i64>,
+    /// The running game's save slots. Empty when nothing is running; the
+    /// section shows a note instead.
+    pub saves: Vec<SaveSlotRow>,
+    /// Whether the running core supports save states at all.
+    pub saves_supported: bool,
     /// The middle column's scrollable grid (library or screenshots): its
     /// scroll offset and viewport height. The view mounts only the rows they
     /// cover, so a long grid does not lay out and re-measure every cell on
@@ -294,6 +317,8 @@ impl Default for ViewModel {
             status: String::new(),
             screenshots: Vec::new(),
             screenshot_game: None,
+            saves: Vec::new(),
+            saves_supported: false,
             grid_offset: 0.0,
             grid_viewport: 0.0,
             search: String::new(),
@@ -368,6 +393,12 @@ pub enum Action {
     StepPreview(i32),
     /// Make the screenshot with this id its game's cover.
     SetCover(i64),
+    /// Write a save state to this slot.
+    SaveToSlot(u8),
+    /// Load the save state in this slot.
+    LoadFromSlot(u8),
+    /// Delete the save state in this slot.
+    DeleteSlot(u8),
     /// Reveal the screenshot with this id in the file browser.
     RevealScreenshot(i64),
     /// Open the screenshots directory in the file browser.

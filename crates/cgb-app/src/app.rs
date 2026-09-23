@@ -35,7 +35,7 @@ use cgb_library::{
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
 use cgb_ui::{
     Action, Actions, BindingRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow,
-    SafeArea, ScreenshotRow, Section, SortKey, Ui, ViewModel,
+    InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow, Section, SortKey, Ui, ViewModel,
 };
 
 use crate::cli::{Args, CoreOverride};
@@ -52,6 +52,9 @@ const SCREENSHOT_TEXTURE_BASE: u32 = 0x1_0000;
 
 /// Rasterized icon textures, above the screenshots.
 const ICON_TEXTURE_BASE: u32 = 0x2_0000;
+
+/// Save-state thumbnails, above the icons, one per slot.
+const SAVE_TEXTURE_BASE: u32 = 0x3_0000;
 
 /// The pixel size icons are rasterized at. They are drawn smaller, so the
 /// bilinear downscale stays smooth.
@@ -143,6 +146,9 @@ struct App {
     cover_textures: HashMap<i64, CoverTexture>,
     /// Registered screenshot thumbnails, keyed by screenshot id.
     screenshot_textures: HashMap<i64, ScreenshotTexture>,
+    /// Registered save-state thumbnails, keyed by slot, with the modified time
+    /// they were uploaded for.
+    save_textures: HashMap<u8, (i64, FrameHandle)>,
     /// Whether the current screenshot preview paused a running game, so it can
     /// be resumed when the preview closes.
     preview_paused: bool,
@@ -216,6 +222,7 @@ impl App {
             game_source: Vec::new(),
             cover_textures: HashMap::new(),
             screenshot_textures: HashMap::new(),
+            save_textures: HashMap::new(),
             preview_paused: false,
             input: InputState::new(),
             bindings: cgb_systems::SYSTEMS
@@ -656,6 +663,99 @@ impl App {
         }
     }
 
+    /// Write a save state to a slot, with a thumbnail.
+    fn save_to_slot(&mut self, slot: u8) {
+        self.flush_playtime();
+        self.model.status = match self.session.as_ref() {
+            Some(session) => match session.save_state(slot) {
+                Ok(()) => format!("已存档（槽位 {}）", slot + 1),
+                Err(error) => error,
+            },
+            None => "没有正在运行的游戏".to_string(),
+        };
+        self.refresh_saves();
+        self.dirty = true;
+    }
+
+    /// Load a save state from a slot.
+    fn load_from_slot(&mut self, slot: u8) {
+        self.model.status = match self.session.as_ref() {
+            Some(session) => match session.load_state(slot) {
+                Ok(()) => format!("已读档（槽位 {}）", slot + 1),
+                Err(error) => error,
+            },
+            None => "没有正在运行的游戏".to_string(),
+        };
+        self.dirty = true;
+    }
+
+    /// Delete a slot's state and thumbnail.
+    fn delete_slot(&mut self, slot: u8) {
+        if let Some(session) = self.session.as_ref() {
+            session.delete_save(slot);
+        }
+        self.model.status = format!("已删除存档（槽位 {}）", slot + 1);
+        self.refresh_saves();
+        self.dirty = true;
+    }
+
+    /// Rebuild the saves list for the running game and its core, uploading a
+    /// thumbnail for any slot that changed.
+    fn refresh_saves(&mut self) {
+        self.model.saves.clear();
+        self.model.saves_supported = false;
+        let Some(session) = self.session.as_ref() else {
+            return;
+        };
+        self.model.saves_supported = session.save_supported();
+        let slots = session.save_slots();
+        for slot in &slots {
+            let mut thumb = None;
+            if slot.thumbnail {
+                let stale = self
+                    .save_textures
+                    .get(&slot.slot)
+                    .map(|(modified, _)| *modified)
+                    != Some(slot.modified_ms);
+                if stale {
+                    if let Some(backend) = self.backend.as_mut() {
+                        if let Ok(bytes) = std::fs::read(session.save_thumbnail_path(slot.slot)) {
+                            if let Ok((width, height, rgba)) = decode_png(&bytes) {
+                                let texture = TextureId::new(SAVE_TEXTURE_BASE + slot.slot as u32);
+                                if backend
+                                    .register_texture(texture, width, height, &rgba)
+                                    .is_ok()
+                                {
+                                    self.save_textures.insert(
+                                        slot.slot,
+                                        (
+                                            slot.modified_ms,
+                                            FrameHandle {
+                                                texture,
+                                                width,
+                                                height,
+                                            },
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                thumb = self
+                    .save_textures
+                    .get(&slot.slot)
+                    .map(|(_, handle)| *handle);
+            }
+            self.model.saves.push(SaveSlotRow {
+                slot: slot.slot,
+                exists: slot.exists,
+                modified_ms: slot.modified_ms,
+                thumb,
+            });
+        }
+    }
+
     /// Rebuild the library rows from [`App::game_source`], applying the saved
     /// sort order. Pinned games always come first; the sort key only orders
     /// within the pinned and unpinned groups. Cheap enough to run on every sort
@@ -725,7 +825,7 @@ impl App {
             .map(|session| session.input_descriptors())
             .unwrap_or_default()
             .into_iter()
-            .map(|descriptor| cgb_ui::InputDescriptorRow {
+            .map(|descriptor| InputDescriptorRow {
                 port: descriptor.port,
                 device: descriptor.device,
                 index: descriptor.index,
@@ -1086,6 +1186,9 @@ impl App {
                     if section == Section::Screenshots && self.model.screenshot_game.is_none() {
                         self.model.screenshot_game = self.selected_game_id();
                     }
+                    if section == Section::Saves {
+                        self.refresh_saves();
+                    }
                     // A page switch starts its scroll at the top; keep the
                     // grid's window in step with that.
                     if changed && matches!(section, Section::Library | Section::Screenshots) {
@@ -1168,6 +1271,9 @@ impl App {
                 Action::SetCover(id) => self.set_cover(id),
                 Action::RevealScreenshot(id) => self.reveal_screenshot(id),
                 Action::OpenScreenshotsFolder => self.open_screenshots_folder(),
+                Action::SaveToSlot(slot) => self.save_to_slot(slot),
+                Action::LoadFromSlot(slot) => self.load_from_slot(slot),
+                Action::DeleteSlot(slot) => self.delete_slot(slot),
             }
         }
     }
@@ -1433,6 +1539,8 @@ impl App {
                 // Count the run and stamp it; this also re-points the selection
                 // at the row, which a sort by "recent" may have moved.
                 self.note_started(rom_path);
+                // The saves list follows the running core.
+                self.refresh_saves();
             }
             Err(error) => {
                 self.model.status = error;

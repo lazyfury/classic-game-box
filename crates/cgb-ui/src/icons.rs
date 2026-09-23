@@ -56,11 +56,13 @@ pub enum IconName {
     Tag,
     /// A check mark; commit an edit.
     Check,
+    /// A floppy disk; the saves section.
+    Save,
 }
 
 impl IconName {
     /// Every icon in the pack, for tests and iteration.
-    pub const ALL: [IconName; 16] = [
+    pub const ALL: [IconName; 17] = [
         IconName::Pin,
         IconName::Trash,
         IconName::ArrowUp,
@@ -77,6 +79,7 @@ impl IconName {
         IconName::Pencil,
         IconName::Tag,
         IconName::Check,
+        IconName::Save,
     ];
 
     /// The embedded SVG source for this icon.
@@ -98,6 +101,7 @@ impl IconName {
             IconName::Pencil => include_str!("../assets/icons/pencil.svg"),
             IconName::Tag => include_str!("../assets/icons/tag.svg"),
             IconName::Check => include_str!("../assets/icons/check.svg"),
+            IconName::Save => include_str!("../assets/icons/save.svg"),
         }
     }
 }

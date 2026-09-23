@@ -75,12 +75,26 @@ impl Default for Paths {
 }
 
 /// A ROM's save-state path for a slot (1..=4), or the quick slot (`0`).
-pub fn save_state_path(saves: &Path, rom: &Path, slot: u8) -> PathBuf {
+///
+/// The core key is part of the name because libretro save states are core
+/// private: a state a Mesen made cannot be read by FBNeo, so the two must not
+/// collide on one slot.
+pub fn save_state_path(saves: &Path, rom: &Path, core_key: &str, slot: u8) -> PathBuf {
     let name = rom
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "game".to_string());
-    saves.join(format!("{name}.state{slot}"))
+    saves.join(format!("{name}.{core_key}.state{slot}"))
+}
+
+/// A slot's thumbnail (a PNG beside the state), or `None` for the quick slot
+/// if it has none.
+pub fn save_state_thumb_path(saves: &Path, rom: &Path, core_key: &str, slot: u8) -> PathBuf {
+    let name = rom
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "game".to_string());
+    saves.join(format!("{name}.{core_key}.state{slot}.png"))
 }
 
 /// A ROM's battery-save (`RETRO_MEMORY_SAVE_RAM`) path.
@@ -131,8 +145,13 @@ mod tests {
 
     #[test]
     fn a_state_path_keeps_the_full_name_and_slot() {
-        let path = save_state_path(Path::new("/saves"), Path::new("/roms/mario.nes"), 2);
-        assert_eq!(path, PathBuf::from("/saves/mario.nes.state2"));
+        let path = save_state_path(
+            Path::new("/saves"),
+            Path::new("/roms/mario.nes"),
+            "mesen",
+            2,
+        );
+        assert_eq!(path, PathBuf::from("/saves/mario.nes.mesen.state2"));
     }
 
     #[test]

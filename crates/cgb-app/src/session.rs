@@ -9,7 +9,10 @@ use std::path::{Path, PathBuf};
 
 use cgb_audio::AudioOutput;
 use cgb_input::InputState;
-use cgb_library::{battery_save_path, exists, read, save_state_path, write};
+use cgb_library::{
+    battery_save_path, encode_png, exists, list_slots, read, remove, save_state_path,
+    save_state_thumb_path, write, StateSlot,
+};
 use cgb_libretro::CoreHost;
 use cgb_systems::CoreSpec;
 use cgb_ui::FrameHandle;
@@ -37,6 +40,9 @@ pub struct Session {
     save_dir: PathBuf,
     /// The cartridge path, used to name its `.srm` / `.stateN` files.
     rom_path: PathBuf,
+    /// The core's manifest key; save states are namespaced by it because they
+    /// are not portable between cores.
+    core_key: String,
     /// Wall-clock seconds played while unpaused; drained to the library.
     played_seconds: f64,
     /// The most recent frame's RGBA8 pixels, kept for a screenshot. Moved here
@@ -109,6 +115,7 @@ impl Session {
             accumulator: 0.0,
             save_dir: save_dir.to_path_buf(),
             rom_path: rom_path.to_path_buf(),
+            core_key: spec.key.clone(),
             played_seconds: 0.0,
             last_pixels: None,
         })
@@ -169,19 +176,28 @@ impl Session {
         self.core.reset();
     }
 
-    /// Write a save state for `slot` to disk (`0` is the quick slot).
+    /// Write a save state for `slot` to disk (`0` is the quick slot), with a
+    /// thumbnail of the last frame beside it.
     pub fn save_state(&self, slot: u8) -> Result<(), String> {
         let bytes = self.core.serialize();
         if bytes.is_empty() {
             return Err("核心不支持即时存档".to_string());
         }
-        let path = save_state_path(&self.save_dir, &self.rom_path, slot);
-        write(&path, &bytes).map_err(|error| error.to_string())
+        let path = save_state_path(&self.save_dir, &self.rom_path, &self.core_key, slot);
+        write(&path, &bytes).map_err(|error| error.to_string())?;
+        if let Some((width, height, pixels)) = self.last_pixels.as_ref() {
+            if let Ok(png) = encode_png(*width, *height, pixels) {
+                let thumb =
+                    save_state_thumb_path(&self.save_dir, &self.rom_path, &self.core_key, slot);
+                let _ = write(&thumb, &png);
+            }
+        }
+        Ok(())
     }
 
     /// Restore the save state in `slot`, if one exists.
     pub fn load_state(&self, slot: u8) -> Result<(), String> {
-        let path = save_state_path(&self.save_dir, &self.rom_path, slot);
+        let path = save_state_path(&self.save_dir, &self.rom_path, &self.core_key, slot);
         let Some(bytes) = read(&path) else {
             return Err(format!("槽位 {slot} 还没有存档"));
         };
@@ -260,6 +276,38 @@ impl Session {
     /// The input descriptors the core declared, for the settings page.
     pub fn input_descriptors(&self) -> Vec<cgb_libretro::InputDescriptor> {
         self.core.input_descriptors()
+    }
+
+    /// Whether the core can serialize at all (some cannot; the saves UI is
+    /// disabled for them).
+    pub fn save_supported(&self) -> bool {
+        self.core.serialize_size() > 0
+    }
+
+    /// This game's save slots for the running core.
+    pub fn save_slots(&self) -> Vec<StateSlot> {
+        list_slots(&self.save_dir, &self.rom_path, &self.core_key)
+    }
+
+    /// A slot's thumbnail path, for the app to decode and upload.
+    pub fn save_thumbnail_path(&self, slot: u8) -> PathBuf {
+        save_state_thumb_path(&self.save_dir, &self.rom_path, &self.core_key, slot)
+    }
+
+    /// Delete a slot's state and thumbnail, ignoring missing files.
+    pub fn delete_save(&self, slot: u8) {
+        remove(&save_state_path(
+            &self.save_dir,
+            &self.rom_path,
+            &self.core_key,
+            slot,
+        ));
+        let _ = std::fs::remove_file(save_state_thumb_path(
+            &self.save_dir,
+            &self.rom_path,
+            &self.core_key,
+            slot,
+        ));
     }
 
     /// One emulated frame, in seconds.
