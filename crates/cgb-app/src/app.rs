@@ -820,14 +820,15 @@ impl App {
         };
         cheat.enabled = !cheat.enabled;
         let enabled = cheat.enabled;
-        let code = cheat.code.clone();
-        if let Some(session) = self.session.as_ref() {
-            session.set_cheat(index, enabled, &code);
-        }
+        let desc = cheat.desc.clone();
         if let Some(path) = self.cheat_path.clone() {
             let _ = cgb_library::save_cheats(&path, &self.cheats);
         }
-        let desc = self.cheats[index].desc.clone();
+        // Re-apply the whole list: the cores ignore the enabled flag, so a
+        // disabled cheat has to be left out rather than sent as disabled.
+        if let Some(session) = self.session.as_ref() {
+            session.apply_cheats(&self.cheats);
+        }
         self.populate_cheats();
         self.model.status = format!("{}：{desc}", if enabled { "已开启" } else { "已关闭" });
     }
@@ -1638,6 +1639,9 @@ impl App {
                 self.cheat_path = Some(cheat_path);
                 if let Some(session) = self.session.as_ref() {
                     session.apply_cheats(&self.cheats);
+                }
+                if !self.cheats.is_empty() {
+                    self.model.status = format!("已应用 {} 条金手指", self.cheats.len());
                 }
                 self.populate_cheats();
                 // Count the run and stamp it; this also re-points the selection
