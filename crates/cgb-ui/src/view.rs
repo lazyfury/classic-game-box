@@ -42,7 +42,7 @@ use draw_ui::{Align, Justify, MouseFilter, SizeBasis, SurfaceStyle, Track};
 
 use crate::frame::{cover_fit, FrameImage};
 use crate::icons::{Icon as SvgIcon, IconName};
-use crate::model::{Action, GameRow, ScreenshotRow, Section, SortKey, ViewModel};
+use crate::model::{Action, Confirm, GameRow, ScreenshotRow, Section, SortKey, ViewModel};
 
 /// The rail's fixed width in logical pixels.
 const RAIL_WIDTH: f32 = 64.0;
@@ -59,7 +59,7 @@ const PLACEHOLDER_HEIGHT: f32 = 112.0;
 
 /// The card controls' icon size, and the square tap target around them.
 const CARD_ICON: f32 = 12.0;
-const CARD_ICON_BUTTON: f32 = 18.0;
+const CARD_ICON_BUTTON: f32 = 16.0;
 
 /// The pinned pin's colour (the old front end's `#ffd60a`).
 const PIN_COLOR: Color = Color::new(1.0, 0.84, 0.04, 1.0);
@@ -94,28 +94,60 @@ pub fn build(
     // The layout root places its direct children by anchors, so the vertical
     // stack is one level down: the root's single child is a column, and *its*
     // children (header / columns / status) are the flex items.
-    let tree = Flex::column()
+    let mut inner = Flex::column()
+        .gap(0.0)
+        .padding(Edges::ZERO)
         .mouse_filter(MouseFilter::Ignore)
+        .child(header(theme, model))
         .child(
-            Flex::column()
+            Flex::row()
+                .grow(1.0)
                 .gap(0.0)
                 .padding(Edges::ZERO)
                 .mouse_filter(MouseFilter::Ignore)
-                .child(header(theme, model))
-                .child(
-                    Flex::row()
-                        .grow(1.0)
-                        .gap(0.0)
-                        .padding(Edges::ZERO)
-                        .mouse_filter(MouseFilter::Ignore)
-                        .child(rail(theme, model, actions))
-                        .child(middle(theme, model, actions, &mut middle_scroll))
-                        .child(play_column(theme, model, actions)),
-                )
-                .child(status_bar(theme, model)),
-        )
+                .child(rail(theme, model, actions))
+                .child(middle(theme, model, actions, &mut middle_scroll))
+                .child(play_column(theme, model, actions)),
+        );
+    if model.confirm.is_some() {
+        inner = inner.child(confirm_bar(theme, model, actions));
+    }
+    let tree = Flex::column()
+        .mouse_filter(MouseFilter::Ignore)
+        .child(inner.child(status_bar(theme, model)))
         .into_tree();
     (tree, middle_scroll)
+}
+
+/// The confirmation bar, above the status line, for a pending destructive
+/// action. Its buttons run the action or dismiss it.
+fn confirm_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
+    let message = model.confirm.map(Confirm::message).unwrap_or_default();
+    let confirm = actions.clone();
+    let cancel = actions.clone();
+    Column::new()
+        .gap(0.0)
+        .child(Divider::horizontal(theme))
+        .child(
+            Row::new()
+                .align(Align::Center)
+                .gap(space::SM)
+                .padding(Edges::new(space::MD, space::XS, space::MD, space::XS))
+                .child(
+                    Text::small(message, theme)
+                        .grow(1.0)
+                        .max_lines(1)
+                        .ellipsis(true),
+                )
+                .child(
+                    Button::destructive("删除", theme)
+                        .on_click(move || confirm.push(Action::ConfirmDelete)),
+                )
+                .child(
+                    Button::secondary("取消", theme)
+                        .on_click(move || cancel.push(Action::CancelDelete)),
+                ),
+        )
 }
 
 /// The slim top bar: the app name and what the middle column is showing.
@@ -458,15 +490,24 @@ fn tags_label(game: &GameRow) -> String {
 fn cover(theme: &'static dyn Theme, game: &GameRow, index: usize, actions: &Actions) -> Column {
     let mut cover = Column::new()
         .gap(space::XXS)
-        .padding(Edges::all(space::XS))
+        // No outer padding: the controls sit flush in the top-right corner.
+        .padding(Edges::ZERO)
         .min_size(0.0, PLACEHOLDER_HEIGHT)
         .surface(SurfaceStyle::new(cover_color(&game.path)).radius(radius::SM))
         .child(
             Row::new()
                 .align(Align::Center)
                 .gap(space::XXS)
+                .padding(Edges {
+                    left: 2.0,
+                    top: 2.0,
+                    right: 2.0,
+                    bottom: 2.0,
+                })
+                .background(Color::BLACK.with_alpha(0.4))
+                // The badge and the controls both hug their corner, no inset.
                 .child(system_badge(theme, game))
-                .child(Flex::row().grow(1.0))
+                .child(Flex::column().grow(1.0).padding(Edges::all(0.0)))
                 .child(card_controls(theme, game, index, actions)),
         );
 
@@ -487,6 +528,7 @@ fn cover(theme: &'static dyn Theme, game: &GameRow, index: usize, actions: &Acti
                     .align(Align::Center)
                     .justify(Justify::Center)
                     .grow(1.0)
+                    .padding(Edges::all(space::XS))
                     .child(
                         Text::caption(game.name.as_str(), theme)
                             .color(Color::WHITE.with_alpha(0.92))
@@ -500,12 +542,21 @@ fn cover(theme: &'static dyn Theme, game: &GameRow, index: usize, actions: &Acti
 }
 
 /// The console badge, top-left on the cover: the short name the console is
-/// known by ("NES", "GBA", "GB").
-fn system_badge(theme: &'static dyn Theme, game: &GameRow) -> Badge {
-    Badge::new(game.system.short(), theme)
-        .fill(Color::new(0.11, 0.11, 0.13, 0.72))
-        .text_color(Color::WHITE.with_alpha(0.88))
-        .radius(radius::SM)
+/// known by ("NES", "GBA", "GB"). Compact and unpadded, like the controls.
+fn system_badge(theme: &'static dyn Theme, game: &GameRow) -> Flex {
+    Flex::row()
+        .align(Align::Center)
+        .justify(Justify::Center)
+        .gap(0.0)
+        .padding(Edges {
+            left: 4.0,
+            top: 1.0,
+            right: 4.0,
+            bottom: 1.0,
+        })
+        .min_size(CARD_ICON_BUTTON, CARD_ICON_BUTTON)
+        .surface(SurfaceStyle::new(Color::new(0.11, 0.11, 0.13, 0.72)).radius(radius::SM))
+        .child(Text::caption(game.system.short(), theme).color(Color::WHITE.with_alpha(0.88)))
 }
 
 /// The card's controls, top-right on the cover: the screenshot count (when
@@ -522,7 +573,6 @@ fn card_controls(
         row = row.child(screenshot_entry(theme, game, actions));
     }
     row.child(icon_button(
-        theme,
         IconName::Pin,
         if game.pinned {
             PIN_COLOR
@@ -535,55 +585,50 @@ fn card_controls(
         },
     ))
     .child(icon_button(
-        theme,
         IconName::Trash,
         Color::WHITE.with_alpha(0.85),
         {
             let actions = actions.clone();
-            move || actions.push(Action::DeleteGame(index))
+            let game_id = game.id;
+            move || actions.push(Action::RequestDelete(Confirm::DeleteGame(game_id)))
         },
     ))
 }
 
 /// The card's screenshot count: a camera and the number, opening the
 /// screenshots section for this game. Only shown when the game has any.
-fn screenshot_entry(theme: &'static dyn Theme, game: &GameRow, actions: &Actions) -> Button {
+fn screenshot_entry(theme: &'static dyn Theme, game: &GameRow, actions: &Actions) -> Flex {
     let actions = actions.clone();
     let game_id = game.id;
     let ink = Color::WHITE.with_alpha(0.85);
-    Button::ghost("", theme)
-        .mini()
-        .min_size(CARD_ICON_BUTTON, CARD_ICON_BUTTON)
-        .child(
-            Row::new()
-                .align(Align::Center)
-                .gap(2.0)
-                .child(SvgIcon::new(IconName::Camera, ink, CARD_ICON))
-                .child(Text::caption(game.screenshots.to_string(), theme).color(ink)),
-        )
-        .dynamic_background(move |state| {
-            let fill = if state.hovered || state.pressed {
-                Color::WHITE.with_alpha(0.16)
-            } else {
-                Color::TRANSPARENT
-            };
-            SurfaceStyle::new(fill).radius(radius::SM)
-        })
-        .on_click(move || actions.push(Action::ShowScreenshots(game_id)))
+    compact_button(move || actions.push(Action::ShowScreenshots(game_id)))
+        .gap(2.0)
+        .child(SvgIcon::new(IconName::Camera, ink, CARD_ICON))
+        .child(Text::caption(game.screenshots.to_string(), theme).color(ink))
 }
 
-/// A small, transparent-until-hovered icon button on a coloured cover. The
-/// icon is `Ignore` for input, so the click lands on the button.
-fn icon_button(
-    theme: &'static dyn Theme,
-    icon: IconName,
-    color: Color,
-    on_click: impl FnMut() + 'static,
-) -> Button {
-    Button::ghost("", theme)
-        .mini()
+/// A small, transparent-until-hovered icon button on a coloured cover. No
+/// padding, so it hugs the corner; the icon is `Ignore` for input, so the
+/// click lands on the button.
+fn icon_button(icon: IconName, color: Color, on_click: impl FnMut() + 'static) -> Flex {
+    compact_button(on_click).child(SvgIcon::new(icon, color, CARD_ICON))
+}
+
+/// The bare frame a compact icon button shares: a fixed square, a hover fill
+/// and a click, with no padding of its own.
+fn compact_button(on_click: impl FnMut() + 'static) -> Flex {
+    Flex::row()
+        .align(Align::Center)
+        .justify(Justify::Center)
+        .gap(0.0)
+        .shrink(0.0)
+        .padding(Edges {
+            left: 2.0,
+            top: 1.0,
+            right: 2.0,
+            bottom: 1.0,
+        })
         .min_size(CARD_ICON_BUTTON, CARD_ICON_BUTTON)
-        .child(SvgIcon::new(icon, color, CARD_ICON))
         .dynamic_background(move |state| {
             let fill = if state.hovered || state.pressed {
                 Color::WHITE.with_alpha(0.16)
@@ -798,7 +843,6 @@ fn shot_controls(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Acti
         let set = actions.clone();
         let id = shot.id;
         row = row.child(icon_button(
-            theme,
             IconName::ImagePlus,
             theme.palette().foreground,
             move || set.push(Action::SetCover(id)),
@@ -807,7 +851,6 @@ fn shot_controls(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Acti
     let reveal = actions.clone();
     let reveal_id = shot.id;
     row = row.child(icon_button(
-        theme,
         IconName::FolderSearch,
         theme.palette().foreground,
         move || reveal.push(Action::RevealScreenshot(reveal_id)),
@@ -815,10 +858,9 @@ fn shot_controls(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Acti
     let remove = actions.clone();
     let remove_id = shot.id;
     row.child(icon_button(
-        theme,
         IconName::Trash,
         theme.palette().foreground,
-        move || remove.push(Action::RemoveScreenshot(remove_id)),
+        move || remove.push(Action::RequestDelete(Confirm::DeleteScreenshot(remove_id))),
     ))
 }
 
@@ -923,10 +965,9 @@ fn preview_column(
     );
     let remove = actions.clone();
     let remove_id = shot.id;
-    controls = controls.child(
-        Button::destructive("删除", theme)
-            .on_click(move || remove.push(Action::RemoveScreenshot(remove_id))),
-    );
+    controls = controls.child(Button::destructive("删除", theme).on_click(move || {
+        remove.push(Action::RequestDelete(Confirm::DeleteScreenshot(remove_id)))
+    }));
     let close = actions.clone();
     controls = controls
         .child(Button::secondary("关闭", theme).on_click(move || close.push(Action::ClosePreview)));
@@ -1291,7 +1332,10 @@ mod tests {
         let (mut tree, list) = isolated_cover(&one_game_row(), &actions);
         let (_pin, delete) = icon_centres(&list);
         click(&mut tree, delete);
-        assert_eq!(actions.drain(), vec![Action::DeleteGame(0)]);
+        assert_eq!(
+            actions.drain(),
+            vec![Action::RequestDelete(Confirm::DeleteGame(0))]
+        );
     }
 
     /// The sort bar offers every key and the direction toggle.
@@ -1466,6 +1510,36 @@ mod tests {
         assert!(actions
             .drain()
             .contains(&Action::Show(Section::Screenshots)));
+    }
+
+    /// A pending delete shows a confirmation bar whose buttons confirm or
+    /// cancel it.
+    #[test]
+    fn a_pending_delete_shows_a_confirmation_bar() {
+        let actions = Actions::default();
+        let model = ViewModel {
+            confirm: Some(Confirm::DeleteGame(0)),
+            ..ViewModel::default()
+        };
+        let (mut tree, list) = laid_out(&model, &actions);
+        let has = |needle: &str| {
+            list.commands().iter().any(|command| {
+                matches!(command,
+                    DrawCommand::DrawText { text, .. } if text == needle)
+            })
+        };
+        assert!(
+            has(Confirm::DeleteGame(0).message()),
+            "the confirmation asks the question"
+        );
+
+        let confirm = text_position(&list, "删除");
+        click(&mut tree, confirm);
+        assert_eq!(actions.drain(), vec![Action::ConfirmDelete]);
+
+        let cancel = text_position(&list, "取消");
+        click(&mut tree, cancel);
+        assert_eq!(actions.drain(), vec![Action::CancelDelete]);
     }
 
     /// The rail is the only way to change what the middle column shows, so it

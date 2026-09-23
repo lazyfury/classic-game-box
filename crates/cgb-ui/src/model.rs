@@ -27,6 +27,25 @@ impl Section {
     }
 }
 
+/// A destructive action waiting for the player to confirm it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Confirm {
+    /// Delete the game with this id (file, screenshots and row).
+    DeleteGame(i64),
+    /// Delete the screenshot with this id.
+    DeleteScreenshot(i64),
+}
+
+impl Confirm {
+    /// The question the confirmation bar asks.
+    pub fn message(self) -> &'static str {
+        match self {
+            Confirm::DeleteGame(_) => "删除这个游戏？ROM 文件和它的截图都会被删除。",
+            Confirm::DeleteScreenshot(_) => "删除这张截图？",
+        }
+    }
+}
+
 /// One row in the library list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GameRow {
@@ -182,6 +201,8 @@ pub struct ViewModel {
     pub screenshot_game: Option<i64>,
     /// The screenshot being previewed in the play column, by id.
     pub preview: Option<i64>,
+    /// A destructive action waiting for confirmation, shown in a bar.
+    pub confirm: Option<Confirm>,
     /// Every core in the manifest, for the settings picker.
     pub cores: Vec<CoreRow>,
     /// Folders the library scans.
@@ -206,6 +227,7 @@ impl Default for ViewModel {
             screenshots: Vec::new(),
             screenshot_game: None,
             preview: None,
+            confirm: None,
             cores: Vec::new(),
             library_dirs: Vec::new(),
             bindings: Vec::new(),
@@ -236,8 +258,12 @@ pub enum Action {
     RemoveLibraryDir(usize),
     /// Pin or unpin the game at this library index.
     TogglePin(usize),
-    /// Delete the game at this library index, file and all.
-    DeleteGame(usize),
+    /// Ask to delete something destructive; the app shows a confirmation bar.
+    RequestDelete(Confirm),
+    /// Confirm the pending destructive action.
+    ConfirmDelete,
+    /// Dismiss the pending destructive action.
+    CancelDelete,
     /// Sort the library by this key.
     Sort(SortKey),
     /// Flip the library between ascending and descending.
@@ -256,8 +282,6 @@ pub enum Action {
     StepPreview(i32),
     /// Make the screenshot with this id its game's cover.
     SetCover(i64),
-    /// Delete the screenshot with this id.
-    RemoveScreenshot(i64),
     /// Reveal the screenshot with this id in the file browser.
     RevealScreenshot(i64),
     /// Open the screenshots directory in the file browser.

@@ -32,8 +32,8 @@ use cgb_library::{
 };
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton};
 use cgb_ui::{
-    Action, Actions, BindingRow, CoreRow, FrameHandle, GameRow, ScreenshotRow, Section, SortKey,
-    Ui, ViewModel,
+    Action, Actions, BindingRow, Confirm, CoreRow, FrameHandle, GameRow, ScreenshotRow, Section,
+    SortKey, Ui, ViewModel,
 };
 
 use crate::cli::{Args, CoreOverride};
@@ -729,8 +729,8 @@ impl App {
 
     /// Delete a game outright: remove the ROM file, forget it in the settings
     /// and the database. If it was the running game, stop the machine first.
-    fn delete_game(&mut self, index: usize) {
-        let Some(game) = self.model.games.get(index) else {
+    fn delete_game(&mut self, game_id: i64) {
+        let Some(game) = self.game_source.iter().find(|game| game.id == game_id) else {
             return;
         };
         let path = game.path.clone();
@@ -744,7 +744,7 @@ impl App {
                 return;
             }
         }
-        if self.model.selected == Some(index) {
+        if self.selected_game_id() == Some(game_id) {
             self.flush_playtime();
             self.session = None;
             self.model.selected = None;
@@ -995,7 +995,15 @@ impl App {
                 Action::SelectCore(index) => self.select_core(index),
                 Action::RemoveLibraryDir(index) => self.remove_library_dir(index),
                 Action::TogglePin(index) => self.toggle_pin(index),
-                Action::DeleteGame(index) => self.delete_game(index),
+                Action::RequestDelete(confirm) => {
+                    self.model.confirm = Some(confirm);
+                    self.dirty = true;
+                }
+                Action::ConfirmDelete => self.confirm_delete(),
+                Action::CancelDelete => {
+                    self.model.confirm = None;
+                    self.dirty = true;
+                }
                 Action::Sort(key) => self.set_sort(key),
                 Action::ToggleSortOrder => self.set_sort(self.model.sort),
                 Action::Screenshot => self.capture_screenshot(false),
@@ -1009,10 +1017,21 @@ impl App {
                 Action::ClosePreview => self.close_preview(),
                 Action::StepPreview(delta) => self.step_preview(delta),
                 Action::SetCover(id) => self.set_cover(id),
-                Action::RemoveScreenshot(id) => self.remove_screenshot(id),
                 Action::RevealScreenshot(id) => self.reveal_screenshot(id),
                 Action::OpenScreenshotsFolder => self.open_screenshots_folder(),
             }
+        }
+    }
+
+    /// Run the destructive action the confirmation bar was asking about.
+    fn confirm_delete(&mut self) {
+        let Some(confirm) = self.model.confirm.take() else {
+            return;
+        };
+        self.dirty = true;
+        match confirm {
+            Confirm::DeleteGame(id) => self.delete_game(id),
+            Confirm::DeleteScreenshot(id) => self.remove_screenshot(id),
         }
     }
 
@@ -1316,6 +1335,13 @@ impl ApplicationHandler for App {
                 // Save-state hotkeys are app commands, not joypad bindings, and
                 // only fire on press (so a held key does not re-save).
                 if event.state == ElementState::Pressed {
+                    // Escape dismisses a pending delete confirmation.
+                    if matches!(event.logical_key, WinitKey::Named(NamedKey::Escape))
+                        && self.model.confirm.is_some()
+                    {
+                        self.model.confirm = None;
+                        self.dirty = true;
+                    }
                     if let Some(action) =
                         state_shortcut(&event.logical_key, self.modifiers.shift_key())
                     {
