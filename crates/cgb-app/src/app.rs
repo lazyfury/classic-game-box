@@ -660,6 +660,10 @@ impl App {
             .and_then(|index| self.model.games.get(index))
             .map(|game| game.path.clone());
         let mut games = self.game_source.clone();
+        if !self.model.search.is_empty() {
+            let needle = self.model.search.to_lowercase();
+            games.retain(|game| game.name.to_lowercase().contains(&needle));
+        }
         order_games(&mut games, key, desc);
         let covers = &self.cover_textures;
         self.model.games = games
@@ -1113,11 +1117,10 @@ impl App {
                 }
                 Action::StartRename(id) => self.start_edit(id, EditKind::Name),
                 Action::StartTagEdit(id) => self.start_edit(id, EditKind::Tags),
+                Action::StartSearch => self.start_search(),
+                Action::ClearSearch => self.clear_search(),
                 Action::CommitEdit => self.commit_edit(),
-                Action::CancelEdit => {
-                    self.model.editing = None;
-                    self.dirty = true;
-                }
+                Action::CancelEdit => self.cancel_edit(),
                 Action::Sort(key) => self.set_sort(key),
                 Action::ToggleSortOrder => self.set_sort(self.model.sort),
                 Action::Screenshot => self.capture_screenshot(false),
@@ -1157,6 +1160,7 @@ impl App {
         let text = match kind {
             EditKind::Name => game.name.clone(),
             EditKind::Tags => game.tags.join(", "),
+            EditKind::Search => self.model.search.clone(),
         };
         let caret = text.len();
         self.model.editing = Some(EditState {
@@ -1168,11 +1172,49 @@ impl App {
         self.dirty = true;
     }
 
+    /// Begin typing a library search; the app takes the keyboard.
+    fn start_search(&mut self) {
+        self.start_edit(-1, EditKind::Search);
+    }
+
+    /// Clear the search and leave any edit.
+    fn clear_search(&mut self) {
+        self.model.search.clear();
+        self.model.editing = None;
+        self.rebuild_game_rows();
+        self.dirty = true;
+    }
+
+    /// Discard the pending edit. A search edit also clears the query.
+    fn cancel_edit(&mut self) {
+        let was_search = self
+            .model
+            .editing
+            .as_ref()
+            .is_some_and(|edit| edit.kind == EditKind::Search);
+        self.model.editing = None;
+        if was_search {
+            self.model.search.clear();
+            self.rebuild_game_rows();
+        }
+        self.dirty = true;
+    }
+
     /// Commit the pending edit to the database and the in-memory rows.
     fn commit_edit(&mut self) {
         let Some(edit) = self.model.editing.take() else {
             return;
         };
+        // A search is applied as it is typed; committing just closes it.
+        if edit.kind == EditKind::Search {
+            self.model.status = if self.model.search.is_empty() {
+                String::new()
+            } else {
+                format!("搜索：{}", self.model.search)
+            };
+            self.dirty = true;
+            return;
+        }
         let Some(path) = self
             .game_source
             .iter()
@@ -1221,6 +1263,7 @@ impl App {
                 }
                 self.model.status = format!("已更新标签（{} 个）", tags.len());
             }
+            EditKind::Search => {}
         }
         self.rebuild_game_rows();
         self.dirty = true;
@@ -1235,12 +1278,16 @@ impl App {
                 return;
             }
             WinitKey::Named(NamedKey::Escape) => {
-                self.model.editing = None;
-                self.dirty = true;
+                self.cancel_edit();
                 return;
             }
             _ => {}
         }
+        let searching = self
+            .model
+            .editing
+            .as_ref()
+            .is_some_and(|edit| edit.kind == EditKind::Search);
         let Some(edit) = self.model.editing.as_mut() else {
             return;
         };
@@ -1264,6 +1311,17 @@ impl App {
                     }
                 }
             }
+        }
+        // A search filters as it is typed.
+        if searching {
+            let text = self
+                .model
+                .editing
+                .as_ref()
+                .map(|edit| edit.text.clone())
+                .unwrap_or_default();
+            self.model.search = text;
+            self.rebuild_game_rows();
         }
         self.dirty = true;
     }

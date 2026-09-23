@@ -351,15 +351,20 @@ fn library_page(
         .mouse_filter(MouseFilter::Ignore);
     column = column.child(Text::heading("游戏库", theme));
     column = column.child(sort_bar(theme, model, actions));
+    column = column.child(search_bar(theme, model, actions));
     if let Some(edit) = &model.editing {
-        column = column.child(edit_bar(theme, edit, actions));
+        if edit.kind != EditKind::Search {
+            column = column.child(edit_bar(theme, edit, actions));
+        }
     }
 
     if model.games.is_empty() {
-        column = column.child(
-            EmptyState::new("还没有游戏", theme)
-                .description("把 ROM 拖进来，或点“添加游戏文件…”。"),
-        );
+        let empty = if model.search.is_empty() {
+            EmptyState::new("还没有游戏", theme).description("把 ROM 拖进来，或点“添加游戏文件…”。")
+        } else {
+            EmptyState::new("没有匹配的游戏", theme).description("换个关键词试试。")
+        };
+        column = column.child(empty);
     } else {
         // Only the grid scrolls; the title and the add buttons stay put.
         let view = ScrollView::new(theme)
@@ -421,11 +426,56 @@ fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> 
     )
 }
 
+/// The search row: a button that opens the field, or the field while typing,
+/// with a clear control when a query is set.
+fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Row {
+    let mut row = Row::new().align(Align::Center).gap(space::XS);
+    if let Some(edit) = &model.editing {
+        if edit.kind == EditKind::Search {
+            let done = actions.clone();
+            let clear = actions.clone();
+            return row
+                .child(edit_field(theme, &edit.text, edit.caret).grow(1.0))
+                .child(
+                    Button::primary("完成", theme)
+                        .mini()
+                        .on_click(move || done.push(Action::CommitEdit)),
+                )
+                .child(
+                    Button::ghost("清除", theme)
+                        .mini()
+                        .on_click(move || clear.push(Action::ClearSearch)),
+                );
+        }
+    }
+    let start = actions.clone();
+    let label = if model.search.is_empty() {
+        "搜索…".to_string()
+    } else {
+        format!("搜索：{}", model.search)
+    };
+    row = row.child(
+        Button::ghost(label, theme)
+            .mini()
+            .on_click(move || start.push(Action::StartSearch)),
+    );
+    if !model.search.is_empty() {
+        let clear = actions.clone();
+        row = row.child(icon_button(
+            IconName::Close,
+            theme.palette().foreground,
+            move || clear.push(Action::ClearSearch),
+        ));
+    }
+    row
+}
+
 /// The rename / tags edit bar: a text field, the caret, and save / cancel.
 fn edit_bar(theme: &'static dyn Theme, edit: &EditState, actions: &Actions) -> Column {
     let label = match edit.kind {
         EditKind::Name => "改名",
         EditKind::Tags => "标签（用逗号分隔）",
+        EditKind::Search => "搜索",
     };
     let save = actions.clone();
     let cancel = actions.clone();
@@ -1728,6 +1778,23 @@ mod tests {
         assert_eq!(actions.drain(), vec![Action::CommitEdit]);
         click(&mut tree, text_position(&list, "取消"));
         assert_eq!(actions.drain(), vec![Action::CancelEdit]);
+    }
+
+    /// The search bar opens the field, and shows the current query.
+    #[test]
+    fn the_search_bar_starts_and_reflects_the_query() {
+        let actions = Actions::default();
+        let (mut tree, list) = laid_out(&ViewModel::default(), &actions);
+        click(&mut tree, text_position(&list, "搜索…"));
+        assert_eq!(actions.drain(), vec![Action::StartSearch]);
+
+        let model = ViewModel {
+            search: "mario".to_string(),
+            ..ViewModel::default()
+        };
+        let list = paint(&model);
+        assert!(list.commands().iter().any(|command| matches!(command,
+            DrawCommand::DrawText { text, .. } if text.contains("mario"))));
     }
 
     /// The rail is the only way to change what the middle column shows, so it

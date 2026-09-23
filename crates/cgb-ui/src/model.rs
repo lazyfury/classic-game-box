@@ -51,6 +51,8 @@ pub enum EditKind {
     Name,
     /// The game's tags, comma-separated in the field.
     Tags,
+    /// The library search query.
+    Search,
 }
 
 /// An in-progress text edit. The app owns the keyboard while this is set and
@@ -243,6 +245,8 @@ pub struct ViewModel {
     /// re-measure every card on each scroll step.
     pub library_offset: f32,
     pub library_viewport: f32,
+    /// The library search query; only games whose name contains it are shown.
+    pub search: String,
     /// The screenshot being previewed in the play column, by id.
     pub preview: Option<i64>,
     /// A destructive action waiting for confirmation, shown in a bar.
@@ -275,6 +279,7 @@ impl Default for ViewModel {
             screenshot_game: None,
             library_offset: 0.0,
             library_viewport: 0.0,
+            search: String::new(),
             preview: None,
             confirm: None,
             editing: None,
@@ -318,6 +323,10 @@ pub enum Action {
     StartRename(i64),
     /// Start editing the game's tags.
     StartTagEdit(i64),
+    /// Start typing a library search query.
+    StartSearch,
+    /// Clear the library search query.
+    ClearSearch,
     /// Commit the pending text edit.
     CommitEdit,
     /// Discard the pending text edit.
