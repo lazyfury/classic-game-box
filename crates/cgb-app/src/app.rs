@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use draw_backend_wgpu::{wgpu, FontConfig, FontMetrics, FontMode, TextureEffect, WgpuBackend};
 use draw_core::{FontWeight, InputEvent, Key, PointerButton, Size, Vec2, ViewportSize};
+use draw_profile::{inspect, FrameCounters, FrameStats, Profiler, StageTimes};
 use draw_render::{DrawList, PaintContext, RenderBackend, TextureId};
 use draw_theme::{default_theme, Mode, Theme};
 use draw_ui::TextMeasurer;
@@ -34,9 +35,9 @@ use cgb_library::{
 };
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
 use cgb_ui::{
-    Action, Actions, BindingRow, Confirm, CoreOptionRow, CoreRow, EditKind, EditState, FrameHandle,
-    GameRow, InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow, Section, ShaderKind,
-    SortKey, Ui, ViewModel,
+    library_columns, Action, Actions, BindingRow, Confirm, CoreOptionRow, CoreRow, EditKind,
+    EditState, FrameHandle, GameRow, InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow,
+    Section, ShaderKind, SortKey, Ui, ViewModel, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
 };
 
 use crate::cli::{Args, CoreOverride};
@@ -44,6 +45,15 @@ use crate::session::Session;
 
 /// One wheel notch scrolls about three text lines.
 const WHEEL_LINE_HEIGHT: f32 = 48.0;
+
+/// The shortest gap between grid column-count recomputations while the middle
+/// divider is dragged. A column change rebuilds the tree; throttling keeps a
+/// drag from rebuilding on every pointer move.
+const COLUMNS_CHECK_INTERVAL: Duration = Duration::from_millis(80);
+
+/// How often `CGB_PERF` prints the aggregate frame summary (roughly two seconds
+/// at 60 FPS).
+const PERF_REPORT_FRAMES: u64 = 120;
 
 /// Cover textures start above the game framebuffer's id, one per game.
 const COVER_TEXTURE_BASE: u32 = 0x1000;
@@ -133,8 +143,8 @@ struct App {
     /// game updates its texture in place), so the UI is not laid out and
     /// painted every frame.
     draw_list: Option<DrawList>,
-    /// Whether to print per-frame phase timings (`CGB_PERF=1`).
-    perf: bool,
+    /// The `CGB_PERF` frame profiler; `None` when timing is off.
+    profiler: Option<Profiler>,
 
     paths: Paths,
     settings: Settings,
@@ -171,8 +181,6 @@ struct App {
     rewinding: bool,
     /// The game-picture post-process preset.
     shader: ShaderKind,
-    /// The middle column's width in logical pixels.
-    middle_width: f32,
     gamepads: Option<Gamepads>,
     session: Option<Session>,
     /// `--rom` path to start once the window exists.
@@ -191,6 +199,10 @@ struct App {
     last_frame: Instant,
     /// When the running game's play time was last flushed to the database.
     last_play_flush: Instant,
+    /// When the grid's column count was last recomputed from the middle width.
+    /// Throttles the rebuild a column change triggers while the divider is
+    /// dragged.
+    last_columns_check: Instant,
 }
 
 impl App {
@@ -208,7 +220,9 @@ impl App {
         let settings = Settings::load(&paths.settings_json);
         let shader = ShaderKind::from_key(&settings.shader);
         let middle_width = if settings.middle_width > 0.0 {
-            settings.middle_width.clamp(200.0, 640.0)
+            settings
+                .middle_width
+                .clamp(MIDDLE_MIN_WIDTH, MIDDLE_MAX_WIDTH)
         } else {
             320.0
         };
@@ -219,6 +233,8 @@ impl App {
         let theme = default_theme(Mode::Dark);
         let model = ViewModel {
             core_name: "—".to_string(),
+            middle_width,
+            grid_columns: library_columns(middle_width),
             ..ViewModel::default()
         };
         let ui = Ui::new(theme, &model, &actions);
@@ -237,7 +253,7 @@ impl App {
             ui,
             dirty: true,
             draw_list: None,
-            perf: std::env::var_os("CGB_PERF").is_some(),
+            profiler: std::env::var_os("CGB_PERF").map(|_| Profiler::new()),
             paths,
             settings,
             library,
@@ -259,7 +275,6 @@ impl App {
             active_system: SystemId::Nes,
             rewinding: false,
             shader,
-            middle_width,
             gamepads: match Gamepads::new() {
                 Ok(gamepads) => Some(gamepads),
                 Err(error) => {
@@ -275,6 +290,7 @@ impl App {
             pending_drops: Vec::new(),
             last_frame: Instant::now(),
             last_play_flush: Instant::now(),
+            last_columns_check: Instant::now(),
         };
         app.refresh_library();
         app.rebuild_settings_view();
@@ -1030,7 +1046,6 @@ impl App {
             .unwrap_or_default();
         self.model.bindings_system = self.active_system.name().to_string();
         self.model.shader = self.shader;
-        self.model.middle_width = self.middle_width;
         self.model.core_options = self
             .core_options
             .iter()
@@ -1387,13 +1402,46 @@ impl App {
             }
         }
         self.handle_actions();
-        // A wheel or scrollbar move changes the offset; feed it back so the
-        // grid rebuilds with the new visible window.
+        // The resize handle owns the middle width. Feed the live value back so
+        // the grid's column count follows it, and persist the width when the
+        // drag ends.
+        let middle_width = self.ui.middle_width();
+        if middle_width != self.model.middle_width {
+            self.model.middle_width = middle_width;
+        }
+        let released = matches!(event, InputEvent::PointerUp { .. });
+        self.sync_grid_columns(released);
+        if released && middle_width != self.settings.middle_width {
+            self.settings.middle_width = middle_width;
+            let _ = self.settings.save(&self.paths.settings_json);
+        }
+        // A wheel or scrollbar move changes the offset. Feed it back so the
+        // grid can re-window; scrolling inside the mounted rows is a plain
+        // repaint, so only mark the tree dirty when the window no longer
+        // covers the viewport.
         let scroll_after = self.ui.scroll_offset();
         if matches!(self.model.section, Section::Library | Section::Screenshots)
             && scroll_after != scroll_before
         {
             self.model.grid_offset = scroll_after;
+            if !self.ui.grid_window_covers(&self.model) {
+                self.dirty = true;
+            }
+        }
+    }
+
+    /// Step the grid's column count from the middle width, at most once per
+    /// [`COLUMNS_CHECK_INTERVAL`] (or immediately when `force`). A change marks
+    /// the UI dirty, so it rebuilds with the new column count.
+    fn sync_grid_columns(&mut self, force: bool) {
+        let now = Instant::now();
+        if !force && now.duration_since(self.last_columns_check) < COLUMNS_CHECK_INTERVAL {
+            return;
+        }
+        self.last_columns_check = now;
+        let columns = library_columns(self.ui.middle_width());
+        if columns != self.model.grid_columns {
+            self.model.grid_columns = columns;
             self.dirty = true;
         }
     }
@@ -1460,13 +1508,6 @@ impl App {
                 }
                 Action::SetShader(kind) => self.set_shader(kind),
                 Action::CycleCoreOption(index, delta) => self.cycle_core_option(index, delta),
-                Action::ResizeMiddle(delta) => {
-                    self.middle_width = (self.middle_width + delta).clamp(200.0, 640.0);
-                    self.model.middle_width = self.middle_width;
-                    self.settings.middle_width = self.middle_width;
-                    let _ = self.settings.save(&self.paths.settings_json);
-                    self.dirty = true;
-                }
                 Action::SaveState(slot) => {
                     self.model.status = match self.session.as_ref() {
                         Some(session) => match session.save_state(slot) {
@@ -1985,16 +2026,19 @@ impl App {
             layout_time = started.elapsed();
             // The library / screenshots grids mount only the rows the viewport
             // covers, so the resolved offset and viewport go back into the
-            // model; a change asks for one more rebuild.
+            // model; a scroll past the mounted rows asks for one more rebuild,
+            // while scrolling inside them is just a repaint.
             if matches!(self.model.section, Section::Library | Section::Screenshots) {
                 let offset = self.ui.scroll_offset();
                 let viewport_height = self.ui.scroll_viewport();
                 if offset != self.model.grid_offset || viewport_height != self.model.grid_viewport {
                     self.model.grid_offset = offset;
                     self.model.grid_viewport = viewport_height;
-                    self.dirty = true;
-                    if let Some(window) = self.window.as_ref() {
-                        window.request_redraw();
+                    if !self.ui.grid_window_covers(&self.model) {
+                        self.dirty = true;
+                        if let Some(window) = self.window.as_ref() {
+                            window.request_redraw();
+                        }
                     }
                 }
             }
@@ -2030,19 +2074,79 @@ impl App {
                 let _ = backend.submit(list);
             }
             let _ = backend.end_frame();
-            if self.perf {
-                let commands = self
-                    .draw_list
-                    .as_ref()
-                    .map_or(0, |list| list.commands().len());
+            self.profile_frame(repaint, layout_time, paint_time, started.elapsed());
+        }
+        surface_texture.present();
+    }
+
+    /// Record one frame into the `CGB_PERF` profiler. It prints the per-frame
+    /// breakdown, audits the draw list for structural problems, and every
+    /// [`PERF_REPORT_FRAMES`] prints the aggregate summary. A no-op without
+    /// `CGB_PERF`.
+    fn profile_frame(
+        &mut self,
+        repaint: bool,
+        layout_time: Duration,
+        paint_time: Duration,
+        submit_time: Duration,
+    ) {
+        let Some(profiler) = self.profiler.as_mut() else {
+            return;
+        };
+        let commands = self
+            .draw_list
+            .as_ref()
+            .map_or(0, |list| list.commands().len());
+        let millis = |time: Duration| time.as_secs_f32() * 1000.0;
+        let stats = FrameStats {
+            index: profiler.next_index(),
+            frame_ms: millis(layout_time) + millis(paint_time) + millis(submit_time),
+            stages: StageTimes::new(
+                0.0,
+                millis(layout_time),
+                millis(paint_time),
+                millis(submit_time),
+            ),
+            counters: FrameCounters::new(self.ui.tree().node_count(), 0, commands, 1),
+        };
+
+        if let Some(list) = self.draw_list.as_ref() {
+            let report = inspect(list, &stats);
+            for finding in report.findings() {
                 eprintln!(
-                    "cgb perf: repaint={repaint} layout={layout_time:?} paint={paint_time:?} \
-                     submit={:?} commands={commands}",
-                    started.elapsed()
+                    "cgb perf [{}] {}",
+                    finding.severity.label(),
+                    finding.summary()
                 );
             }
         }
-        surface_texture.present();
+
+        eprintln!(
+            "cgb perf: repaint={repaint} layout={:.3}ms paint={:.3}ms submit={:.3}ms \
+             nodes={} commands={commands}",
+            stats.stages.layout_ms,
+            stats.stages.paint_ms,
+            stats.stages.render_ms,
+            stats.counters.scene_nodes,
+        );
+
+        profiler.record(stats);
+        if profiler.total_recorded() % PERF_REPORT_FRAMES == 0 {
+            if let Some(summary) = profiler.summary() {
+                eprintln!(
+                    "cgb perf summary: {} frames avg={:.2}ms max={:.2}ms fps={:.1} \
+                     layout={:.2}ms paint={:.2}ms submit={:.2}ms commands<={}",
+                    summary.frames,
+                    summary.avg_frame_ms,
+                    summary.max_frame_ms,
+                    summary.fps(),
+                    summary.avg_stages.layout_ms,
+                    summary.avg_stages.paint_ms,
+                    summary.avg_stages.render_ms,
+                    summary.max_draw_commands,
+                );
+            }
+        }
     }
 
     /// The next time the event loop should wake, if a game is running.

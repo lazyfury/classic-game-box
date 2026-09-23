@@ -11,7 +11,8 @@
 //!        ├─ header
 //!        ├─ Flex::row()              <- the three columns
 //!        │    ├─ rail         (64px, shrink 0)   icon + label sections
-//!        │    ├─ middle       (320px, shrink 0)  library grid / settings
+//!        │    ├─ middle       (draggable, shrink 0)  library grid / settings
+//!        │    ├─ resize handle (6px gutter)       drags the middle column
 //!        │    └─ play column  (grow 1)           the console, always
 //!        └─ status bar
 //! ```
@@ -26,12 +27,12 @@
 //! starts one level down (see `examples/file_browser/src/ui.rs`). So the row
 //! of columns must live inside the root column, not at the root itself.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use draw_components::{
-    Badge, Button, Card, Column, Component, Divider, EmptyState, Flex, Grid, Panel, Row,
-    ScrollView, ScrollViewState, Text,
+    Badge, Button, Card, Column, Component, Divider, EmptyState, Flex, Grid, NodeRef, Panel,
+    ResizeHandle, Row, ScrollView, ScrollViewState, Text,
 };
 use draw_core::{Color, Edges};
 use draw_render::Paint;
@@ -50,8 +51,28 @@ use crate::model::{
 /// The rail's fixed width in logical pixels.
 const RAIL_WIDTH: f32 = 64.0;
 
-/// Library grid columns. Fixed count, so the cards stay a predictable size.
-const LIBRARY_COLUMNS: usize = 2;
+/// The middle column's width limits in logical pixels. The resize handle
+/// clamps the shared width cell to this range, and the app clamps the saved
+/// width to it on startup.
+pub const MIDDLE_MIN_WIDTH: f32 = 300.0;
+pub const MIDDLE_MAX_WIDTH: f32 = 640.0;
+
+/// The library / screenshots grid column limits. The count follows the middle
+/// column's width, so a wider pane shows more cards per row.
+pub const MIN_LIBRARY_COLUMNS: usize = 2;
+pub const MAX_LIBRARY_COLUMNS: usize = 4;
+
+/// The card width the column count aims for: the widest pane packs four
+/// columns near this width, and the narrowest still gets the minimum two.
+const TARGET_CARD_WIDTH: f32 = 128.0;
+
+/// The library grid's column count for a middle-column width, stepping
+/// 2 / 3 / 4 as the pane widens.
+pub fn library_columns(width: f32) -> usize {
+    let content = (width - 2.0 * space::MD).max(0.0);
+    let columns = ((content + space::SM) / (TARGET_CARD_WIDTH + space::SM)).floor() as usize;
+    columns.clamp(MIN_LIBRARY_COLUMNS, MAX_LIBRARY_COLUMNS)
+}
 
 /// Height of a card's cover placeholder in logical pixels.
 const PLACEHOLDER_HEIGHT: f32 = 112.0;
@@ -92,12 +113,26 @@ impl Actions {
 
 /// Build the whole tree for one frame, plus the persistent view state the app
 /// must drive across frames (the library grid's scroll offset).
+///
+/// `middle_width` is the shared width cell the resize handle writes and the
+/// middle panel reads; the caller owns it so the width survives a rebuild.
+/// `handle_ref` receives the resize handle's node, so the caller can re-arm a
+/// drag across a rebuild (a column-count change rebuilds mid-drag).
+/// `mounted_rows` is set to the row range the active virtualized grid mounts,
+/// so the caller can tell whether a scroll still fits inside it.
 pub fn build(
     theme: &'static dyn Theme,
     model: &ViewModel,
     actions: &Actions,
+    middle_width: &Rc<Cell<f32>>,
+    handle_ref: &NodeRef,
+    mounted_rows: &Cell<(usize, usize)>,
 ) -> (SceneTree, Option<ScrollViewState>) {
+    mounted_rows.set(grid_window(model));
     let mut middle_scroll = None;
+    // The resize handle points at the middle panel, so bind a slot before the
+    // panel is built and read it into the handle.
+    let middle_ref = NodeRef::new();
     // The layout root places its direct children by anchors, so the vertical
     // stack is one level down: the root's single child is a column, and *its*
     // children (header / columns / status) are the flex items.
@@ -113,8 +148,11 @@ pub fn build(
                 .padding(Edges::ZERO)
                 .mouse_filter(MouseFilter::Ignore)
                 .child(rail(theme, model, actions))
-                .child(middle(theme, model, actions, &mut middle_scroll))
-                .child(column_resizer(theme, actions))
+                .child(
+                    middle(theme, model, actions, &mut middle_scroll, middle_width)
+                        .ref_(&middle_ref),
+                )
+                .child(resize_handle(theme, middle_width, middle_ref).ref_(handle_ref))
                 .child(play_column(theme, model, actions)),
         );
     if model.confirm.is_some() {
@@ -244,12 +282,14 @@ fn rail_item(
     )
 }
 
-/// The middle column: a fixed-width panel holding the current page.
+/// The middle column: a resizable panel holding the current page. Its width
+/// comes from the shared cell the resize handle drives.
 fn middle(
     theme: &'static dyn Theme,
     model: &ViewModel,
     actions: &Actions,
     middle_scroll: &mut Option<ScrollViewState>,
+    middle_width: &Rc<Cell<f32>>,
 ) -> Panel {
     let page = match model.section {
         Section::Library => library_page(theme, model, actions, middle_scroll),
@@ -261,35 +301,29 @@ fn middle(
     Panel::new()
         .color(theme.palette().surface_raised)
         .flat()
-        .basis(SizeBasis::Px(model.middle_width))
+        .basis(SizeBasis::Px(middle_width.get()))
         .shrink(0.0)
         .clip(true)
         .mouse_filter(MouseFilter::Ignore)
         .child(page.grow(1.0))
 }
 
-/// A thin draggable divider that resizes the middle column. Its drag callback
-/// pushes the horizontal delta; the app keeps the width so it survives a
-/// rebuild.
-fn column_resizer(theme: &'static dyn Theme, actions: &Actions) -> Flex {
-    let actions = actions.clone();
-    Flex::row()
-        .justify(Justify::Center)
-        .basis(SizeBasis::Px(5.0))
-        .shrink(0.0)
-        .dynamic_background(move |state| {
-            let fill = if state.hovered || state.pressed {
-                theme.palette().accent
-            } else {
-                theme.palette().border
-            };
-            SurfaceStyle::new(fill)
-        })
-        .on_drag(move |_tree, _phase, delta| {
-            if delta.x != 0.0 {
-                actions.push(Action::ResizeMiddle(delta.x));
-            }
-        })
+/// The draggable divider between the middle column and the console.
+///
+/// [`ResizeHandle`] updates the target panel's flex basis through the shared
+/// width cell, so a drag re-lays-out without rebuilding the tree; the app
+/// reads the cell back to persist the width.
+fn resize_handle(
+    theme: &'static dyn Theme,
+    middle_width: &Rc<Cell<f32>>,
+    target: NodeRef,
+) -> ResizeHandle {
+    ResizeHandle::vertical(theme)
+        .target(target)
+        .width(middle_width.clone())
+        .min(MIDDLE_MIN_WIDTH)
+        .max(MIDDLE_MAX_WIDTH)
+        .color(theme.palette().border)
 }
 
 /// The console column, on the right and always mounted. While a screenshot is
@@ -566,27 +600,22 @@ fn library_grid(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions)
     if total == 0 {
         return column;
     }
-    let rows = total.div_ceil(LIBRARY_COLUMNS);
+    let columns = model.grid_columns.max(1);
+    let rows = total.div_ceil(columns);
     let stride = CARD_HEIGHT + space::SM;
-    // Before the first layout the viewport is unknown; assume a screenful.
-    let viewport = if model.grid_viewport > 0.0 {
-        model.grid_viewport
-    } else {
-        640.0
-    };
-    let (first, last) = visible_rows(model.grid_offset, viewport, rows, stride);
+    let (first, last) = library_grid_window(model);
 
     let top = first as f32 * stride;
     if top > 0.0 {
         column = column.child(spacer(top));
     }
 
-    let mut grid = Grid::new(vec![Track::Fr(1.0); LIBRARY_COLUMNS])
+    let mut grid = Grid::new(vec![Track::Fr(1.0); columns])
         .gap(space::SM)
         .padding(Edges::ZERO);
     for row in first..=last {
-        for column_index in 0..LIBRARY_COLUMNS {
-            let index = row * LIBRARY_COLUMNS + column_index;
+        for column_index in 0..columns {
+            let index = row * columns + column_index;
             if index >= total {
                 break;
             }
@@ -621,6 +650,70 @@ fn visible_rows(offset: f32, viewport: f32, rows: usize, stride: f32) -> (usize,
     let first = (offset.max(0.0) / stride).floor() as usize;
     let end = ((offset + viewport) / stride).ceil() as usize + 1;
     (first.min(last), end.min(last).max(first.min(last)))
+}
+
+/// The rows a grid of `total` items mounts: `total.div_ceil(columns)` rows,
+/// windowed around the viewport by [`visible_rows`].
+fn window_for(
+    total: usize,
+    columns: usize,
+    offset: f32,
+    viewport: f32,
+    stride: f32,
+) -> (usize, usize) {
+    let rows = total.div_ceil(columns.max(1));
+    visible_rows(offset, viewport, rows, stride)
+}
+
+/// Before the first layout the viewport is unknown; assume a screenful.
+fn grid_viewport(model: &ViewModel) -> f32 {
+    if model.grid_viewport > 0.0 {
+        model.grid_viewport
+    } else {
+        640.0
+    }
+}
+
+/// The library grid's mounted row range for the model's scroll state.
+fn library_grid_window(model: &ViewModel) -> (usize, usize) {
+    window_for(
+        model.games.len(),
+        model.grid_columns,
+        model.grid_offset,
+        grid_viewport(model),
+        CARD_HEIGHT + space::SM,
+    )
+}
+
+/// The screenshots grid's mounted row range for the model's scroll state. It
+/// follows the same filter as [`screenshots_page`].
+fn screenshots_grid_window(model: &ViewModel) -> (usize, usize) {
+    let total = model
+        .screenshots
+        .iter()
+        .filter(|shot| Some(shot.game_id) == model.screenshot_game)
+        .count();
+    window_for(
+        total,
+        model.grid_columns,
+        model.grid_offset,
+        grid_viewport(model),
+        SHOT_HEIGHT + space::SM,
+    )
+}
+
+/// The inclusive row range the active virtualized grid mounts for the model's
+/// current scroll offset and viewport.
+///
+/// The app compares this (via [`Ui::grid_window_covers`](crate::Ui::grid_window_covers))
+/// to the range already in the tree, so scrolling inside the mounted window is a
+/// plain repaint instead of a rebuild.
+pub fn grid_window(model: &ViewModel) -> (usize, usize) {
+    match model.section {
+        Section::Library => library_grid_window(model),
+        Section::Screenshots => screenshots_grid_window(model),
+        _ => (0, 0),
+    }
 }
 
 /// One library cell: the cover (with the console badge and the card controls
@@ -1228,26 +1321,22 @@ fn screenshots_grid(
     if total == 0 {
         return column;
     }
-    let rows = total.div_ceil(LIBRARY_COLUMNS);
+    let columns = model.grid_columns.max(1);
+    let rows = total.div_ceil(columns);
     let stride = SHOT_HEIGHT + space::SM;
-    let viewport = if model.grid_viewport > 0.0 {
-        model.grid_viewport
-    } else {
-        640.0
-    };
-    let (first, last) = visible_rows(model.grid_offset, viewport, rows, stride);
+    let (first, last) = screenshots_grid_window(model);
 
     let top = first as f32 * stride;
     if top > 0.0 {
         column = column.child(spacer(top));
     }
 
-    let mut grid = Grid::new(vec![Track::Fr(1.0); LIBRARY_COLUMNS])
+    let mut grid = Grid::new(vec![Track::Fr(1.0); columns])
         .gap(space::SM)
         .padding(Edges::ZERO);
     for row in first..=last {
-        for column_index in 0..LIBRARY_COLUMNS {
-            let index = row * LIBRARY_COLUMNS + column_index;
+        for column_index in 0..columns {
+            let index = row * columns + column_index;
             if index >= total {
                 break;
             }
@@ -1761,7 +1850,15 @@ mod tests {
     /// mounted tree so a test can also route input at it.
     fn laid_out(model: &ViewModel, actions: &Actions) -> (SceneTree, draw_render::DrawList) {
         let theme = default_theme(Mode::Dark);
-        let (mut tree, mut scroll) = build(theme, model, actions);
+        let width = Rc::new(Cell::new(model.middle_width));
+        let (mut tree, mut scroll) = build(
+            theme,
+            model,
+            actions,
+            &width,
+            &NodeRef::new(),
+            &Cell::new((0, 0)),
+        );
         let viewport = draw_core::ViewportSize::new(Size::new(1100.0, 760.0));
         draw_ui::layout(&mut tree, viewport);
         tree.update();
@@ -2368,7 +2465,15 @@ mod tests {
             ..ViewModel::default()
         };
 
-        let (mut tree, _) = build(theme, &model, &actions);
+        let width = Rc::new(Cell::new(model.middle_width));
+        let (mut tree, _) = build(
+            theme,
+            &model,
+            &actions,
+            &width,
+            &NodeRef::new(),
+            &Cell::new((0, 0)),
+        );
         draw_ui::layout(
             &mut tree,
             draw_core::ViewportSize::new(Size::new(1100.0, 760.0)),
@@ -2487,6 +2592,19 @@ mod tests {
     }
 
     /// The grid mounts a window of rows, not the whole library.
+    /// The number of grid columns steps 2 / 3 / 4 as the middle column widens,
+    /// and never leaves that range.
+    #[test]
+    fn library_columns_steps_with_the_middle_width() {
+        assert_eq!(library_columns(MIDDLE_MIN_WIDTH), MIN_LIBRARY_COLUMNS);
+        assert_eq!(library_columns(MIDDLE_MAX_WIDTH), MAX_LIBRARY_COLUMNS);
+        assert!(
+            (MIN_LIBRARY_COLUMNS..=MAX_LIBRARY_COLUMNS).contains(&library_columns(400.0)),
+            "a mid width picks a valid count"
+        );
+        assert!(library_columns(400.0) <= library_columns(600.0));
+    }
+
     #[test]
     fn visible_rows_windows_the_grid() {
         // 10 rows, 100px stride, 250px viewport: the visible rows plus slack.
@@ -2498,12 +2616,34 @@ mod tests {
         assert_eq!(visible_rows(0.0, 250.0, 0, 100.0), (0, 0));
     }
 
-    /// The library is a grid, not a list: the first `LIBRARY_COLUMNS` cells
-    /// share a row (increasing x, same baseline) and the next one wraps to a
-    /// new row below.
+    /// The mounted window only changes when a row boundary is crossed, so a
+    /// scroll smaller than one row needs no rebuild.
+    #[test]
+    fn the_grid_window_only_changes_when_a_row_is_crossed() {
+        let mut model = ViewModel {
+            games: (0..40)
+                .map(|index| game_row(&format!("Game {index}"), &format!("/roms/game{index}.nes")))
+                .collect(),
+            grid_viewport: 400.0,
+            ..ViewModel::default()
+        };
+        let start = grid_window(&model);
+        // A few pixels into the same row: same window.
+        model.grid_offset = 20.0;
+        assert_eq!(grid_window(&model), start);
+        // Past a row boundary (`CARD_HEIGHT + space::SM = 192`): new window.
+        model.grid_offset = 200.0;
+        assert_ne!(grid_window(&model), start);
+        assert_eq!(grid_window(&model), (1, 5));
+    }
+
+    /// The library is a grid, not a list: the first `grid_columns` cells share
+    /// a row (increasing x, same baseline) and the next one wraps to a new row
+    /// below.
     #[test]
     fn the_library_page_lays_games_out_in_a_grid() {
-        let games: Vec<GameRow> = (0..LIBRARY_COLUMNS + 1)
+        let columns = ViewModel::default().grid_columns;
+        let games: Vec<GameRow> = (0..columns + 1)
             .map(|index| game_row(&format!("Game {index}"), &format!("/roms/game{index}.nes")))
             .collect();
         let model = ViewModel {
@@ -2520,8 +2660,8 @@ mod tests {
 
         let first = position("Game 0").expect("the first card paints its title");
         let second = position("Game 1").expect("the second card paints its title");
-        let wrapped = position(&format!("Game {LIBRARY_COLUMNS}"))
-            .expect("the wrapped card paints its title");
+        let wrapped =
+            position(&format!("Game {columns}")).expect("the wrapped card paints its title");
 
         assert!(
             (first.y - second.y).abs() < 0.5,
@@ -2594,7 +2734,15 @@ mod tests {
             cores,
             ..ViewModel::default()
         };
-        let (mut tree, mut scroll) = build(theme, &model, &actions);
+        let width = Rc::new(Cell::new(model.middle_width));
+        let (mut tree, mut scroll) = build(
+            theme,
+            &model,
+            &actions,
+            &width,
+            &NodeRef::new(),
+            &Cell::new((0, 0)),
+        );
         let viewport = draw_core::ViewportSize::new(Size::new(1100.0, 760.0));
         draw_ui::layout(&mut tree, viewport);
         tree.update();

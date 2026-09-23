@@ -322,6 +322,7 @@ dependencies = [
  "cgb-ui",
  "draw_backend_wgpu",
  "draw_core",
+ "draw_profile",
  "draw_render",
  "draw_scene",
  "draw_theme",
@@ -379,6 +380,7 @@ name = "cgb-ui"
 version = "0.2.0"
 dependencies = [
  "cgb-systems",
+ "draw_bench",
  "draw_components",
  "draw_core",
  "draw_render",
@@ -629,6 +631,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "draw_bench"
+version = "0.1.0"
+
+[[package]]
 name = "draw_components"
 version = "0.1.0"
 dependencies = [
@@ -655,6 +661,14 @@ dependencies = [
  "ttf-parser",
  "unicode-bidi",
  "unicode-script",
+]
+
+[[package]]
+name = "draw_profile"
+version = "0.1.0"
+dependencies = [
+ "draw_core",
+ "draw_render",
 ]
 
 [[package]]

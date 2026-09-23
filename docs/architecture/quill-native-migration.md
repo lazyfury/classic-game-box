@@ -294,7 +294,7 @@ Flex::column()
 
 | section | 内容 | quill 组件 |
 |---|---|---|
-| 游戏库 | 扫描目录、扩展名过滤 `.nes/.gba/.gb/.gbc/.zip`、固定 2 列网格（真实封面或随机色块 + 机种 badge + 截图数/置顶/删除）、单击即玩；排序栏（名称/大小/最近/时长/加入 + 方向）；拖放 ROM 或“添加游戏文件…”，也可“添加游戏目录…” | `Grid` + `ScrollView` + 本地 `Icon` |
+| 游戏库 | 扫描目录、扩展名过滤 `.nes/.gba/.gb/.gbc/.zip`、随中栏宽度 2/3/4 列的网格（真实封面或随机色块 + 机种 badge + 截图数/置顶/删除）、单击即玩；排序栏（名称/大小/最近/时长/加入 + 方向）；拖放 ROM 或“添加游戏文件…”，也可“添加游戏目录…” | `Grid` + `ScrollView` + 本地 `Icon` |
 | 截图 | 跟随在玩游戏的截图收藏：缩略图网格、设为封面 / 在访达中显示 / 删除；点击大图预览（上/下张、Esc） | `Grid` + `ScrollView` + `FrameImage` |
 | 设置 | 每机种选核、键盘绑定、扫描目录 | `Card` + `Button` |
 
@@ -302,16 +302,18 @@ Flex::column()
 预览截图时右栏显示大图。删除游戏或截图前有确认条。窗口在 macOS 用 full-size content view，
 header 预留安全区（标题栏高度 + 红绿灯宽度）。
 
-游戏库用固定列数的 `draw_components::Grid`（当前 2 列）。网格**只挂可见行**：`cgb-ui` 按
-`ScrollViewState` 的 offset/viewport 算出行窗口（`visible_rows`），上下用 `spacer` 撑出完整
-内容高度，行高固定（`CARD_HEIGHT`）。滚动状态（`ScrollViewState`）由 `cgb-ui::Ui` 持有：
-`Ui::layout` 在 layout 后 `sync`，偏移变动时再 layout 一次；重建时用 `scroll_target` 恢复
-offset（点击卡片不会跳回顶部）。
+游戏库用 `draw_components::Grid`，列数随中栏宽度 2/3/4 级（`cgb_ui::library_columns`；中栏由
+`draw_components::ResizeHandle` 拖动，宽度存在共享的 `Rc<Cell<f32>>`，拖动不重建树）。列数变化
+由 `cgb-app` 节流触发重建；重建会重新接上正在进行的拖动（`Ui::rebuild` 的 re-arm），所以拖动
+不会被列数切换打断。网格**只挂可见行**：`cgb-ui` 按 `ScrollViewState` 的 offset/viewport 算出行
+窗口（`visible_rows`），上下用 `spacer` 撑出完整内容高度，行高固定（`CARD_HEIGHT`）。滚动状态
+（`ScrollViewState`）由 `cgb-ui::Ui` 持有：`Ui::layout` 在 layout 后 `sync`，偏移变动时再 layout
+一次；重建时用 `scroll_target` 恢复 offset（点击卡片不会跳回顶部）。
 
 **画面**：`cgb-ui` 的 `frame::FrameImage`（见 §5.3）在 `foreground` 装饰器里发
 `DrawImage`；卡片图标光栅化成纹理，每帧一条 `DrawImage`。上游 `Image` 组件仍是待补项。
 
-**未做**：中栏不可拖动分隔；改名 / 标签编辑 / 搜索（quill 无 `TextInput`，待自建）。
+**未做**：改名 / 标签编辑 / 搜索（quill 无 `TextInput`，待自建）。
 
 ---
 
@@ -331,8 +333,38 @@ ControlFlow::WaitUntil(now + frame_budget)
 - **DrawList 复用**：只在 `dirty` / 输入 / resize / 滚动时重建 DrawList；否则复用上一帧的
   list 重新 `submit`（游戏纹理是原地更新的），运行游戏时不重排不重绘。
 - **可见行虚拟化**：库/截图网格只挂视口内的行（见 §7），滚动一步的成本取决于视口而非游戏数。
+  **滚动只在跨行/越出已挂载窗口时才重建**：`cgb-ui::grid_window` 给出模型当前 scroll 应挂的行区间，
+  `Ui::grid_window_covers` 判断它是否仍在树里；在窗口内的滚动只是 `ScrollView` 平移已挂内容 +
+  重绘（`cgb-app::feed`/`render` 据此决定是否 `dirty`），跨出去才重建。
 - 图标光栅化成纹理，每帧一条 `DrawImage`（矢量描边是 `submit` 的主要成本）。
-- `CGB_PERF=1` 时打印每帧 `layout/paint/submit/commands`，便于定位瓶颈。
+
+### 8.1 profiler
+
+`CGB_PERF=1` 打开 `draw_profile`：每帧打印 `layout/paint/submit/commands`，用 `draw_profile::inspect`
+审计当帧 `DrawList`（命令预算、SAVE/RESTORE 配平、退化/非有限几何等），每 120 帧打印一次聚合
+`FrameSummary`（均值/最大/近似 fps/各阶段均值/命令峰值）。`perf` 关闭时 `Profiler` 不存在，热路径零开销。
+
+### 8.2 benchmark
+
+`crates/cgb-ui/benches/ui.rs` 用 `draw_bench` 跑 CPU 帧管线（`cargo bench -p cgb-ui`）：
+
+```bash
+cargo bench -p cgb-ui                 # 全量
+cargo bench -p cgb-ui -- --filter ui/scroll
+cargo bench -p cgb-ui -- --save-baseline benches/baseline.txt   # 存档基线
+cargo bench -p cgb-ui -- --baseline benches/baseline.txt        # 回归门（超阈值退出码 1）
+```
+
+场景：`ui/build|rebuild|relayout|build_layout_once|layout|paint|repaint|frame|scroll/library/{n}` 与
+`ui/build|frame/settings/{n}`（`n = 50/200/1000/5000`），外加 `ui/relayout/empty`（只有外壳）。
+基准用默认 `ApproxTextMeasurer`；真机装了后端字体度量，绝对值会不同，但相对趋势一致。
+
+**实测（Apple Silicon，release）**：库网格在 `n` 上**保持平坦**（`build≈70µs`、`paint≈52µs`
+各尺寸一致）——虚拟化生效。热点在**重建后的冷排版**：`rebuild≈71µs`，但 `relayout≈1.19ms`，
+其中首次原始排版 `≈716µs`、`ScrollView` 同步触发的第二次排版 `≈400µs`；热排版只要 `≈4µs`，
+纯重绘 `≈56µs`。`ui/relayout/empty≈123µs` 说明成本来自挂载的卡片（视口约 12 张），不是外壳。
+`ui/scroll` 是**跨窗口**的重建帧（`≈1.4ms`）；窗口内的滚动走重绘路径（`ui/repaint≈56µs`）。
+设置页未虚拟化，随核心数线性增长（5000 核 `build≈41ms`）。
 
 ---
 

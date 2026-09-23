@@ -34,6 +34,7 @@ draw_svg = { path = "../quill/crates/draw_svg" }
 draw_backend_wgpu = { path = "../quill/crates/draw_backend_wgpu" }
 draw_backend_recording = { path = "../quill/crates/draw_backend_recording" }
 draw_profile = { path = "../quill/crates/draw_profile" }
+draw_bench = { path = "../quill/crates/draw_bench" }
 
 # ---------------------------------------------------------------------------
 # Internal crates. One concern each; see docs/architecture/quill-native-migration.md.

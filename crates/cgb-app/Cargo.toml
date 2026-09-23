@@ -23,6 +23,7 @@ draw_scene.workspace = true
 draw_theme.workspace = true
 draw_ui.workspace = true
 draw_backend_wgpu.workspace = true
+draw_profile.workspace = true
 
 winit.workspace = true
 rfd.workspace = true

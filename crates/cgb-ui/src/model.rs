@@ -384,8 +384,13 @@ pub struct ViewModel {
     pub shader: ShaderKind,
     /// The running core's options, for the settings page.
     pub core_options: Vec<CoreOptionRow>,
-    /// The middle column's width in logical pixels (draggable).
+    /// The middle column's initial width in logical pixels. The live width is
+    /// owned by the UI (the resize handle's shared cell); this seeds it at
+    /// construction.
     pub middle_width: f32,
+    /// The library / screenshots grid column count. The app steps it 2 / 3 / 4
+    /// from the middle width (see [`library_columns`](crate::library_columns)).
+    pub grid_columns: usize,
 }
 
 impl Default for ViewModel {
@@ -423,6 +428,7 @@ impl Default for ViewModel {
             shader: ShaderKind::Off,
             core_options: Vec::new(),
             middle_width: 320.0,
+            grid_columns: 2,
         }
     }
 }
@@ -442,8 +448,6 @@ pub enum Action {
     SetShader(ShaderKind),
     /// Cycle the core option at this index by `+1` / `-1`.
     CycleCoreOption(usize, i32),
-    /// Drag the middle column by `delta` logical pixels.
-    ResizeMiddle(f32),
     /// Write a save state to a slot (`0` is the quick slot).
     SaveState(u8),
     /// Restore a save state from a slot.
