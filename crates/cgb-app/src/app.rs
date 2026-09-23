@@ -160,6 +160,8 @@ struct App {
     bindings: HashMap<SystemId, KeyboardBindings>,
     /// The console whose binding set the keyboard feeds right now.
     active_system: SystemId,
+    /// Whether the rewind key is held (the game steps back each frame).
+    rewinding: bool,
     gamepads: Option<Gamepads>,
     session: Option<Session>,
     /// `--rom` path to start once the window exists.
@@ -235,6 +237,7 @@ impl App {
                 .map(|system| (*system, KeyboardBindings::default_bindings()))
                 .collect(),
             active_system: SystemId::Nes,
+            rewinding: false,
             gamepads: match Gamepads::new() {
                 Ok(gamepads) => Some(gamepads),
                 Err(error) => {
@@ -1298,6 +1301,15 @@ impl App {
                         session.reset();
                     }
                 }
+                Action::Rewind => {
+                    if let Some(session) = self.session.as_mut() {
+                        if session.can_rewind() {
+                            session.rewind_step();
+                        }
+                    }
+                    self.ui.request_repaint();
+                    self.dirty = true;
+                }
                 Action::SaveState(slot) => {
                     self.model.status = match self.session.as_ref() {
                         Some(session) => match session.save_state(slot) {
@@ -1713,7 +1725,22 @@ impl App {
 
         self.step_gamepad();
 
-        if let (Some(session), Some(backend)) = (self.session.as_mut(), self.backend.as_mut()) {
+        if self.rewinding {
+            // Holding the rewind key steps back a couple of snapshots a frame.
+            if let Some(session) = self.session.as_mut() {
+                for _ in 0..2 {
+                    if !session.rewind_step() {
+                        break;
+                    }
+                }
+            }
+            self.ui.request_repaint();
+            if let Some(window) = self.window.as_ref() {
+                window.request_redraw();
+            }
+        } else if let (Some(session), Some(backend)) =
+            (self.session.as_mut(), self.backend.as_mut())
+        {
             if !session.paused() {
                 session.advance(dt, backend, &self.input);
             }
@@ -1913,6 +1940,14 @@ impl ApplicationHandler for App {
                         if let Some(window) = self.window.as_ref() {
                             window.request_redraw();
                         }
+                    }
+                    return;
+                }
+                // Backspace is the rewind key: hold it to step the game back.
+                if matches!(event.logical_key, WinitKey::Named(NamedKey::Backspace)) {
+                    self.rewinding = event.state == ElementState::Pressed;
+                    if let Some(window) = self.window.as_ref() {
+                        window.request_redraw();
                     }
                     return;
                 }

@@ -357,6 +357,8 @@ pub enum Action {
     Play(usize),
     TogglePause,
     Reset,
+    /// Step the running game back one rewind snapshot.
+    Rewind,
     /// Write a save state to a slot (`0` is the quick slot).
     SaveState(u8),
     /// Restore a save state from a slot.

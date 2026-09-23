@@ -5,6 +5,7 @@
 //! machine* when the console changes (a GBA cannot become a Game Boy) — the
 //! old front end's rule, kept.
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use cgb_audio::AudioOutput;
@@ -22,6 +23,21 @@ use draw_render::TextureId;
 /// The single framebuffer texture slot. One game is live at a time, so one id
 /// is enough; `update_texture` reuses the GPU texture across frames.
 const GAME_TEXTURE: TextureId = TextureId::new(1);
+
+/// Rewind: snapshot every `REWIND_STRIDE` frames, keeping `REWIND_SECONDS`
+/// worth. Serializing is not free, so the stride trades smoothness for cost.
+const REWIND_STRIDE: u32 = 2;
+const REWIND_SECONDS: f64 = 10.0;
+
+/// How many snapshots fit in [`REWIND_SECONDS`], with a hard cap so a very low
+/// frame rate cannot ask for unbounded memory.
+fn rewind_capacity(frame_seconds: f64) -> usize {
+    if frame_seconds <= 0.0 {
+        return 0;
+    }
+    let frames = REWIND_SECONDS / frame_seconds;
+    ((frames / REWIND_STRIDE as f64).ceil() as usize).clamp(1, 4096)
+}
 
 /// A loaded cartridge plus everything that runs it.
 pub struct Session {
@@ -48,6 +64,12 @@ pub struct Session {
     /// The most recent frame's RGBA8 pixels, kept for a screenshot. Moved here
     /// from the frame callback (not copied), so it costs nothing per frame.
     last_pixels: Option<(u32, u32, Vec<u8>)>,
+    /// Rewind: recent serialized states, oldest first. One is taken every
+    /// `rewind_stride` frames, up to `rewind_capacity` of them.
+    rewind: VecDeque<Vec<u8>>,
+    rewind_stride: u32,
+    rewind_capacity: usize,
+    frame_index: u32,
 }
 
 impl Session {
@@ -118,6 +140,10 @@ impl Session {
             core_key: spec.key.clone(),
             played_seconds: 0.0,
             last_pixels: None,
+            rewind: VecDeque::new(),
+            rewind_stride: REWIND_STRIDE,
+            rewind_capacity: rewind_capacity(frame_seconds),
+            frame_index: 0,
         })
     }
 
@@ -170,6 +196,42 @@ impl Session {
         if let Some(output) = &self.audio {
             output.push_interleaved(&audio);
         }
+
+        // A rewind snapshot every few frames, so a held rewind key steps back
+        // through the last few seconds.
+        self.frame_index = self.frame_index.wrapping_add(1);
+        if self.rewind_stride > 0 && self.frame_index % self.rewind_stride == 0 {
+            self.push_rewind();
+        }
+    }
+
+    /// Serialize the current machine into the rewind ring, dropping the oldest
+    /// snapshot when it is full.
+    fn push_rewind(&mut self) {
+        if self.rewind_capacity == 0 {
+            return;
+        }
+        let bytes = self.core.serialize();
+        if bytes.is_empty() {
+            return;
+        }
+        if self.rewind.len() >= self.rewind_capacity {
+            self.rewind.pop_front();
+        }
+        self.rewind.push_back(bytes);
+    }
+
+    /// Step back one snapshot. Returns false when there is nothing to rewind to.
+    pub fn rewind_step(&mut self) -> bool {
+        match self.rewind.pop_back() {
+            Some(bytes) => self.core.unserialize(&bytes),
+            None => false,
+        }
+    }
+
+    /// Whether there is anything to rewind to.
+    pub fn can_rewind(&self) -> bool {
+        !self.rewind.is_empty()
     }
 
     pub fn reset(&self) {

@@ -323,6 +323,9 @@ fn play_column(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) 
     let reset = actions.clone();
     controls = controls
         .child(Button::secondary("复位", theme).on_click(move || reset.push(Action::Reset)));
+    let rewind = actions.clone();
+    controls =
+        controls.child(Button::ghost("倒带", theme).on_click(move || rewind.push(Action::Rewind)));
     let save = actions.clone();
     controls = controls.child(
         Button::secondary("快速存档", theme).on_click(move || save.push(Action::SaveState(0))),
@@ -1427,8 +1430,11 @@ fn status_bar(theme: &'static dyn Theme, model: &ViewModel) -> Column {
                         .ellipsis(true),
                 )
                 .child(
-                    Text::caption("F5 存档 / F6 读档 / F12 截图 / ⇧F12 封面", theme)
-                        .tone(Tone::Subtle),
+                    Text::caption(
+                        "F5 存档 / F6 读档 / F12 截图 / ⇧F12 封面 / 退格 倒带",
+                        theme,
+                    )
+                    .tone(Tone::Subtle),
                 ),
         )
 }
