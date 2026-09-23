@@ -44,7 +44,7 @@ use crate::frame::{cover_fit, FrameImage};
 use crate::icons::{Icon as SvgIcon, IconName};
 use crate::model::{
     Action, CheatRow, Confirm, EditKind, EditState, GameRow, SaveSlotRow, ScreenshotRow, Section,
-    SortKey, ViewModel,
+    ShaderKind, SortKey, ViewModel,
 };
 
 /// The rail's fixed width in logical pixels.
@@ -1537,6 +1537,30 @@ fn settings_page(
             .child(cores),
     );
 
+    // The game-picture post-process preset.
+    let mut shaders = Row::new().gap(space::XS);
+    for kind in ShaderKind::ALL {
+        let actions = actions.clone();
+        let button = if model.shader == kind {
+            Button::primary(kind.label(), theme)
+        } else {
+            Button::ghost(kind.label(), theme)
+        };
+        shaders = shaders.child(
+            button
+                .mini()
+                .on_click(move || actions.push(Action::SetShader(kind))),
+        );
+    }
+    body = body.child(
+        Card::new(theme)
+            .gap(space::SM)
+            .padding(Edges::all(space::SM))
+            .child(Text::subheading("画面效果", theme))
+            .child(shaders)
+            .child(Text::caption("对游戏画面做后处理，不影响界面。", theme).tone(Tone::Subtle)),
+    );
+
     // Keyboard bindings, read-only for now.
     let mut bindings = Column::new().gap(space::XS);
     if model.bindings.is_empty() {
@@ -2258,6 +2282,19 @@ mod tests {
 
     /// The settings page must actually show the scanned folders and the core
     /// choices, not the old placeholder text.
+    #[test]
+    fn the_settings_shader_presets_emit_actions() {
+        let actions = Actions::default();
+        let model = ViewModel {
+            section: Section::Settings,
+            shader: ShaderKind::Off,
+            ..ViewModel::default()
+        };
+        let (mut tree, list) = laid_out(&model, &actions);
+        click(&mut tree, text_position(&list, "CRT"));
+        assert_eq!(actions.drain(), vec![Action::SetShader(ShaderKind::Crt)]);
+    }
+
     #[test]
     fn the_settings_page_lists_dirs_and_cores() {
         let model = ViewModel {

@@ -13,7 +13,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use draw_backend_wgpu::{wgpu, FontConfig, FontMetrics, FontMode, WgpuBackend};
+use draw_backend_wgpu::{wgpu, FontConfig, FontMetrics, FontMode, TextureEffect, WgpuBackend};
 use draw_core::{FontWeight, InputEvent, Key, PointerButton, Size, Vec2, ViewportSize};
 use draw_render::{DrawList, PaintContext, RenderBackend, TextureId};
 use draw_theme::{default_theme, Mode, Theme};
@@ -35,7 +35,8 @@ use cgb_library::{
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
 use cgb_ui::{
     Action, Actions, BindingRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow,
-    InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow, Section, SortKey, Ui, ViewModel,
+    InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow, Section, ShaderKind, SortKey, Ui,
+    ViewModel,
 };
 
 use crate::cli::{Args, CoreOverride};
@@ -162,6 +163,8 @@ struct App {
     active_system: SystemId,
     /// Whether the rewind key is held (the game steps back each frame).
     rewinding: bool,
+    /// The game-picture post-process preset.
+    shader: ShaderKind,
     gamepads: Option<Gamepads>,
     session: Option<Session>,
     /// `--rom` path to start once the window exists.
@@ -195,6 +198,7 @@ impl App {
             .unwrap_or_else(|| PathBuf::from(BUNDLED_ARCADE_SYSTEM));
         let _ = seed_dir(&bundled_arcade, &paths.system);
         let settings = Settings::load(&paths.settings_json);
+        let shader = ShaderKind::from_key(&settings.shader);
         let library = Library::open(&paths.library_db).ok();
         let cores = load_core_manifest(&paths);
 
@@ -238,6 +242,7 @@ impl App {
                 .collect(),
             active_system: SystemId::Nes,
             rewinding: false,
+            shader,
             gamepads: match Gamepads::new() {
                 Ok(gamepads) => Some(gamepads),
                 Err(error) => {
@@ -833,6 +838,27 @@ impl App {
         self.model.status = format!("{}：{desc}", if enabled { "已开启" } else { "已关闭" });
     }
 
+    /// Pick the picture post-process, persist it, and apply it.
+    fn set_shader(&mut self, kind: ShaderKind) {
+        self.shader = kind;
+        self.settings.shader = kind.key().to_string();
+        let _ = self.settings.save(&self.paths.settings_json);
+        self.apply_shader();
+        self.rebuild_settings_view();
+        self.model.status = format!("画面效果：{}", kind.label());
+    }
+
+    /// Apply the current preset to the running game's texture.
+    fn apply_shader(&mut self) {
+        let Some(session) = self.session.as_ref() else {
+            return;
+        };
+        let Some(backend) = self.backend.as_mut() else {
+            return;
+        };
+        session.set_effect(backend, texture_effect(self.shader));
+    }
+
     /// Rebuild the library rows from [`App::game_source`], applying the saved
     /// sort order. Pinned games always come first; the sort key only orders
     /// within the pinned and unpinned groups. Cheap enough to run on every sort
@@ -895,6 +921,7 @@ impl App {
             .map(binding_rows)
             .unwrap_or_default();
         self.model.bindings_system = self.active_system.name().to_string();
+        self.model.shader = self.shader;
         // The running core's own input descriptors, when a game is loaded.
         self.model.core_inputs = self
             .session
@@ -1311,6 +1338,7 @@ impl App {
                     self.ui.request_repaint();
                     self.dirty = true;
                 }
+                Action::SetShader(kind) => self.set_shader(kind),
                 Action::SaveState(slot) => {
                     self.model.status = match self.session.as_ref() {
                         Some(session) => match session.save_state(slot) {
@@ -1644,6 +1672,8 @@ impl App {
                     self.model.status = format!("已应用 {} 条金手指", self.cheats.len());
                 }
                 self.populate_cheats();
+                // The picture effect follows the session.
+                self.apply_shader();
                 // Count the run and stamp it; this also re-points the selection
                 // at the row, which a sort by "recent" may have moved.
                 self.note_started(rom_path);
@@ -2124,6 +2154,17 @@ pub(crate) fn resource_dir() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let resources = exe.parent()?.parent()?.join("Resources");
     resources.is_dir().then_some(resources)
+}
+
+/// Map the UI preset to the backend's effect.
+fn texture_effect(kind: ShaderKind) -> TextureEffect {
+    match kind {
+        ShaderKind::Off => TextureEffect::None,
+        ShaderKind::Scanlines => TextureEffect::Scanlines,
+        ShaderKind::Crt => TextureEffect::Crt,
+        ShaderKind::Lcd => TextureEffect::Lcd,
+        ShaderKind::Sharpen => TextureEffect::Sharpen,
+    }
 }
 
 /// Order games the way the library shows them: pinned first, then the sort

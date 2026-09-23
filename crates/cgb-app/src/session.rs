@@ -17,7 +17,7 @@ use cgb_library::{
 use cgb_libretro::CoreHost;
 use cgb_systems::CoreSpec;
 use cgb_ui::FrameHandle;
-use draw_backend_wgpu::{TextureFilter, WgpuBackend};
+use draw_backend_wgpu::{TextureEffect, TextureFilter, WgpuBackend};
 use draw_render::TextureId;
 
 /// The single framebuffer texture slot. One game is live at a time, so one id
@@ -383,6 +383,11 @@ impl Session {
                 self.core.set_cheat(index, true, &cheat.code);
             }
         }
+    }
+
+    /// Set the post-process applied to this session's framebuffer.
+    pub fn set_effect(&self, backend: &mut WgpuBackend, effect: TextureEffect) {
+        backend.set_texture_effect(self.texture, effect);
     }
 
     /// One emulated frame, in seconds.

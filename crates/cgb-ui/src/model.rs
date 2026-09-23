@@ -76,6 +76,60 @@ pub struct EditState {
     pub caret: usize,
 }
 
+/// A post-process preset for the game picture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShaderKind {
+    Off,
+    Scanlines,
+    Crt,
+    Lcd,
+    Sharpen,
+}
+
+impl ShaderKind {
+    /// Every preset, in the order the settings page lists them.
+    pub const ALL: [ShaderKind; 5] = [
+        ShaderKind::Off,
+        ShaderKind::Scanlines,
+        ShaderKind::Crt,
+        ShaderKind::Lcd,
+        ShaderKind::Sharpen,
+    ];
+
+    /// What the button says.
+    pub fn label(self) -> &'static str {
+        match self {
+            ShaderKind::Off => "关闭",
+            ShaderKind::Scanlines => "扫描线",
+            ShaderKind::Crt => "CRT",
+            ShaderKind::Lcd => "LCD 网格",
+            ShaderKind::Sharpen => "锐化",
+        }
+    }
+
+    /// The stable key stored in settings.
+    pub fn key(self) -> &'static str {
+        match self {
+            ShaderKind::Off => "off",
+            ShaderKind::Scanlines => "scanlines",
+            ShaderKind::Crt => "crt",
+            ShaderKind::Lcd => "lcd",
+            ShaderKind::Sharpen => "sharpen",
+        }
+    }
+
+    /// Parse a stored key; anything unknown is `Off`.
+    pub fn from_key(key: &str) -> Self {
+        match key {
+            "scanlines" => ShaderKind::Scanlines,
+            "crt" => ShaderKind::Crt,
+            "lcd" => ShaderKind::Lcd,
+            "sharpen" => ShaderKind::Sharpen,
+            _ => ShaderKind::Off,
+        }
+    }
+}
+
 /// A destructive action waiting for the player to confirm it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Confirm {
@@ -312,6 +366,8 @@ pub struct ViewModel {
     pub bindings_system: String,
     /// The input descriptors the running core declared, if any.
     pub core_inputs: Vec<InputDescriptorRow>,
+    /// The post-process preset for the game picture.
+    pub shader: ShaderKind,
 }
 
 impl Default for ViewModel {
@@ -344,6 +400,7 @@ impl Default for ViewModel {
             bindings: Vec::new(),
             bindings_system: String::new(),
             core_inputs: Vec::new(),
+            shader: ShaderKind::Off,
         }
     }
 }
@@ -359,6 +416,8 @@ pub enum Action {
     Reset,
     /// Step the running game back one rewind snapshot.
     Rewind,
+    /// Pick the post-process preset for the game picture.
+    SetShader(ShaderKind),
     /// Write a save state to a slot (`0` is the quick slot).
     SaveState(u8),
     /// Restore a save state from a slot.

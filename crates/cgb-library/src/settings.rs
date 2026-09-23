@@ -29,6 +29,9 @@ pub struct Settings {
     pub library_sort: String,
     /// Whether the library sort runs descending.
     pub library_sort_desc: bool,
+    /// The game-picture post-process preset key (`"scanlines"`, `"crt"`, …);
+    /// an unknown key means no effect.
+    pub shader: String,
 }
 
 impl Settings {
