@@ -31,7 +31,10 @@ use cgb_library::{
     Settings,
 };
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton};
-use cgb_ui::{Action, Actions, BindingRow, CoreRow, FrameHandle, GameRow, SortKey, Ui, ViewModel};
+use cgb_ui::{
+    Action, Actions, BindingRow, CoreRow, FrameHandle, GameRow, ScreenshotRow, Section, SortKey,
+    Ui, ViewModel,
+};
 
 use crate::cli::{Args, CoreOverride};
 use crate::session::Session;
@@ -42,9 +45,18 @@ const WHEEL_LINE_HEIGHT: f32 = 48.0;
 /// Cover textures start above the game framebuffer's id, one per game.
 const COVER_TEXTURE_BASE: u32 = 0x1000;
 
+/// Screenshot thumbnails live in their own id space, above the covers.
+const SCREENSHOT_TEXTURE_BASE: u32 = 0x1_0000;
+
 /// A registered cover texture and the screenshot row it came from.
 struct CoverTexture {
     cover_id: i64,
+    handle: FrameHandle,
+}
+
+/// A registered screenshot thumbnail and the file it came from.
+struct ScreenshotTexture {
+    file: String,
     handle: FrameHandle,
 }
 
@@ -88,6 +100,11 @@ struct App {
     /// Registered cover textures, keyed by game id. Reused across refreshes so
     /// a cover is decoded and uploaded once.
     cover_textures: HashMap<i64, CoverTexture>,
+    /// Registered screenshot thumbnails, keyed by screenshot id.
+    screenshot_textures: HashMap<i64, ScreenshotTexture>,
+    /// Whether the current screenshot preview paused a running game, so it can
+    /// be resumed when the preview closes.
+    preview_paused: bool,
     input: InputState,
     bindings: KeyboardBindings,
     gamepads: Option<Gamepads>,
@@ -148,6 +165,8 @@ impl App {
             library,
             game_source: Vec::new(),
             cover_textures: HashMap::new(),
+            screenshot_textures: HashMap::new(),
+            preview_paused: false,
             input: InputState::new(),
             bindings: KeyboardBindings::default_bindings(),
             gamepads: match Gamepads::new() {
@@ -235,7 +254,9 @@ impl App {
 
         // Covers could not be uploaded before the backend existed; do it now.
         self.refresh_cover_textures();
+        self.refresh_screenshot_textures();
         self.rebuild_game_rows();
+        self.rebuild_screenshot_rows();
 
         // A `--rom` on the command line starts eagerly, before the first frame.
         if let Some(pending) = self.pending_rom.take() {
@@ -280,7 +301,9 @@ impl App {
             None => disk.iter().map(Game::from_disk).collect(),
         };
         self.refresh_cover_textures();
+        self.refresh_screenshot_textures();
         self.rebuild_game_rows();
+        self.rebuild_screenshot_rows();
     }
 
     /// Decode and upload a texture for each game whose cover changed, reusing
@@ -335,6 +358,206 @@ impl App {
                     },
                 );
             }
+        }
+    }
+
+    /// Decode and upload a thumbnail for every screenshot, reusing uploads
+    /// whose file is unchanged. The backend has no `remove_texture`, so
+    /// deleted screenshots leave their texture behind.
+    fn refresh_screenshot_textures(&mut self) {
+        let Some(backend) = self.backend.as_mut() else {
+            return;
+        };
+        let Some(library) = &self.library else {
+            return;
+        };
+        let shots = library.screenshots().unwrap_or_default();
+        let live: HashSet<i64> = shots.iter().map(|shot| shot.id).collect();
+        self.screenshot_textures.retain(|id, _| live.contains(id));
+
+        for shot in &shots {
+            if self
+                .screenshot_textures
+                .get(&shot.id)
+                .is_some_and(|texture| texture.file == shot.file)
+            {
+                continue;
+            }
+            let Ok(Some(path)) = library.screenshot_path(shot.id) else {
+                continue;
+            };
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
+            let Ok((width, height, rgba)) = decode_png(&bytes) else {
+                continue;
+            };
+            let texture = TextureId::new(SCREENSHOT_TEXTURE_BASE + shot.id as u32);
+            if backend
+                .register_texture(texture, width, height, &rgba)
+                .is_ok()
+            {
+                self.screenshot_textures.insert(
+                    shot.id,
+                    ScreenshotTexture {
+                        file: shot.file.clone(),
+                        handle: FrameHandle {
+                            texture,
+                            width,
+                            height,
+                        },
+                    },
+                );
+            }
+        }
+    }
+
+    /// Build the screenshots section's rows: the library's screenshots with
+    /// their game name, cover flag and thumbnail handle.
+    fn rebuild_screenshot_rows(&mut self) {
+        let Some(library) = &self.library else {
+            self.model.screenshots.clear();
+            return;
+        };
+        let names: HashMap<i64, String> = self
+            .game_source
+            .iter()
+            .map(|game| (game.id, game.name.clone()))
+            .collect();
+        let covers: HashMap<i64, Option<i64>> = self
+            .game_source
+            .iter()
+            .map(|game| (game.id, game.cover))
+            .collect();
+        let shots = library.screenshots().unwrap_or_default();
+        self.model.screenshots = shots
+            .into_iter()
+            .map(|shot| ScreenshotRow {
+                id: shot.id,
+                game_id: shot.game_id,
+                game: names.get(&shot.game_id).cloned().unwrap_or_default(),
+                created_at: shot.created_at,
+                is_cover: covers.get(&shot.game_id).copied().flatten() == Some(shot.id),
+                thumb: self
+                    .screenshot_textures
+                    .get(&shot.id)
+                    .map(|texture| texture.handle),
+            })
+            .collect();
+        // A preview whose screenshot is gone (deleted, or its game removed)
+        // closes, resuming a game it paused.
+        if let Some(id) = self.model.preview {
+            if !self.model.screenshots.iter().any(|shot| shot.id == id) {
+                self.model.preview = None;
+                if self.preview_paused {
+                    if let Some(session) = self.session.as_mut() {
+                        session.toggle_pause();
+                    }
+                    self.preview_paused = false;
+                }
+            }
+        }
+    }
+
+    /// The id of the currently selected (usually playing) game.
+    fn selected_game_id(&self) -> Option<i64> {
+        self.model
+            .selected
+            .and_then(|index| self.model.games.get(index))
+            .map(|game| game.id)
+    }
+
+    /// The screenshots the section currently shows: the game's, newest first.
+    fn visible_screenshots(&self) -> Vec<i64> {
+        let game_id = self
+            .model
+            .screenshot_game
+            .or_else(|| self.selected_game_id());
+        self.model
+            .screenshots
+            .iter()
+            .filter(|shot| Some(shot.game_id) == game_id)
+            .map(|shot| shot.id)
+            .collect()
+    }
+
+    /// Show a screenshot large in the play column, pausing a running game.
+    fn preview_screenshot(&mut self, id: i64) {
+        self.model.preview = Some(id);
+        if let Some(session) = self.session.as_mut() {
+            if !session.paused() {
+                session.toggle_pause();
+                self.preview_paused = true;
+                self.flush_playtime();
+            }
+        }
+        self.dirty = true;
+    }
+
+    /// Close the preview, resuming a game this preview paused.
+    fn close_preview(&mut self) {
+        self.model.preview = None;
+        if self.preview_paused {
+            if let Some(session) = self.session.as_mut() {
+                session.toggle_pause();
+            }
+            self.preview_paused = false;
+        }
+        self.dirty = true;
+    }
+
+    /// Step the preview to the next (`+1`) or previous (`-1`) screenshot.
+    fn step_preview(&mut self, delta: i32) {
+        let ids = self.visible_screenshots();
+        if ids.is_empty() {
+            return;
+        }
+        let current = self
+            .model
+            .preview
+            .and_then(|id| ids.iter().position(|candidate| *candidate == id))
+            .unwrap_or(0);
+        let last = ids.len() as i32 - 1;
+        let next = (current as i32 + delta).clamp(0, last) as usize;
+        self.model.preview = Some(ids[next]);
+        self.dirty = true;
+    }
+
+    /// Make a screenshot its game's cover.
+    fn set_cover(&mut self, id: i64) {
+        if let Some(library) = &self.library {
+            let _ = library.set_cover(id);
+        }
+        self.refresh_library(false);
+        self.model.status = "已设为封面".to_string();
+    }
+
+    /// Delete a screenshot (row and file).
+    fn remove_screenshot(&mut self, id: i64) {
+        if let Some(library) = &self.library {
+            let _ = library.remove_screenshot(id);
+        }
+        if self.model.preview == Some(id) {
+            self.close_preview();
+        }
+        self.refresh_library(false);
+        self.model.status = "已删除截图".to_string();
+    }
+
+    /// Reveal a screenshot's file in the platform file browser.
+    fn reveal_screenshot(&mut self, id: i64) {
+        let Some(library) = &self.library else {
+            return;
+        };
+        if let Ok(Some(path)) = library.screenshot_path(id) {
+            reveal_path(&path);
+        }
+    }
+
+    /// Open the screenshots directory in the platform file browser.
+    fn open_screenshots_folder(&mut self) {
+        if let Some(library) = &self.library {
+            open_path(library.screenshots_dir());
         }
     }
 
@@ -622,12 +845,14 @@ impl App {
             .games
             .iter()
             .position(|game| Path::new(&game.path) == rom_path);
+        // The screenshots section follows the game just started.
+        self.model.screenshot_game = self.selected_game_id();
     }
 
     /// Take a screenshot of the running game: encode its last frame, store it
-    /// under the game in the library, and refresh so a first screenshot becomes
-    /// the cover.
-    fn capture_screenshot(&mut self) {
+    /// under the game in the library, and refresh. `as_cover` also makes the
+    /// new picture the game's cover.
+    fn capture_screenshot(&mut self, as_cover: bool) {
         let Some(session) = self.session.as_ref() else {
             self.model.status = "没有正在运行的游戏".to_string();
             self.dirty = true;
@@ -648,9 +873,13 @@ impl App {
             }
         };
         let saved = match &self.library {
-            Some(library) => {
-                library.save_screenshot(&rom_path, &png, i64::from(width), i64::from(height), false)
-            }
+            Some(library) => library.save_screenshot(
+                &rom_path,
+                &png,
+                i64::from(width),
+                i64::from(height),
+                as_cover,
+            ),
             None => {
                 self.model.status = "游戏库不可用".to_string();
                 self.dirty = true;
@@ -659,7 +888,11 @@ impl App {
         };
         match saved {
             Ok(Some(_)) => {
-                self.model.status = "已截图".to_string();
+                self.model.status = if as_cover {
+                    "已截图并设为封面".to_string()
+                } else {
+                    "已截图".to_string()
+                };
                 self.refresh_library(false);
             }
             Ok(None) => {
@@ -710,6 +943,11 @@ impl App {
             match action {
                 Action::Show(section) => {
                     self.model.section = section;
+                    // The screenshots section follows the playing game unless a
+                    // card sent it to a specific one.
+                    if section == Section::Screenshots && self.model.screenshot_game.is_none() {
+                        self.model.screenshot_game = self.selected_game_id();
+                    }
                     self.dirty = true;
                 }
                 Action::Play(index) => self.start_game(index),
@@ -760,7 +998,20 @@ impl App {
                 Action::DeleteGame(index) => self.delete_game(index),
                 Action::Sort(key) => self.set_sort(key),
                 Action::ToggleSortOrder => self.set_sort(self.model.sort),
-                Action::Screenshot => self.capture_screenshot(),
+                Action::Screenshot => self.capture_screenshot(false),
+                Action::ScreenshotCover => self.capture_screenshot(true),
+                Action::ShowScreenshots(game_id) => {
+                    self.model.section = Section::Screenshots;
+                    self.model.screenshot_game = Some(game_id);
+                    self.dirty = true;
+                }
+                Action::PreviewScreenshot(id) => self.preview_screenshot(id),
+                Action::ClosePreview => self.close_preview(),
+                Action::StepPreview(delta) => self.step_preview(delta),
+                Action::SetCover(id) => self.set_cover(id),
+                Action::RemoveScreenshot(id) => self.remove_screenshot(id),
+                Action::RevealScreenshot(id) => self.reveal_screenshot(id),
+                Action::OpenScreenshotsFolder => self.open_screenshots_folder(),
             }
         }
     }
@@ -811,6 +1062,8 @@ impl App {
         // flushes its battery save and its play time.
         self.flush_playtime();
         self.session = None;
+        self.model.preview = None;
+        self.preview_paused = false;
 
         let backend = match self.backend.as_mut() {
             Some(backend) => backend,
@@ -1069,9 +1322,9 @@ impl ApplicationHandler for App {
                         self.actions.push(action);
                         self.handle_actions();
                     }
-                    // F12 is the screenshot key (the old front end's layout).
+                    // F12 is the screenshot key; Shift+F12 also sets the cover.
                     if matches!(event.logical_key, WinitKey::Named(NamedKey::F12)) {
-                        self.capture_screenshot();
+                        self.capture_screenshot(self.modifiers.shift_key());
                     }
                 }
                 let Some(key) = map_key(&event.logical_key) else {
@@ -1141,6 +1394,32 @@ fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
+/// Reveal a file in the platform file browser (Finder on macOS).
+fn reveal_path(path: &Path) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Some(parent) = path.parent() {
+            open_path(parent);
+        }
+    }
+}
+
+/// Open a directory in the platform file browser.
+fn open_path(path: &Path) {
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(not(target_os = "macos"))]
+    let opener = "xdg-open";
+    let _ = std::process::Command::new(opener).arg(path).spawn();
+}
+
 /// Platform wheel -> logical pixels (`y > 0` scrolls down).
 fn wheel_pixels(delta: MouseScrollDelta, scale: f32) -> f32 {
     match delta {
@@ -1192,6 +1471,7 @@ fn game_row(game: Game, cover: Option<FrameHandle>) -> GameRow {
         play_seconds: game.play_seconds,
         last_played_at: game.last_played_at,
         tags: game.tags,
+        screenshots: game.screenshots,
         cover,
     }
 }

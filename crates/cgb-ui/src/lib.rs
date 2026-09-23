@@ -15,7 +15,9 @@ mod view;
 
 pub use frame::{centered_fit, contain_fit, cover_fit, FrameImage};
 pub use icons::{Icon, IconName};
-pub use model::{Action, BindingRow, CoreRow, FrameHandle, GameRow, Section, SortKey, ViewModel};
+pub use model::{
+    Action, BindingRow, CoreRow, FrameHandle, GameRow, ScreenshotRow, Section, SortKey, ViewModel,
+};
 pub use view::Actions;
 
 use std::rc::Rc;

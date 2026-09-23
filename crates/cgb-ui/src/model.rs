@@ -9,17 +9,19 @@ use draw_render::TextureId;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Section {
     Library,
+    Screenshots,
     Settings,
 }
 
 impl Section {
     /// The pages, in the order the rail lists them.
-    pub const ALL: [Section; 2] = [Section::Library, Section::Settings];
+    pub const ALL: [Section; 3] = [Section::Library, Section::Screenshots, Section::Settings];
 
     /// What the rail says.
     pub fn label(self) -> &'static str {
         match self {
             Section::Library => "游戏库",
+            Section::Screenshots => "截图",
             Section::Settings => "设置",
         }
     }
@@ -47,9 +49,25 @@ pub struct GameRow {
     pub last_played_at: i64,
     /// The player's labels, alphabetical and without duplicates.
     pub tags: Vec<String>,
+    /// How many screenshots have been taken of it.
+    pub screenshots: i64,
     /// The game's cover texture, when it has a screenshot set as cover. The
     /// app registers it; the view draws it behind the card controls.
     pub cover: Option<FrameHandle>,
+}
+
+/// One screenshot in the screenshots section.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScreenshotRow {
+    pub id: i64,
+    pub game_id: i64,
+    /// The game's display name, for the caption.
+    pub game: String,
+    pub created_at: i64,
+    /// Whether this picture is its game's cover.
+    pub is_cover: bool,
+    /// The registered thumbnail texture, when it has been uploaded.
+    pub thumb: Option<FrameHandle>,
 }
 
 /// How the library is ordered. Pinned games always come first, whatever the
@@ -157,6 +175,13 @@ pub struct ViewModel {
     pub core_name: String,
     pub frame: Option<FrameHandle>,
     pub status: String,
+    /// Every screenshot, newest first. The section filters it by game.
+    pub screenshots: Vec<ScreenshotRow>,
+    /// The game whose screenshots the section shows, by game id. `None` falls
+    /// back to the playing/selected game.
+    pub screenshot_game: Option<i64>,
+    /// The screenshot being previewed in the play column, by id.
+    pub preview: Option<i64>,
     /// Every core in the manifest, for the settings picker.
     pub cores: Vec<CoreRow>,
     /// Folders the library scans.
@@ -178,6 +203,9 @@ impl Default for ViewModel {
             core_name: String::new(),
             frame: None,
             status: String::new(),
+            screenshots: Vec::new(),
+            screenshot_game: None,
+            preview: None,
             cores: Vec::new(),
             library_dirs: Vec::new(),
             bindings: Vec::new(),
@@ -216,4 +244,22 @@ pub enum Action {
     ToggleSortOrder,
     /// Take a screenshot of the running game and add it to the library.
     Screenshot,
+    /// Take a screenshot and make it the running game's cover.
+    ScreenshotCover,
+    /// Show the screenshots section for the game with this id.
+    ShowScreenshots(i64),
+    /// Preview the screenshot with this id in the play column.
+    PreviewScreenshot(i64),
+    /// Close the screenshot preview.
+    ClosePreview,
+    /// Step the preview by `+1` (next) or `-1` (previous).
+    StepPreview(i32),
+    /// Make the screenshot with this id its game's cover.
+    SetCover(i64),
+    /// Delete the screenshot with this id.
+    RemoveScreenshot(i64),
+    /// Reveal the screenshot with this id in the file browser.
+    RevealScreenshot(i64),
+    /// Open the screenshots directory in the file browser.
+    OpenScreenshotsFolder,
 }

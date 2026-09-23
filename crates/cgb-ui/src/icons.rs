@@ -24,15 +24,50 @@ use draw_ui::{InteractState, MouseFilter, Widget};
 pub enum IconName {
     /// A pushpin; the card's pin toggle.
     Pin,
-    /// A trash can; the card's delete button.
+    /// A trash can; delete.
     Trash,
     /// An up arrow; ascending sort.
     ArrowUp,
     /// A down arrow; descending sort.
     ArrowDown,
+    /// A camera; the screenshots section and the capture button.
+    Camera,
+    /// A picture with a plus; "set as cover".
+    ImagePlus,
+    /// A folder with a magnifier; reveal in the file browser.
+    FolderSearch,
+    /// A star; the cover flag.
+    Star,
+    /// A cross; close a preview.
+    Close,
+    /// A left chevron; the previous screenshot.
+    ChevronLeft,
+    /// A right chevron; the next screenshot.
+    ChevronRight,
+    /// A stack of books; the library section.
+    Library,
+    /// Two sliders; the settings section.
+    Settings2,
 }
 
 impl IconName {
+    /// Every icon in the pack, for tests and iteration.
+    pub const ALL: [IconName; 13] = [
+        IconName::Pin,
+        IconName::Trash,
+        IconName::ArrowUp,
+        IconName::ArrowDown,
+        IconName::Camera,
+        IconName::ImagePlus,
+        IconName::FolderSearch,
+        IconName::Star,
+        IconName::Close,
+        IconName::ChevronLeft,
+        IconName::ChevronRight,
+        IconName::Library,
+        IconName::Settings2,
+    ];
+
     /// The embedded SVG source for this icon.
     fn source(self) -> &'static str {
         match self {
@@ -40,6 +75,15 @@ impl IconName {
             IconName::Trash => include_str!("../assets/icons/trash-2.svg"),
             IconName::ArrowUp => include_str!("../assets/icons/arrow-up.svg"),
             IconName::ArrowDown => include_str!("../assets/icons/arrow-down.svg"),
+            IconName::Camera => include_str!("../assets/icons/camera.svg"),
+            IconName::ImagePlus => include_str!("../assets/icons/image-plus.svg"),
+            IconName::FolderSearch => include_str!("../assets/icons/folder-search.svg"),
+            IconName::Star => include_str!("../assets/icons/star.svg"),
+            IconName::Close => include_str!("../assets/icons/x.svg"),
+            IconName::ChevronLeft => include_str!("../assets/icons/chevron-left.svg"),
+            IconName::ChevronRight => include_str!("../assets/icons/chevron-right.svg"),
+            IconName::Library => include_str!("../assets/icons/library.svg"),
+            IconName::Settings2 => include_str!("../assets/icons/settings-2.svg"),
         }
     }
 }
@@ -131,12 +175,7 @@ mod tests {
 
     #[test]
     fn every_icon_parses_and_draws() {
-        for name in [
-            IconName::Pin,
-            IconName::Trash,
-            IconName::ArrowUp,
-            IconName::ArrowDown,
-        ] {
+        for name in IconName::ALL {
             let document = document(name).expect("icon parses");
             let mut ctx = PaintContext::new();
             document.draw(

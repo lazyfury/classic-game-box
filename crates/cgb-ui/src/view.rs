@@ -30,8 +30,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use draw_components::{
-    Badge, Button, Card, Column, Component, Divider, EmptyState, Flex, Glyph, Grid, Icon, Panel,
-    Row, ScrollView, ScrollViewState, Text,
+    Badge, Button, Card, Column, Component, Divider, EmptyState, Flex, Grid, Panel, Row,
+    ScrollView, ScrollViewState, Text,
 };
 use draw_core::{Color, Edges};
 use draw_render::Paint;
@@ -42,7 +42,7 @@ use draw_ui::{Align, Justify, MouseFilter, SizeBasis, SurfaceStyle, Track};
 
 use crate::frame::{cover_fit, FrameImage};
 use crate::icons::{Icon as SvgIcon, IconName};
-use crate::model::{Action, GameRow, Section, SortKey, ViewModel};
+use crate::model::{Action, GameRow, ScreenshotRow, Section, SortKey, ViewModel};
 
 /// The rail's fixed width in logical pixels.
 const RAIL_WIDTH: f32 = 64.0;
@@ -159,16 +159,12 @@ fn rail_item(
 ) -> Column {
     let actions = actions.clone();
     let selected = section == active;
-    let glyph = match section {
-        Section::Library => Glyph::Grid,
-        Section::Settings => Glyph::Toggle,
-    };
     let ink = if selected {
         theme.palette().on_accent
     } else {
         theme.palette().muted
     };
-    Column::new()
+    let item = Column::new()
         .gap(space::XXS)
         .padding(Edges::new(space::XXS, space::SM, space::XXS, space::SM))
         .align(Align::Center)
@@ -182,13 +178,18 @@ fn rail_item(
             };
             SurfaceStyle::new(fill).radius(radius::MD)
         })
-        .on_click(move || actions.push(Action::Show(section)))
-        .child(Icon::new(glyph, theme).size(20.0).color(ink))
-        .child(
-            Text::caption(section.label(), theme)
-                .color(ink)
-                .max_lines(1),
-        )
+        .on_click(move || actions.push(Action::Show(section)));
+    // Every section uses a vendored SVG icon, so the rail is one stroke set.
+    let icon = match section {
+        Section::Library => IconName::Library,
+        Section::Screenshots => IconName::Camera,
+        Section::Settings => IconName::Settings2,
+    };
+    item.child(SvgIcon::new(icon, ink, 20.0)).child(
+        Text::caption(section.label(), theme)
+            .color(ink)
+            .max_lines(1),
+    )
 }
 
 /// The middle column: a fixed-width panel holding the current page.
@@ -200,6 +201,7 @@ fn middle(
 ) -> Panel {
     let page = match model.section {
         Section::Library => library_page(theme, model, actions, middle_scroll),
+        Section::Screenshots => screenshots_page(theme, model, actions, middle_scroll),
         Section::Settings => settings_page(theme, model, actions, middle_scroll),
     };
     Panel::new()
@@ -212,8 +214,15 @@ fn middle(
         .child(page.grow(1.0))
 }
 
-/// The console column, on the right and always mounted.
+/// The console column, on the right and always mounted. While a screenshot is
+/// being previewed it shows the picture instead of the console.
 fn play_column(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
+    if let Some(id) = model.preview {
+        if let Some(shot) = model.screenshots.iter().find(|shot| shot.id == id) {
+            return preview_column(theme, model, shot, actions);
+        }
+    }
+
     let mut column = Column::new()
         .gap(space::SM)
         .padding(Edges::all(space::MD))
@@ -268,6 +277,10 @@ fn play_column(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) 
     let shot = actions.clone();
     controls = controls
         .child(Button::ghost("截图", theme).on_click(move || shot.push(Action::Screenshot)));
+    let cover = actions.clone();
+    controls = controls.child(
+        Button::ghost("设为封面", theme).on_click(move || cover.push(Action::ScreenshotCover)),
+    );
     column = column.child(controls);
 
     if !model.core_name.is_empty() {
@@ -495,39 +508,68 @@ fn system_badge(theme: &'static dyn Theme, game: &GameRow) -> Badge {
         .radius(radius::SM)
 }
 
-/// The card's controls, top-right on the cover: pin, then delete. The pin is
-/// yellow when the game is pinned; delete destroys the ROM.
+/// The card's controls, top-right on the cover: the screenshot count (when
+/// there are any), the pin, then delete. The pin is yellow when the game is
+/// pinned; delete destroys the ROM.
 fn card_controls(
     theme: &'static dyn Theme,
     game: &GameRow,
     index: usize,
     actions: &Actions,
 ) -> Row {
-    Row::new()
-        .align(Align::Center)
-        .gap(space::XXS)
-        .child(icon_button(
-            theme,
-            IconName::Pin,
-            if game.pinned {
-                PIN_COLOR
+    let mut row = Row::new().align(Align::Center).gap(space::XXS);
+    if game.screenshots > 0 {
+        row = row.child(screenshot_entry(theme, game, actions));
+    }
+    row.child(icon_button(
+        theme,
+        IconName::Pin,
+        if game.pinned {
+            PIN_COLOR
+        } else {
+            Color::WHITE.with_alpha(0.85)
+        },
+        {
+            let actions = actions.clone();
+            move || actions.push(Action::TogglePin(index))
+        },
+    ))
+    .child(icon_button(
+        theme,
+        IconName::Trash,
+        Color::WHITE.with_alpha(0.85),
+        {
+            let actions = actions.clone();
+            move || actions.push(Action::DeleteGame(index))
+        },
+    ))
+}
+
+/// The card's screenshot count: a camera and the number, opening the
+/// screenshots section for this game. Only shown when the game has any.
+fn screenshot_entry(theme: &'static dyn Theme, game: &GameRow, actions: &Actions) -> Button {
+    let actions = actions.clone();
+    let game_id = game.id;
+    let ink = Color::WHITE.with_alpha(0.85);
+    Button::ghost("", theme)
+        .mini()
+        .min_size(CARD_ICON_BUTTON, CARD_ICON_BUTTON)
+        .child(
+            Row::new()
+                .align(Align::Center)
+                .gap(2.0)
+                .child(SvgIcon::new(IconName::Camera, ink, CARD_ICON))
+                .child(Text::caption(game.screenshots.to_string(), theme).color(ink)),
+        )
+        .dynamic_background(move |state| {
+            let fill = if state.hovered || state.pressed {
+                Color::WHITE.with_alpha(0.16)
             } else {
-                Color::WHITE.with_alpha(0.85)
-            },
-            {
-                let actions = actions.clone();
-                move || actions.push(Action::TogglePin(index))
-            },
-        ))
-        .child(icon_button(
-            theme,
-            IconName::Trash,
-            Color::WHITE.with_alpha(0.85),
-            {
-                let actions = actions.clone();
-                move || actions.push(Action::DeleteGame(index))
-            },
-        ))
+                Color::TRANSPARENT
+            };
+            SurfaceStyle::new(fill).radius(radius::SM)
+        })
+        .on_click(move || actions.push(Action::ShowScreenshots(game_id)))
 }
 
 /// A small, transparent-until-hovered icon button on a coloured cover. The
@@ -627,6 +669,288 @@ fn hsv(hue: f32, saturation: f32, value: f32) -> Color {
     Color::rgb(r + m, g + m, b + m)
 }
 
+/// The screenshots section: the current game's screenshots, newest first.
+/// Which game is shown comes from the model (the playing game, or one a card
+/// sent us to).
+fn screenshots_page(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &Actions,
+    scroll: &mut Option<ScrollViewState>,
+) -> Column {
+    let game_id = model.screenshot_game;
+    let game_name = game_id
+        .and_then(|id| model.games.iter().find(|game| game.id == id))
+        .map(|game| game.name.clone());
+    let shots: Vec<&ScreenshotRow> = model
+        .screenshots
+        .iter()
+        .filter(|shot| Some(shot.game_id) == game_id)
+        .collect();
+
+    let open = actions.clone();
+    let mut column = Column::new()
+        .gap(space::SM)
+        .padding(Edges::all(MD))
+        .mouse_filter(MouseFilter::Ignore)
+        .child(
+            Row::new()
+                .align(Align::Center)
+                .gap(space::SM)
+                .child(Text::heading("截图收藏", theme).grow(1.0))
+                .child(
+                    Button::ghost("", theme)
+                        .mini()
+                        .min_size(CARD_ICON_BUTTON, CARD_ICON_BUTTON)
+                        .child(SvgIcon::new(
+                            IconName::FolderSearch,
+                            theme.palette().foreground,
+                            CARD_ICON,
+                        ))
+                        .on_click(move || open.push(Action::OpenScreenshotsFolder)),
+                ),
+        );
+    let subtitle = match &game_name {
+        Some(name) => format!("{name} · {} 张", shots.len()),
+        None => "没有正在玩的游戏".to_string(),
+    };
+    column = column.child(Text::caption(subtitle, theme).tone(Tone::Muted));
+
+    if shots.is_empty() {
+        column = column.child(
+            EmptyState::new("还没有截图", theme)
+                .description("在游戏里按 F12 截图，⇧F12 直接设为封面。"),
+        );
+    } else {
+        let mut grid = Grid::new(vec![Track::Fr(1.0); LIBRARY_COLUMNS])
+            .gap(space::SM)
+            .padding(Edges::ZERO);
+        for shot in &shots {
+            grid = grid.child(shot_card(theme, shot, actions));
+        }
+        let view = ScrollView::new(theme)
+            .scrollbar(false)
+            .grow(1.0)
+            .child(grid);
+        *scroll = Some(view.state());
+        column = column.child(view);
+    }
+    column
+}
+
+/// One screenshot cell: the thumbnail (a button that previews), the game and
+/// time, and the set-cover / reveal / delete controls.
+fn shot_card(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Actions) -> Column {
+    Column::new()
+        .gap(space::XXS)
+        .padding(Edges::all(space::XXS))
+        .mouse_filter(MouseFilter::Ignore)
+        .child(thumbnail(theme, shot, actions))
+        .child(
+            Text::small(shot.game.as_str(), theme)
+                .max_lines(1)
+                .ellipsis(true),
+        )
+        .child(
+            Text::caption(format_when(shot.created_at), theme)
+                .tone(Tone::Subtle)
+                .max_lines(1),
+        )
+        .child(shot_controls(theme, shot, actions))
+}
+
+/// A screenshot thumbnail, cropped to fill the cell. Clicking it previews.
+fn thumbnail(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Actions) -> Flex {
+    let open = actions.clone();
+    let id = shot.id;
+    let mut thumb = Flex::row()
+        .align(Align::Center)
+        .justify(Justify::Center)
+        .min_size(0.0, PLACEHOLDER_HEIGHT)
+        .surface(SurfaceStyle::new(theme.palette().surface).radius(radius::SM))
+        .clip(true)
+        .on_click(move || open.push(Action::PreviewScreenshot(id)));
+    match shot.thumb {
+        Some(handle) => {
+            thumb = thumb.foreground(move |ctx, rect, _state| {
+                let destination = cover_fit((handle.width, handle.height), rect);
+                ctx.draw_image(handle.texture, destination, None, Paint::default());
+            });
+        }
+        None => {
+            thumb = thumb.child(SvgIcon::new(IconName::Camera, theme.palette().muted, 20.0));
+        }
+    }
+    thumb
+}
+
+/// A screenshot's controls: a "cover" badge or a set-cover button, then reveal
+/// and delete.
+fn shot_controls(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Actions) -> Row {
+    let mut row = Row::new().align(Align::Center).gap(space::XXS);
+    if shot.is_cover {
+        row = row.child(
+            Badge::new("封面", theme)
+                .fill(theme.palette().selection)
+                .text_color(theme.palette().foreground),
+        );
+    } else {
+        let set = actions.clone();
+        let id = shot.id;
+        row = row.child(icon_button(
+            theme,
+            IconName::ImagePlus,
+            theme.palette().foreground,
+            move || set.push(Action::SetCover(id)),
+        ));
+    }
+    let reveal = actions.clone();
+    let reveal_id = shot.id;
+    row = row.child(icon_button(
+        theme,
+        IconName::FolderSearch,
+        theme.palette().foreground,
+        move || reveal.push(Action::RevealScreenshot(reveal_id)),
+    ));
+    let remove = actions.clone();
+    let remove_id = shot.id;
+    row.child(icon_button(
+        theme,
+        IconName::Trash,
+        theme.palette().foreground,
+        move || remove.push(Action::RemoveScreenshot(remove_id)),
+    ))
+}
+
+/// The play column while a screenshot is previewed: the picture large, with
+/// previous/next and the same controls as the grid.
+fn preview_column(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    shot: &ScreenshotRow,
+    actions: &Actions,
+) -> Column {
+    let ids: Vec<i64> = model
+        .screenshots
+        .iter()
+        .filter(|candidate| candidate.game_id == shot.game_id)
+        .map(|candidate| candidate.id)
+        .collect();
+    let index = ids.iter().position(|id| *id == shot.id).unwrap_or(0);
+
+    let mut head = Row::new()
+        .align(Align::Center)
+        .gap(space::SM)
+        .child(
+            Text::subheading(shot.game.as_str(), theme)
+                .grow(1.0)
+                .max_lines(1)
+                .ellipsis(true),
+        )
+        .child(Text::caption(format!("{} / {}", index + 1, ids.len()), theme).tone(Tone::Muted));
+    if shot.is_cover {
+        head = head.child(
+            Badge::new("封面", theme)
+                .fill(theme.palette().selection)
+                .text_color(theme.palette().foreground),
+        );
+    }
+
+    let mut column = Column::new()
+        .gap(space::SM)
+        .padding(Edges::all(MD))
+        .grow(1.0)
+        .mouse_filter(MouseFilter::Ignore)
+        .child(head);
+    match shot.thumb {
+        Some(handle) => {
+            column = column
+                .child(FrameImage::new(handle.texture, handle.width, handle.height).grow(1.0));
+        }
+        None => {
+            column = column.child(
+                Flex::row()
+                    .align(Align::Center)
+                    .justify(Justify::Center)
+                    .grow(1.0)
+                    .surface(SurfaceStyle::new(theme.palette().surface).radius(radius::MD))
+                    .child(Text::small("截图缩略图还没加载。", theme).tone(Tone::Muted)),
+            );
+        }
+    }
+
+    let previous = actions.clone();
+    let next = actions.clone();
+    column = column.child(
+        Row::new()
+            .align(Align::Center)
+            .justify(Justify::Center)
+            .gap(space::SM)
+            .child(
+                Button::ghost("", theme)
+                    .child(SvgIcon::new(
+                        IconName::ChevronLeft,
+                        theme.palette().foreground,
+                        14.0,
+                    ))
+                    .on_click(move || previous.push(Action::StepPreview(-1))),
+            )
+            .child(Text::caption(format_when(shot.created_at), theme).tone(Tone::Subtle))
+            .child(
+                Button::ghost("", theme)
+                    .child(SvgIcon::new(
+                        IconName::ChevronRight,
+                        theme.palette().foreground,
+                        14.0,
+                    ))
+                    .on_click(move || next.push(Action::StepPreview(1))),
+            ),
+    );
+
+    let mut controls = Row::new().gap(space::SM);
+    if !shot.is_cover {
+        let set = actions.clone();
+        let id = shot.id;
+        controls = controls.child(
+            Button::secondary("设为封面", theme).on_click(move || set.push(Action::SetCover(id))),
+        );
+    }
+    let reveal = actions.clone();
+    let reveal_id = shot.id;
+    controls = controls.child(
+        Button::ghost("在访达中显示", theme)
+            .on_click(move || reveal.push(Action::RevealScreenshot(reveal_id))),
+    );
+    let remove = actions.clone();
+    let remove_id = shot.id;
+    controls = controls.child(
+        Button::destructive("删除", theme)
+            .on_click(move || remove.push(Action::RemoveScreenshot(remove_id))),
+    );
+    let close = actions.clone();
+    controls = controls
+        .child(Button::secondary("关闭", theme).on_click(move || close.push(Action::ClosePreview)));
+    column.child(controls)
+}
+
+/// A short "how long ago" for a screenshot caption.
+fn format_when(created_ms: i64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0);
+    let seconds = ((now - created_ms) / 1000).max(0);
+    if seconds < 60 {
+        "刚刚".to_string()
+    } else if seconds < 3600 {
+        format!("{} 分钟前", seconds / 60)
+    } else if seconds < 86_400 {
+        format!("{} 小时前", seconds / 3600)
+    } else {
+        format!("{} 天前", seconds / 86_400)
+    }
+}
+
 /// The bottom status line: the last app message, plus the save hotkeys.
 fn status_bar(theme: &'static dyn Theme, model: &ViewModel) -> Column {
     let status = if model.status.is_empty() {
@@ -650,7 +974,10 @@ fn status_bar(theme: &'static dyn Theme, model: &ViewModel) -> Column {
                         .max_lines(1)
                         .ellipsis(true),
                 )
-                .child(Text::caption("F5 存档 / F6 读档 / F12 截图", theme).tone(Tone::Subtle)),
+                .child(
+                    Text::caption("F5 存档 / F6 读档 / F12 截图 / ⇧F12 封面", theme)
+                        .tone(Tone::Subtle),
+                ),
         )
 }
 
@@ -828,6 +1155,7 @@ mod tests {
             play_seconds: 0,
             last_played_at: 0,
             tags: Vec::new(),
+            screenshots: 0,
             cover: None,
         }
     }
@@ -1040,6 +1368,104 @@ mod tests {
         assert!(meta.contains("2 KB"), "{meta}");
         assert!(meta.contains("玩过 3 次"), "{meta}");
         assert!(meta.contains("2 分"), "{meta}");
+    }
+
+    fn one_shot() -> ScreenshotRow {
+        ScreenshotRow {
+            id: 7,
+            game_id: 0,
+            game: "Game 0".to_string(),
+            created_at: 0,
+            is_cover: true,
+            thumb: Some(FrameHandle {
+                texture: TextureId::new(0x1_0000),
+                width: 256,
+                height: 240,
+            }),
+        }
+    }
+
+    /// The screenshots section lists the game, its shot count, the cover badge
+    /// and the thumbnail image.
+    #[test]
+    fn the_screenshots_page_lists_the_game_and_its_shots() {
+        let model = ViewModel {
+            section: Section::Screenshots,
+            screenshot_game: Some(0),
+            games: vec![game_row("Game 0", "/roms/game0.nes")],
+            screenshots: vec![one_shot()],
+            ..ViewModel::default()
+        };
+        let list = paint(&model);
+        let has = |needle: &str| {
+            list.commands().iter().any(|command| {
+                matches!(command,
+                    DrawCommand::DrawText { text, .. } if text.contains(needle))
+            })
+        };
+        assert!(has("截图收藏"), "the page title");
+        assert!(has("Game 0"), "the game name");
+        assert!(has("1 张"), "the count");
+        assert!(has("封面"), "the cover flag");
+        assert!(
+            list.commands()
+                .iter()
+                .any(|command| matches!(command, DrawCommand::DrawImage { .. })),
+            "the thumbnail is drawn"
+        );
+    }
+
+    /// The play column shows the previewed screenshot and its index.
+    #[test]
+    fn the_preview_column_shows_the_picture_and_its_index() {
+        let model = ViewModel {
+            preview: Some(7),
+            games: vec![game_row("Game 0", "/roms/game0.nes")],
+            screenshots: vec![one_shot()],
+            ..ViewModel::default()
+        };
+        let list = paint(&model);
+        let has = |needle: &str| {
+            list.commands().iter().any(|command| {
+                matches!(command,
+                    DrawCommand::DrawText { text, .. } if text.contains(needle))
+            })
+        };
+        assert!(has("1 / 1"), "the position");
+        assert!(
+            list.commands()
+                .iter()
+                .any(|command| matches!(command, DrawCommand::DrawImage { .. })),
+            "the preview is drawn"
+        );
+    }
+
+    /// The card's screenshot count is its own button that opens the section.
+    #[test]
+    fn the_card_screenshot_count_opens_the_section() {
+        let actions = Actions::default();
+        let mut game = game_row("Game 0", "/roms/game0.nes");
+        game.screenshots = 2;
+        let model = ViewModel {
+            games: vec![game],
+            ..ViewModel::default()
+        };
+        let (mut tree, list) = laid_out(&model, &actions);
+        let point = text_position(&list, "2");
+        click(&mut tree, point);
+        assert_eq!(actions.drain(), vec![Action::ShowScreenshots(0)]);
+    }
+
+    /// The rail has a screenshots entry that switches the section.
+    #[test]
+    fn the_rail_offers_the_screenshots_section() {
+        let actions = Actions::default();
+        let (mut tree, list) = laid_out(&ViewModel::default(), &actions);
+        let point = text_position(&list, "截图");
+        click(&mut tree, point);
+        assert!(actions
+            .drain()
+            .contains(&Action::Show(Section::Screenshots)));
     }
 
     /// The rail is the only way to change what the middle column shows, so it
