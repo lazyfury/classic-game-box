@@ -19,8 +19,10 @@
 4. **原生 `.dylib` 直接 dlopen**。这是这次重构最大的红利：彻底绕开 wasm 沙箱、
    side module、`ALLOW_MEMORY_GROWTH=0`、C++ 运行时对齐等全部技术债。
    任意第三方 libretro core 即插即用。
-5. **UI 先做最小闭环**：游戏库 → 选核 → 游玩 → 暂停/复位 → 存读档 → 设置。截图、封面、
-   置顶、标签、金手指、倒带、扫描线等**移植优先级低**，结构上留位、按需接回。
+5. **UI 先做最小闭环**：游戏库 → 选核 → 游玩 → 暂停/复位 → 存读档 → 设置。
+   **已接回**：真实封面 / 截图收藏（独立表 + 封面 id）、置顶、标签、排序、卡片 SVG 图标。
+   **仍后置**：金手指、倒带、扫描线，以及**搜索 / 改名 / 标签编辑**（都卡在 quill 无
+   `TextInput`，待自建）。
 6. **手柄用 `gilrs`**（不再依赖 Swift 助手进程）。
 
 ---
@@ -32,13 +34,13 @@
 - libretro frontend：dlopen core、回调注册、逐帧运行、XRGB8888 画面、int16 stereo 音频、
   键盘/手柄输入、`retro_serialize` 存档与电池存档 `RETRO_MEMORY_SAVE_RAM`。
 - Mesen 与 mGBA 的**原生 macOS 构建**（`cores/`）。
-- 最小闭环 UI：库列表（虚拟化 `List`）、播放页、设置页、存档槽、手柄重绑定。
-- 游戏库持久化（SQLite）与设置持久化（JSON）。
+- 最小闭环 UI：库网格（自建可见行虚拟化）、截图收藏、播放页、设置页、存档槽。
+- 游戏库持久化（SQLite：游戏 + 元数据 + 标签 + 截图）与设置持久化（JSON）。
 - 无截图的自动验证（`draw_backend_recording` + `draw_profile::inspect`）。
 
 ### 不做（本阶段）
 - 自研 CPU/PPU/APU 模拟逻辑；`fc_*` 私有扩展；金手指原始字节面板。
-- 截图/封面/置顶/标签的完整 UI（数据结构可保留）。
+- **搜索 / 改名 / 标签编辑的输入 UI**（quill 无 `TextInput`，待自建后再接；数据层已就绪）。
 - 倒带、扫描线滤镜、多人手柄的完整矩阵（预留接口，按需接回）。
 - Windows/Linux 打包；只保证 macOS Apple Silicon。
 
@@ -286,29 +288,28 @@ Flex::column()
   └─ status bar                     最后一条消息 + 存读档快捷键
 ```
 
-左栏只有两个 section；**游玩不再是 section**——右栏画面常驻，跟 legacy 一样。
+左栏三个 section：游戏库 / 截图 / 设置；**游玩不再是 section**——右栏画面常驻，跟 legacy 一样。
 
 | section | 内容 | quill 组件 |
 |---|---|---|
-| 游戏库 | 扫描目录、扩展名过滤 `.nes/.gba/.gb/.gbc/.zip`、固定 2 列网格 + 封面占位 + 机种短名、单击即玩；网格可滚动（`ScrollView`）；拖放 ROM 或“添加游戏文件…”加入库，也可“添加游戏目录…”整目录扫描 | `Grid`（固定列）+ `ScrollView` + `Icon` |
+| 游戏库 | 扫描目录、扩展名过滤 `.nes/.gba/.gb/.gbc/.zip`、固定 2 列网格（真实封面或随机色块 + 机种 badge + 截图数/置顶/删除）、单击即玩；排序栏（名称/大小/最近/时长/加入 + 方向）；拖放 ROM 或“添加游戏文件…”，也可“添加游戏目录…” | `Grid` + `ScrollView` + 本地 `Icon` |
+| 截图 | 跟随在玩游戏的截图收藏：缩略图网格、设为封面 / 在访达中显示 / 删除；点击大图预览（上/下张、Esc） | `Grid` + `ScrollView` + `FrameImage` |
 | 设置 | 每机种选核、键盘绑定、扫描目录 | `Card` + `Button` |
 
-右栏：`DrawImage`（`frame::FrameImage`）+ 暂停/复位/快速存读档 + 当前核心。
+右栏：`DrawImage`（`frame::FrameImage`）+ 暂停/复位/快速存读档/截图/设为封面 + 当前核心；
+预览截图时右栏显示大图。删除游戏或截图前有确认条。窗口在 macOS 用 full-size content view，
+header 预留安全区（标题栏高度 + 红绿灯宽度）。
 
-结构上预留但**暂不实现**：搜索框（quill 无 TextInput，自建或后置）、真实截图/封面（先用
-surface 色块占位）、标签、金手指。搜索框是已知缺口，若最小闭环需要，先在 `cgb-ui`
-内自建一个轻量 `TextInput`。
-
-游戏库用固定列数的 `draw_components::Grid`（当前 2 列），每格一个可点 cell：surface 色块
-封面（名字居中）+ 名字 + 机种短名；正在玩的那张用 accent 选中底色标记。只有网格区域被
-`ScrollView` 包住，标题与“添加…”按钮固定。滚动状态（`ScrollViewState`）由 `cgb-ui::Ui`
-持有：`Ui::layout` 在 layout 后调 `sync`，偏移变动时再 layout 一次（quill `ScrollView` 的约定）。
+游戏库用固定列数的 `draw_components::Grid`（当前 2 列）。网格**只挂可见行**：`cgb-ui` 按
+`ScrollViewState` 的 offset/viewport 算出行窗口（`visible_rows`），上下用 `spacer` 撑出完整
+内容高度，行高固定（`CARD_HEIGHT`）。滚动状态（`ScrollViewState`）由 `cgb-ui::Ui` 持有：
+`Ui::layout` 在 layout 后 `sync`，偏移变动时再 layout 一次；重建时用 `scroll_target` 恢复
+offset（点击卡片不会跳回顶部）。
 
 **画面**：`cgb-ui` 的 `frame::FrameImage`（见 §5.3）在 `foreground` 装饰器里发
-`DrawImage`；上游 `Image` 组件仍是待补项。
+`DrawImage`；卡片图标光栅化成纹理，每帧一条 `DrawImage`。上游 `Image` 组件仍是待补项。
 
-**未做**：左栏目前只映射 quill 自带的 `Glyph`（没有库/相机/存档图标），中栏不可拖动分隔，
-也没有 mac 式统一标题栏（保留系统窗口边框）。
+**未做**：中栏不可拖动分隔；改名 / 标签编辑 / 搜索（quill 无 `TextInput`，待自建）。
 
 ---
 
@@ -325,6 +326,11 @@ ControlFlow::WaitUntil(now + frame_budget)
 
 - 没有游戏时退回事件驱动（`Wait`），不空转。
 - 画面用 `draw_backend_wgpu::TextureId` 流式更新（`update_texture`，不重新分配）。
+- **DrawList 复用**：只在 `dirty` / 输入 / resize / 滚动时重建 DrawList；否则复用上一帧的
+  list 重新 `submit`（游戏纹理是原地更新的），运行游戏时不重排不重绘。
+- **可见行虚拟化**：库/截图网格只挂视口内的行（见 §7），滚动一步的成本取决于视口而非游戏数。
+- 图标光栅化成纹理，每帧一条 `DrawImage`（矢量描边是 `submit` 的主要成本）。
+- `CGB_PERF=1` 时打印每帧 `layout/paint/submit/commands`，便于定位瓶颈。
 
 ---
 
@@ -335,7 +341,7 @@ ControlFlow::WaitUntil(now + frame_budget)
 | **Q0** ✅ | 计划 + 结构 + 脚手架 | `cargo check --workspace` 通过 |
 | **Q1** | Mesen spike：原生 arm64 编译 + dlopen + 出画面 + 键盘 | ✅ 编译/ABI/dlopen/键盘齐，画面经 `frame::FrameImage` 上屏，待人眼确认 |
 | **Q2** | 音频（cpal）+ gilrs 手柄 + 存档槽 + `.srm` | 🚧 音频/手柄/`.srm`/即时存取已接线，待人眼试听与存读验收 |
-| **Q3** | `cgb-ui` 最小闭环 + 库（SQLite）+ 打开目录对话框 | 从库列表选游戏进入游玩 |
+| **Q3** ✅ | `cgb-ui` 最小闭环 + 库（SQLite）+ 打开目录对话框 | 从库列表选游戏进入游玩；库模型含元数据/标签/截图/封面 |
 | **Q4** | mGBA 接入（原生）+ 机种路由 + 动态分辨率/帧率/输入描述 | 🚧 上游 mGBA 已构建并过 host（RGB565）；`.gba` 整机与输入描述待做 |
 | **Q5** | 打包 `.app`、无头自检、发版脚本 | 可发布，`--selfcheck` 绿 |
 

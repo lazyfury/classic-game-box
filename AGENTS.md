@@ -11,6 +11,12 @@
 - **Q1 完成**：Mesen 原生 arm64 编译 + dlopen + 出画面（`cgb-ui::frame::FrameImage`）+ 键盘。
 - **Q2 进行中**：音频（cpal）+ gilrs 手柄已接线，`.srm` 电池存档与即时存档槽
   （`Session::{save,load}_state`，F5/F6 与 F1–F3/Shift+F1–F3），待人眼验收“能玩、能存读”。
+- **Q3 完成**：库模型重建——DB 是模型（`games` + `tags`/`game_tags` + `screenshots`），
+  `name` 与 `file_name` 分离、可改名（`Library::rename`，UI 后置）；游玩次数/时长/最近；
+  置顶；排序（名称/大小/最近/时长/加入）；标签；截图（F12 / ⇧F12 设封面）+ 真实封面；
+  卡片 SVG 图标 + 截图收藏页 + 大图预览。
+- **性能**：DrawList 复用（运行游戏不重排重绘）+ 图标纹理化 + 库网格可见行虚拟化；
+  `CGB_PERF=1` 打点。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
   （mesen / mgba / nestopia / custom_nes_core / fbneo）；`--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
@@ -75,5 +81,6 @@ cargo run -p cgb-app -- --rom mario.nes --core ./mycore_libretro.dylib  # 任意
 - quill 没有 **Image 组件**：`draw_ui::Widget` 无 image 变体。Q1 先用
   `cgb-ui/src/frame.rs` 的 `FrameImage`（`draw_components::Component` +
   `foreground` 装饰器）把画面画上去；上游补 `Widget::Image` 后应撤掉这个本地组件。
-- quill 没有 **TextInput**：搜索/标签编辑需要自建或后置。
+- quill 没有 **TextInput**：改名 / 搜索 / 标签编辑都卡在这里，需自建或后置
+  （数据层已就绪：`Library::rename`、`set_tags`）。
 - quill 的 **连续帧循环（Phase 7）** 未落地，`cgb-app` 用 `WaitUntil` 自建。
