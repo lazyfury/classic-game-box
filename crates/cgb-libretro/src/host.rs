@@ -483,6 +483,20 @@ impl CoreHost {
         unsafe { (self.core.api().serialize_size)() }
     }
 
+    /// Disable every cheat. Call before applying a game's cheat list.
+    pub fn reset_cheats(&self) {
+        unsafe { (self.core.api().cheat_reset)() };
+    }
+
+    /// Enable or disable one cheat by index. The code string's syntax is the
+    /// core's (GameShark, GameGenie, RAW, …).
+    pub fn set_cheat(&self, index: usize, enabled: bool, code: &str) {
+        let Ok(code) = CString::new(code) else {
+            return;
+        };
+        unsafe { (self.core.api().cheat_set)(index as c_uint, enabled, code.as_ptr()) };
+    }
+
     /// Restore a save state. Returns whether the core accepted it.
     pub fn unserialize(&self, bytes: &[u8]) -> bool {
         if bytes.is_empty() {

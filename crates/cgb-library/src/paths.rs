@@ -19,6 +19,8 @@ pub struct Paths {
     pub saves: PathBuf,
     /// Screenshot PNGs (one directory per library; a sibling of the database).
     pub screenshots: PathBuf,
+    /// Cheat files (`.cht`), one per game.
+    pub cheats: PathBuf,
     /// A built-in ROM folder that is always scanned (handy until the UI has an
     /// "add folder" control). Default: `<root>/roms`.
     pub roms: PathBuf,
@@ -47,6 +49,7 @@ impl Paths {
             system: root.join("system"),
             saves: root.join("saves"),
             screenshots: root.join("screenshots"),
+            cheats: root.join("cheats"),
             roms: root.join("roms"),
             library_db: root.join("library.db"),
             settings_json: root.join("settings.json"),
@@ -61,6 +64,7 @@ impl Paths {
         std::fs::create_dir_all(&self.system)?;
         std::fs::create_dir_all(&self.saves)?;
         std::fs::create_dir_all(&self.screenshots)?;
+        std::fs::create_dir_all(&self.cheats)?;
         std::fs::create_dir_all(&self.roms)?;
         // Holds the shipped cores and, beside them, `cores.json`.
         std::fs::create_dir_all(&self.cores)?;
@@ -106,6 +110,14 @@ pub fn battery_save_path(saves: &Path, rom: &Path) -> PathBuf {
     saves.join(format!("{name}.srm"))
 }
 
+/// A game's cheat file inside the cheats directory.
+pub fn cheat_file(cheats: &Path, rom: &Path) -> PathBuf {
+    let stem = rom
+        .file_stem()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "game".to_string());
+    cheats.join(format!("{stem}.cht"))
+}
 /// Copy files from a bundled, read-only directory into a writable one,
 /// skipping names that already exist. Returns how many files were copied.
 ///

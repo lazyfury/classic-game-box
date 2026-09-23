@@ -149,6 +149,9 @@ struct App {
     /// Registered save-state thumbnails, keyed by slot, with the modified time
     /// they were uploaded for.
     save_textures: HashMap<u8, (i64, FrameHandle)>,
+    /// The running game's cheats, and the `.cht` file they came from.
+    cheats: Vec<cgb_library::Cheat>,
+    cheat_path: Option<PathBuf>,
     /// Whether the current screenshot preview paused a running game, so it can
     /// be resumed when the preview closes.
     preview_paused: bool,
@@ -223,6 +226,8 @@ impl App {
             cover_textures: HashMap::new(),
             screenshot_textures: HashMap::new(),
             save_textures: HashMap::new(),
+            cheats: Vec::new(),
+            cheat_path: None,
             preview_paused: false,
             input: InputState::new(),
             bindings: cgb_systems::SYSTEMS
@@ -756,6 +761,74 @@ impl App {
         }
     }
 
+    /// Project the running game's cheats into the view.
+    fn populate_cheats(&mut self) {
+        self.model.cheats = self
+            .cheats
+            .iter()
+            .map(|cheat| cgb_ui::CheatRow {
+                desc: cheat.desc.clone(),
+                code: cheat.code.clone(),
+                enabled: cheat.enabled,
+            })
+            .collect();
+        self.dirty = true;
+    }
+
+    /// Import a RetroArch `.cht` for the running game, replacing its list.
+    fn import_cheats(&mut self) {
+        let Some(path) = self.cheat_path.clone() else {
+            self.model.status = "没有正在运行的游戏".to_string();
+            self.dirty = true;
+            return;
+        };
+        let Some(file) = rfd::FileDialog::new()
+            .set_title("导入金手指 (.cht)")
+            .add_filter("Cheat", &["cht"])
+            .pick_file()
+        else {
+            return;
+        };
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            self.model.status = "读取金手指文件失败".to_string();
+            self.dirty = true;
+            return;
+        };
+        let cheats = cgb_library::parse_cht(&text);
+        if cheats.is_empty() {
+            self.model.status = "文件里没有可用的金手指".to_string();
+            self.dirty = true;
+            return;
+        }
+        let count = cheats.len();
+        self.cheats = cheats;
+        let _ = cgb_library::save_cheats(&path, &self.cheats);
+        if let Some(session) = self.session.as_ref() {
+            session.apply_cheats(&self.cheats);
+        }
+        self.populate_cheats();
+        self.model.status = format!("已导入 {count} 条金手指");
+    }
+
+    /// Enable or disable one cheat on the running core, and persist the list.
+    fn toggle_cheat(&mut self, index: usize) {
+        let Some(cheat) = self.cheats.get_mut(index) else {
+            return;
+        };
+        cheat.enabled = !cheat.enabled;
+        let enabled = cheat.enabled;
+        let code = cheat.code.clone();
+        if let Some(session) = self.session.as_ref() {
+            session.set_cheat(index, enabled, &code);
+        }
+        if let Some(path) = self.cheat_path.clone() {
+            let _ = cgb_library::save_cheats(&path, &self.cheats);
+        }
+        let desc = self.cheats[index].desc.clone();
+        self.populate_cheats();
+        self.model.status = format!("{}：{desc}", if enabled { "已开启" } else { "已关闭" });
+    }
+
     /// Rebuild the library rows from [`App::game_source`], applying the saved
     /// sort order. Pinned games always come first; the sort key only orders
     /// within the pinned and unpinned groups. Cheap enough to run on every sort
@@ -966,6 +1039,8 @@ impl App {
         if self.selected_game_id() == Some(game_id) {
             self.flush_playtime();
             self.session = None;
+            self.cheats.clear();
+            self.cheat_path = None;
             self.model.selected = None;
             self.model.playing = false;
             self.model.paused = false;
@@ -1189,6 +1264,13 @@ impl App {
                     if section == Section::Saves {
                         self.refresh_saves();
                     }
+                    if section == Section::Cheats {
+                        if self.session.is_none() {
+                            self.cheats.clear();
+                            self.cheat_path = None;
+                        }
+                        self.populate_cheats();
+                    }
                     // A page switch starts its scroll at the top; keep the
                     // grid's window in step with that.
                     if changed && matches!(section, Section::Library | Section::Screenshots) {
@@ -1274,6 +1356,8 @@ impl App {
                 Action::SaveToSlot(slot) => self.save_to_slot(slot),
                 Action::LoadFromSlot(slot) => self.load_from_slot(slot),
                 Action::DeleteSlot(slot) => self.delete_slot(slot),
+                Action::ImportCheats => self.import_cheats(),
+                Action::ToggleCheat(index) => self.toggle_cheat(index),
             }
         }
     }
@@ -1536,6 +1620,14 @@ impl App {
                 self.model.paused = false;
                 self.model.status.clear();
                 self.session = Some(session);
+                // Cheats are per game and applied right after load.
+                let cheat_path = cgb_library::cheat_file(&self.paths.cheats, rom_path);
+                self.cheats = cgb_library::load_cheats(&cheat_path);
+                self.cheat_path = Some(cheat_path);
+                if let Some(session) = self.session.as_ref() {
+                    session.apply_cheats(&self.cheats);
+                }
+                self.populate_cheats();
                 // Count the run and stamp it; this also re-points the selection
                 // at the row, which a sort by "recent" may have moved.
                 self.note_started(rom_path);

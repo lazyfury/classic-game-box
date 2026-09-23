@@ -58,11 +58,13 @@ pub enum IconName {
     Check,
     /// A floppy disk; the saves section.
     Save,
+    /// Sparkles; the cheats section.
+    Sparkles,
 }
 
 impl IconName {
     /// Every icon in the pack, for tests and iteration.
-    pub const ALL: [IconName; 17] = [
+    pub const ALL: [IconName; 18] = [
         IconName::Pin,
         IconName::Trash,
         IconName::ArrowUp,
@@ -80,6 +82,7 @@ impl IconName {
         IconName::Tag,
         IconName::Check,
         IconName::Save,
+        IconName::Sparkles,
     ];
 
     /// The embedded SVG source for this icon.
@@ -102,6 +105,7 @@ impl IconName {
             IconName::Tag => include_str!("../assets/icons/tag.svg"),
             IconName::Check => include_str!("../assets/icons/check.svg"),
             IconName::Save => include_str!("../assets/icons/save.svg"),
+            IconName::Sparkles => include_str!("../assets/icons/sparkles.svg"),
         }
     }
 }

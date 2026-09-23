@@ -11,15 +11,17 @@ pub enum Section {
     Library,
     Screenshots,
     Saves,
+    Cheats,
     Settings,
 }
 
 impl Section {
     /// The pages, in the order the rail lists them.
-    pub const ALL: [Section; 4] = [
+    pub const ALL: [Section; 5] = [
         Section::Library,
         Section::Screenshots,
         Section::Saves,
+        Section::Cheats,
         Section::Settings,
     ];
 
@@ -29,6 +31,7 @@ impl Section {
             Section::Library => "游戏库",
             Section::Screenshots => "截图",
             Section::Saves => "存档",
+            Section::Cheats => "金手指",
             Section::Settings => "设置",
         }
     }
@@ -119,6 +122,14 @@ pub struct GameRow {
     /// The game's cover texture, when it has a screenshot set as cover. The
     /// app registers it; the view draws it behind the card controls.
     pub cover: Option<FrameHandle>,
+}
+
+/// One cheat in the cheats section.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheatRow {
+    pub desc: String,
+    pub code: String,
+    pub enabled: bool,
 }
 
 /// One save-state slot in the saves section.
@@ -275,6 +286,8 @@ pub struct ViewModel {
     pub saves: Vec<SaveSlotRow>,
     /// Whether the running core supports save states at all.
     pub saves_supported: bool,
+    /// The running game's cheats.
+    pub cheats: Vec<CheatRow>,
     /// The middle column's scrollable grid (library or screenshots): its
     /// scroll offset and viewport height. The view mounts only the rows they
     /// cover, so a long grid does not lay out and re-measure every cell on
@@ -319,6 +332,7 @@ impl Default for ViewModel {
             screenshot_game: None,
             saves: Vec::new(),
             saves_supported: false,
+            cheats: Vec::new(),
             grid_offset: 0.0,
             grid_viewport: 0.0,
             search: String::new(),
@@ -399,6 +413,10 @@ pub enum Action {
     LoadFromSlot(u8),
     /// Delete the save state in this slot.
     DeleteSlot(u8),
+    /// Import a `.cht` cheat file for the running game.
+    ImportCheats,
+    /// Enable or disable the cheat at this index.
+    ToggleCheat(usize),
     /// Reveal the screenshot with this id in the file browser.
     RevealScreenshot(i64),
     /// Open the screenshots directory in the file browser.

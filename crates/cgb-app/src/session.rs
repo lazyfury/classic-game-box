@@ -310,6 +310,19 @@ impl Session {
         ));
     }
 
+    /// Disable every cheat, then apply a game's list (called after load).
+    pub fn apply_cheats(&self, cheats: &[cgb_library::Cheat]) {
+        self.core.reset_cheats();
+        for (index, cheat) in cheats.iter().enumerate() {
+            self.core.set_cheat(index, cheat.enabled, &cheat.code);
+        }
+    }
+
+    /// Toggle one cheat on the running core.
+    pub fn set_cheat(&self, index: usize, enabled: bool, code: &str) {
+        self.core.set_cheat(index, enabled, code);
+    }
+
     /// One emulated frame, in seconds.
     pub fn frame_seconds(&self) -> f64 {
         self.frame_seconds

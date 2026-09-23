@@ -16,7 +16,7 @@ mod view;
 pub use frame::{centered_fit, contain_fit, cover_fit, FrameImage};
 pub use icons::{clear_textures, rasterize_icon, set_texture, Icon, IconName};
 pub use model::{
-    Action, BindingRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow,
+    Action, BindingRow, CheatRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow,
     InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow, Section, SortKey, ViewModel,
 };
 pub use view::Actions;
