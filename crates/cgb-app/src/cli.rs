@@ -20,6 +20,8 @@ pub struct Args {
     pub rom: Option<PathBuf>,
     /// Force a core instead of the console's default.
     pub core: Option<CoreOverride>,
+    /// Run the headless checks and exit, without opening a window.
+    pub selfcheck: bool,
 }
 
 /// Which core `--core` named.
@@ -37,12 +39,14 @@ pub const USAGE: &str = "\
 Classic Game Box
 
 USAGE:
-    classic-game-box [--rom <path>] [--core <key|module>]
+    classic-game-box [--rom <path>] [--core <key|module>] [--selfcheck]
 
 OPTIONS:
     --rom <path>     Load a ROM at startup (also accepted positionally).
     --core <value>   Force a core: a manifest key (mesen, mgba, nestopia, …)
                      or a path to a .dylib / .so / .dll.
+    --selfcheck      Run the headless checks (paths, library, settings, cores,
+                     icons) and exit; opens no window.
     -h, --help       Print this help.
 
 EXAMPLES:
@@ -59,6 +63,7 @@ impl Args {
             match arg.as_str() {
                 "--rom" => out.rom = Some(PathBuf::from(require_value("--rom", &mut iter)?)),
                 "--core" => out.core = Some(parse_core(&require_value("--core", &mut iter)?)?),
+                "--selfcheck" => out.selfcheck = true,
                 other if other.starts_with('-') => return Err(format!("未知参数：{other}")),
                 other if out.rom.is_none() => out.rom = Some(PathBuf::from(other)),
                 other => return Err(format!("多余的位置参数：{other}")),
@@ -121,6 +126,11 @@ mod tests {
     #[test]
     fn an_unknown_flag_is_an_error() {
         assert!(parse(&["--nope", "x"]).is_err());
+    }
+
+    #[test]
+    fn selfcheck_parses() {
+        assert!(parse(&["--selfcheck"]).unwrap().selfcheck);
     }
 
     #[test]

@@ -11,6 +11,7 @@
 
 mod app;
 mod cli;
+mod selfcheck;
 mod session;
 
 fn main() {
@@ -20,6 +21,7 @@ fn main() {
         return;
     }
     match cli::Args::parse(raw) {
+        Ok(args) if args.selfcheck => std::process::exit(selfcheck::run()),
         Ok(args) => app::run(args),
         Err(error) => {
             eprintln!("{error}\n\n{}", cli::USAGE);

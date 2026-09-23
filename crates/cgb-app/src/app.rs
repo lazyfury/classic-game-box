@@ -1854,7 +1854,7 @@ fn load_core_manifest(paths: &Paths) -> Vec<CoreSpec> {
 /// The macOS bundle's `Contents/Resources`, when running from a packaged app
 /// (`Contents/MacOS/<exe>` → `Contents/Resources`). `None` otherwise, so a dev
 /// checkout falls back to paths relative to the working directory.
-fn resource_dir() -> Option<PathBuf> {
+pub(crate) fn resource_dir() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let resources = exe.parent()?.parent()?.join("Resources");
     resources.is_dir().then_some(resources)
