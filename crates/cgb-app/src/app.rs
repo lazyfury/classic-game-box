@@ -174,7 +174,12 @@ impl App {
         let _ = paths.ensure();
         // Arcade cores need a BIOS. Seed the writable system dir the core
         // actually reads from the bundled assets; a player-supplied file wins.
-        let _ = seed_dir(Path::new(BUNDLED_ARCADE_SYSTEM), &paths.system);
+        // A packaged app keeps its assets in the bundle's Resources.
+        let bundled_arcade = resource_dir()
+            .map(|resources| resources.join(BUNDLED_ARCADE_SYSTEM))
+            .filter(|dir| dir.is_dir())
+            .unwrap_or_else(|| PathBuf::from(BUNDLED_ARCADE_SYSTEM));
+        let _ = seed_dir(&bundled_arcade, &paths.system);
         let settings = Settings::load(&paths.settings_json);
         let library = Library::open(&paths.library_db).ok();
         let cores = load_core_manifest(&paths);
@@ -1443,6 +1448,12 @@ impl App {
         if packaged.is_file() {
             return packaged;
         }
+        if let Some(resources) = resource_dir() {
+            let bundled = resources.join("cores").join(module);
+            if bundled.is_file() {
+                return bundled;
+            }
+        }
         let dev = Path::new("cores/dist").join(module);
         if dev.is_file() {
             return dev;
@@ -1822,15 +1833,31 @@ fn wheel_pixels(delta: MouseScrollDelta, scale: f32) -> f32 {
     }
 }
 
-/// The core manifest: the packaged `<app data>/cores/cores.json`, else the dev
-/// checkout's `cores/cores.json`. Missing is not an error — the app then just
-/// has no core to run, and says so when a game is started.
+/// The core manifest: the packaged `<app data>/cores/cores.json`, else the
+/// bundle's `Resources/cores/cores.json`, else the dev checkout's
+/// `cores/cores.json`. Missing is not an error — the app then just has no core
+/// to run, and says so when a game is started.
 fn load_core_manifest(paths: &Paths) -> Vec<CoreSpec> {
     let packaged = paths.cores.join("cores.json");
     if packaged.is_file() {
         return load_cores(&packaged);
     }
+    if let Some(resources) = resource_dir() {
+        let bundled = resources.join("cores/cores.json");
+        if bundled.is_file() {
+            return load_cores(&bundled);
+        }
+    }
     load_cores(Path::new("cores/cores.json"))
+}
+
+/// The macOS bundle's `Contents/Resources`, when running from a packaged app
+/// (`Contents/MacOS/<exe>` → `Contents/Resources`). `None` otherwise, so a dev
+/// checkout falls back to paths relative to the working directory.
+fn resource_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let resources = exe.parent()?.parent()?.join("Resources");
+    resources.is_dir().then_some(resources)
 }
 
 /// Order games the way the library shows them: pinned first, then the sort

@@ -60,6 +60,7 @@ cargo test --workspace
 cargo run -p cgb-app -- --rom /path/to/mario.nes
 cargo run -p cgb-app -- --rom mario.nes --core mesen           # 强制核心
 cargo run -p cgb-app -- --rom mario.nes --core ./mycore_libretro.dylib  # 任意模块
+./scripts/package-macos.sh  # → dist/Classic Game Box.app（含 cores + assets）
 ```
 
 ## 目录地图

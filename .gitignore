@@ -1,6 +1,7 @@
 # Build output.
 /target/
 /build/
+/dist/
 /.vscode/
 # ---------------------------------------------------------------------------
 # Native libretro cores. Built on demand by cores/*/build.sh; the sources are
