@@ -41,6 +41,8 @@
 ### 不做（本阶段）
 - 自研 CPU/PPU/APU 模拟逻辑；`fc_*` 私有扩展；金手指原始字节面板。
 - **搜索 / 改名 / 标签编辑的输入 UI**（quill 无 `TextInput`，待自建后再接；数据层已就绪）。
+- **中文输入法（IME）**：自建输入层只处理字符键（拉丁），IME 需要 quill 上游支持或
+  macOS `NSTextInputClient` 桥接；计划中、未做。
 - 倒带、扫描线滤镜、多人手柄的完整矩阵（预留接口，按需接回）。
 - Windows/Linux 打包；只保证 macOS Apple Silicon。
 

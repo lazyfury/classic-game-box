@@ -86,6 +86,8 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/cor
 - quill 没有 **Image 组件**：`draw_ui::Widget` 无 image 变体。Q1 先用
   `cgb-ui/src/frame.rs` 的 `FrameImage`（`draw_components::Component` +
   `foreground` 装饰器）把画面画上去；上游补 `Widget::Image` 后应撤掉这个本地组件。
-- quill 没有 **TextInput**：改名 / 搜索 / 标签编辑都卡在这里，需自建或后置
-  （数据层已就绪：`Library::rename`、`set_tags`）。
+- quill 没有 **TextInput / IME**：改名 / 搜索 / 标签编辑已用自建最小输入层
+  （`ViewModel.editing` + `edit_field`，应用层处理字符键），**但只有拉丁字符**。
+  中文输入法（IME）需要 quill 上游支持或加一层输入法桥接（macOS `NSTextInputClient`），
+  计划中、未做（数据层已就绪：`Library::rename`、`set_tags`）。
 - quill 的 **连续帧循环（Phase 7）** 未落地，`cgb-app` 用 `WaitUntil` 自建。
