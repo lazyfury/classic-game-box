@@ -33,10 +33,16 @@ use draw_ui::TextMeasurer;
 /// The mounted tree plus the frame-loop calls.
 pub struct Ui {
     tree: SceneTree,
-    /// The middle column's scroll offset (the library grid or the settings
-    /// bodies); `None` when the page has nothing to scroll. Owned here so it
-    /// survives a [`Ui::rebuild`] within the same page.
+    /// The middle column's scroll state (the library grid, the screenshots
+    /// grid or the settings bodies); `None` when the page has nothing to
+    /// scroll.
     middle_scroll: Option<ScrollViewState>,
+    /// Which page `middle_scroll` belongs to. A rebuild only carries the
+    /// offset over while the page is unchanged.
+    middle_section: Section,
+    /// The offset to restore on the next layout, set by a rebuild. It is
+    /// applied *after* the first sync, once the content height is known.
+    scroll_target: Option<f32>,
 }
 
 impl Ui {
@@ -46,14 +52,30 @@ impl Ui {
         Self {
             tree,
             middle_scroll,
+            middle_section: model.section,
+            scroll_target: None,
         }
     }
 
     /// Replace the tree with a rebuilt one (call when the model changed).
+    ///
+    /// A rebuild makes a fresh [`ScrollViewState`], so the offset would reset
+    /// to the top — clicking a card (to play, pin or delete) would jump the
+    /// grid. Carry the offset over when the page has not changed; it is
+    /// restored after the next layout, once the new content height is known.
     pub fn rebuild(&mut self, theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) {
+        let previous = (self.middle_section == model.section)
+            .then(|| self.middle_scroll.as_ref().map(ScrollViewState::offset))
+            .flatten();
         let (tree, middle_scroll) = view::build(theme, model, actions);
         self.tree = tree;
+        self.scroll_target = if middle_scroll.is_some() {
+            previous
+        } else {
+            None
+        };
         self.middle_scroll = middle_scroll;
+        self.middle_section = model.section;
     }
 
     /// The mounted tree.
@@ -76,15 +98,23 @@ impl Ui {
     ///
     /// A [`ScrollView`](draw_components::ScrollView) resolves its viewport and
     /// content only after layout, so `sync` runs here and, when the offset
-    /// moved the content, layout runs once more before paint.
+    /// moved the content, layout runs once more before paint. A pending
+    /// [`Ui::rebuild`] scroll target is applied between the two syncs, because
+    /// it can only be clamped once the content height is known.
     pub fn layout(&mut self, viewport: ViewportSize) {
         draw_ui::layout(&mut self.tree, viewport);
         self.tree.update();
-        if let Some(scroll) = self.middle_scroll.as_mut() {
-            if scroll.sync(&mut self.tree) {
-                draw_ui::layout(&mut self.tree, viewport);
-                self.tree.update();
-            }
+        let Some(scroll) = self.middle_scroll.as_mut() else {
+            return;
+        };
+        let mut changed = scroll.sync(&mut self.tree);
+        if let Some(target) = self.scroll_target.take() {
+            scroll.scroll_to(target);
+            changed |= scroll.sync(&mut self.tree);
+        }
+        if changed {
+            draw_ui::layout(&mut self.tree, viewport);
+            self.tree.update();
         }
     }
 
@@ -97,5 +127,87 @@ impl Ui {
     /// [`InputEvent`] first.
     pub fn route_input(&mut self, event: &InputEvent) {
         let _ = draw_ui::route_input(&mut self.tree, event);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cgb_systems::SystemId;
+    use draw_core::Size;
+    use draw_theme::{default_theme, Mode};
+
+    fn game(index: usize) -> GameRow {
+        GameRow {
+            id: index as i64,
+            name: format!("Game {index}"),
+            file_name: format!("game{index}.nes"),
+            system: SystemId::Nes,
+            path: format!("/roms/game{index}.nes"),
+            size: 0,
+            pinned: false,
+            play_count: 0,
+            play_seconds: 0,
+            last_played_at: 0,
+            tags: Vec::new(),
+            screenshots: 0,
+            cover: None,
+        }
+    }
+
+    /// A rebuild (a card click rebuilds the tree) must not jump the grid back
+    /// to the top.
+    #[test]
+    fn a_rebuild_keeps_the_scroll_offset() {
+        let theme = default_theme(Mode::Dark);
+        let actions = Actions::default();
+        let model = ViewModel {
+            games: (0..40).map(game).collect(),
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+
+        let mut ui = Ui::new(theme, &model, &actions);
+        ui.layout(viewport);
+        ui.middle_scroll
+            .as_ref()
+            .expect("the library scrolls")
+            .scroll_to(120.0);
+        ui.layout(viewport);
+        let before = ui.middle_scroll.as_ref().unwrap().offset();
+        assert!(before > 0.0, "the grid scrolled: {before}");
+
+        ui.rebuild(theme, &model, &actions);
+        ui.layout(viewport);
+        let after = ui.middle_scroll.as_ref().unwrap().offset();
+        assert_eq!(after, before, "the offset survives the rebuild");
+    }
+
+    /// Switching pages must not carry the library's offset into the settings
+    /// page.
+    #[test]
+    fn switching_pages_does_not_carry_the_offset() {
+        let theme = default_theme(Mode::Dark);
+        let actions = Actions::default();
+        let mut model = ViewModel {
+            games: (0..40).map(game).collect(),
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+
+        let mut ui = Ui::new(theme, &model, &actions);
+        ui.layout(viewport);
+        ui.middle_scroll.as_ref().unwrap().scroll_to(120.0);
+        ui.layout(viewport);
+        assert!(ui.middle_scroll.as_ref().unwrap().offset() > 0.0);
+
+        model.section = Section::Settings;
+        ui.rebuild(theme, &model, &actions);
+        ui.layout(viewport);
+        assert_eq!(
+            ui.middle_scroll.as_ref().map(ScrollViewState::offset),
+            Some(0.0),
+            "the settings page starts at the top"
+        );
     }
 }
