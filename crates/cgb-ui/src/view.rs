@@ -64,6 +64,9 @@ const PLACEHOLDER_HEIGHT: f32 = 112.0;
 /// line, so it is never taller.
 const CARD_HEIGHT: f32 = 184.0;
 
+/// A screenshot cell's fixed height, for the same virtualization.
+const SHOT_HEIGHT: f32 = 180.0;
+
 /// The card controls' icon size, and the square tap target around them.
 const CARD_ICON: f32 = 12.0;
 const CARD_ICON_BUTTON: f32 = 16.0;
@@ -537,12 +540,12 @@ fn library_grid(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions)
     let rows = total.div_ceil(LIBRARY_COLUMNS);
     let stride = CARD_HEIGHT + space::SM;
     // Before the first layout the viewport is unknown; assume a screenful.
-    let viewport = if model.library_viewport > 0.0 {
-        model.library_viewport
+    let viewport = if model.grid_viewport > 0.0 {
+        model.grid_viewport
     } else {
         640.0
     };
-    let (first, last) = visible_rows(model.library_offset, viewport, rows, stride);
+    let (first, last) = visible_rows(model.grid_offset, viewport, rows, stride);
 
     let top = first as f32 * stride;
     if top > 0.0 {
@@ -946,18 +949,60 @@ fn screenshots_page(
                 .description("在游戏里按 F12 截图，⇧F12 直接设为封面。"),
         );
     } else {
-        let mut grid = Grid::new(vec![Track::Fr(1.0); LIBRARY_COLUMNS])
-            .gap(space::SM)
-            .padding(Edges::ZERO);
-        for shot in &shots {
-            grid = grid.child(shot_card(theme, shot, actions));
-        }
+        // Only the grid scrolls; the title and the open-folder button stay put.
         let view = ScrollView::new(theme)
             .scrollbar(false)
             .grow(1.0)
-            .child(grid);
+            .child(screenshots_grid(theme, model, &shots, actions));
         *scroll = Some(view.state());
         column = column.child(view);
+    }
+    column
+}
+
+/// The screenshots grid, mounted a window at a time like the library grid.
+fn screenshots_grid(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    shots: &[&ScreenshotRow],
+    actions: &Actions,
+) -> Column {
+    let total = shots.len();
+    let mut column = Column::new().gap(0.0).padding(Edges::ZERO);
+    if total == 0 {
+        return column;
+    }
+    let rows = total.div_ceil(LIBRARY_COLUMNS);
+    let stride = SHOT_HEIGHT + space::SM;
+    let viewport = if model.grid_viewport > 0.0 {
+        model.grid_viewport
+    } else {
+        640.0
+    };
+    let (first, last) = visible_rows(model.grid_offset, viewport, rows, stride);
+
+    let top = first as f32 * stride;
+    if top > 0.0 {
+        column = column.child(spacer(top));
+    }
+
+    let mut grid = Grid::new(vec![Track::Fr(1.0); LIBRARY_COLUMNS])
+        .gap(space::SM)
+        .padding(Edges::ZERO);
+    for row in first..=last {
+        for column_index in 0..LIBRARY_COLUMNS {
+            let index = row * LIBRARY_COLUMNS + column_index;
+            if index >= total {
+                break;
+            }
+            grid = grid.child(shot_card(theme, shots[index], actions));
+        }
+    }
+    column = column.child(grid);
+
+    let bottom = rows.saturating_sub(last + 1) as f32 * stride;
+    if bottom > 0.0 {
+        column = column.child(spacer(bottom));
     }
     column
 }
@@ -968,6 +1013,7 @@ fn shot_card(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Actions)
     Column::new()
         .gap(space::XXS)
         .padding(Edges::all(space::XXS))
+        .min_size(0.0, SHOT_HEIGHT)
         .mouse_filter(MouseFilter::Ignore)
         .child(thumbnail(theme, shot, actions))
         .child(

@@ -170,7 +170,6 @@ struct App {
 
 impl App {
     fn new(args: Args) -> Self {
-        let rescan = args.rescan;
         let paths = Paths::platform();
         let _ = paths.ensure();
         // Arcade cores need a BIOS. Seed the writable system dir the core
@@ -228,7 +227,7 @@ impl App {
             last_frame: Instant::now(),
             last_play_flush: Instant::now(),
         };
-        app.refresh_library(rescan);
+        app.refresh_library();
         app.rebuild_settings_view();
         app
     }
@@ -331,7 +330,7 @@ impl App {
     /// dropped, changed files have their facts refreshed. The rows then come
     /// from the database, which is the model — the name, pin, play statistics,
     /// screenshots and cover a scan cannot know live there.
-    fn refresh_library(&mut self, _rescan: bool) {
+    fn refresh_library(&mut self) {
         // Configured folders plus the built-in ROM folder.
         let mut dirs: Vec<PathBuf> = self
             .settings
@@ -612,7 +611,7 @@ impl App {
         if let Some(library) = &self.library {
             let _ = library.set_cover(id);
         }
-        self.refresh_library(false);
+        self.refresh_library();
         self.model.status = "已设为封面".to_string();
     }
 
@@ -624,7 +623,7 @@ impl App {
         if self.model.preview == Some(id) {
             self.close_preview();
         }
-        self.refresh_library(false);
+        self.refresh_library();
         self.model.status = "已删除截图".to_string();
     }
 
@@ -887,7 +886,7 @@ impl App {
 
     /// Re-scan and reconcile the library after the folders changed.
     fn reload_library(&mut self) {
-        self.refresh_library(true);
+        self.refresh_library();
         self.rebuild_settings_view();
     }
 
@@ -981,7 +980,7 @@ impl App {
                 } else {
                     "已截图".to_string()
                 };
-                self.refresh_library(false);
+                self.refresh_library();
             }
             Ok(None) => {
                 self.model.status = "该游戏不在游戏库中".to_string();
@@ -1034,8 +1033,10 @@ impl App {
         // A wheel or scrollbar move changes the offset; feed it back so the
         // grid rebuilds with the new visible window.
         let scroll_after = self.ui.scroll_offset();
-        if self.model.section == Section::Library && scroll_after != scroll_before {
-            self.model.library_offset = scroll_after;
+        if matches!(self.model.section, Section::Library | Section::Screenshots)
+            && scroll_after != scroll_before
+        {
+            self.model.grid_offset = scroll_after;
             self.dirty = true;
         }
     }
@@ -1056,8 +1057,8 @@ impl App {
                     }
                     // A page switch starts its scroll at the top; keep the
                     // grid's window in step with that.
-                    if changed && section == Section::Library {
-                        self.model.library_offset = 0.0;
+                    if changed && matches!(section, Section::Library | Section::Screenshots) {
+                        self.model.grid_offset = 0.0;
                     }
                     self.dirty = true;
                 }
@@ -1521,17 +1522,15 @@ impl App {
             let started = Instant::now();
             self.ui.layout(viewport);
             layout_time = started.elapsed();
-            // The library grid mounts only the rows the viewport covers, so
-            // the resolved offset and viewport go back into the model; a change
-            // asks for one more rebuild.
-            if self.model.section == Section::Library {
+            // The library / screenshots grids mount only the rows the viewport
+            // covers, so the resolved offset and viewport go back into the
+            // model; a change asks for one more rebuild.
+            if matches!(self.model.section, Section::Library | Section::Screenshots) {
                 let offset = self.ui.scroll_offset();
                 let viewport_height = self.ui.scroll_viewport();
-                if offset != self.model.library_offset
-                    || viewport_height != self.model.library_viewport
-                {
-                    self.model.library_offset = offset;
-                    self.model.library_viewport = viewport_height;
+                if offset != self.model.grid_offset || viewport_height != self.model.grid_viewport {
+                    self.model.grid_offset = offset;
+                    self.model.grid_viewport = viewport_height;
                     self.dirty = true;
                     if let Some(window) = self.window.as_ref() {
                         window.request_redraw();
