@@ -68,6 +68,15 @@ if [ -n "$(ls -A "$CORES_DIST"/*.dylib 2>/dev/null)" ]; then
 	mkdir -p "$APP/Contents/Resources/cores"
 	cp "$CORES_DIST"/*.dylib "$APP/Contents/Resources/cores/"
 	[ -f "$CORES_JSON" ] && cp "$CORES_JSON" "$APP/Contents/Resources/cores/cores.json"
+	# Strip local symbols from the copies: the source dylibs are third-party
+	# build products and are left alone.
+	if command -v strip >/dev/null 2>&1; then
+		echo "==> strip cores"
+		for dylib in "$APP/Contents/Resources/cores/"*.dylib; do
+			[ -f "$dylib" ] || continue
+			strip -x "$dylib" 2>/dev/null || true
+		done
+	fi
 else
 	echo "   注意：cores/dist 里没有 .dylib，打包后没有可运行核心（先跑 ./scripts/build-cores.sh）" >&2
 fi

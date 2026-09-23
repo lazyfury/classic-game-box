@@ -362,6 +362,10 @@ pub struct ViewModel {
     pub search: String,
     /// The screenshot being previewed in the play column, by id.
     pub preview: Option<i64>,
+    /// Whether the screenshots page is in multi-select mode.
+    pub screenshot_select: bool,
+    /// The screenshots ticked for a batch delete.
+    pub selected_screenshots: Vec<i64>,
     /// A destructive action waiting for confirmation, shown in a bar.
     pub confirm: Option<Confirm>,
     /// An in-progress rename or tag edit, shown in a bar above the grid.
@@ -380,6 +384,8 @@ pub struct ViewModel {
     pub shader: ShaderKind,
     /// The running core's options, for the settings page.
     pub core_options: Vec<CoreOptionRow>,
+    /// The middle column's width in logical pixels (draggable).
+    pub middle_width: f32,
 }
 
 impl Default for ViewModel {
@@ -405,6 +411,8 @@ impl Default for ViewModel {
             grid_viewport: 0.0,
             search: String::new(),
             preview: None,
+            screenshot_select: false,
+            selected_screenshots: Vec::new(),
             confirm: None,
             editing: None,
             cores: Vec::new(),
@@ -414,12 +422,13 @@ impl Default for ViewModel {
             core_inputs: Vec::new(),
             shader: ShaderKind::Off,
             core_options: Vec::new(),
+            middle_width: 320.0,
         }
     }
 }
 
 /// What the user asked for, drained by the app after routing input.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
     /// Show a page.
     Show(Section),
@@ -433,6 +442,8 @@ pub enum Action {
     SetShader(ShaderKind),
     /// Cycle the core option at this index by `+1` / `-1`.
     CycleCoreOption(usize, i32),
+    /// Drag the middle column by `delta` logical pixels.
+    ResizeMiddle(f32),
     /// Write a save state to a slot (`0` is the quick slot).
     SaveState(u8),
     /// Restore a save state from a slot.
@@ -495,6 +506,12 @@ pub enum Action {
     ToggleCheat(usize),
     /// Reveal the screenshot with this id in the file browser.
     RevealScreenshot(i64),
+    /// Toggle the screenshots page's multi-select mode.
+    ToggleScreenshotSelect,
+    /// Tick or untick the screenshot with this id.
+    ToggleScreenshotSelected(i64),
+    /// Delete every ticked screenshot.
+    DeleteSelectedScreenshots,
     /// Open the screenshots directory in the file browser.
     OpenScreenshotsFolder,
 }

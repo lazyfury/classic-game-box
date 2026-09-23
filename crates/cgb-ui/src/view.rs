@@ -50,10 +50,6 @@ use crate::model::{
 /// The rail's fixed width in logical pixels.
 const RAIL_WIDTH: f32 = 64.0;
 
-/// The middle column's fixed width in logical pixels. The play column takes
-/// whatever is left.
-const MIDDLE_WIDTH: f32 = 320.0;
-
 /// Library grid columns. Fixed count, so the cards stay a predictable size.
 const LIBRARY_COLUMNS: usize = 2;
 
@@ -118,6 +114,7 @@ pub fn build(
                 .mouse_filter(MouseFilter::Ignore)
                 .child(rail(theme, model, actions))
                 .child(middle(theme, model, actions, &mut middle_scroll))
+                .child(column_resizer(theme, actions))
                 .child(play_column(theme, model, actions)),
         );
     if model.confirm.is_some() {
@@ -264,11 +261,35 @@ fn middle(
     Panel::new()
         .color(theme.palette().surface_raised)
         .flat()
-        .basis(SizeBasis::Px(MIDDLE_WIDTH))
+        .basis(SizeBasis::Px(model.middle_width))
         .shrink(0.0)
         .clip(true)
         .mouse_filter(MouseFilter::Ignore)
         .child(page.grow(1.0))
+}
+
+/// A thin draggable divider that resizes the middle column. Its drag callback
+/// pushes the horizontal delta; the app keeps the width so it survives a
+/// rebuild.
+fn column_resizer(theme: &'static dyn Theme, actions: &Actions) -> Flex {
+    let actions = actions.clone();
+    Flex::row()
+        .justify(Justify::Center)
+        .basis(SizeBasis::Px(5.0))
+        .shrink(0.0)
+        .dynamic_background(move |state| {
+            let fill = if state.hovered || state.pressed {
+                theme.palette().accent
+            } else {
+                theme.palette().border
+            };
+            SurfaceStyle::new(fill)
+        })
+        .on_drag(move |_tree, _phase, delta| {
+            if delta.x != 0.0 {
+                actions.push(Action::ResizeMiddle(delta.x));
+            }
+        })
 }
 
 /// The console column, on the right and always mounted. While a screenshot is
@@ -1113,6 +1134,12 @@ fn screenshots_page(
         .collect();
 
     let open = actions.clone();
+    let toggle = actions.clone();
+    let select_label = if model.screenshot_select {
+        "完成"
+    } else {
+        "选择"
+    };
     let mut column = Column::new()
         .gap(space::SM)
         .padding(Edges::all(MD))
@@ -1122,6 +1149,11 @@ fn screenshots_page(
                 .align(Align::Center)
                 .gap(space::SM)
                 .child(Text::heading("截图收藏", theme).grow(1.0))
+                .child(
+                    Button::ghost(select_label, theme)
+                        .mini()
+                        .on_click(move || toggle.push(Action::ToggleScreenshotSelect)),
+                )
                 .child(
                     Button::ghost("", theme)
                         .mini()
@@ -1139,6 +1171,33 @@ fn screenshots_page(
         None => "没有正在玩的游戏".to_string(),
     };
     column = column.child(Text::caption(subtitle, theme).tone(Tone::Muted));
+
+    if model.screenshot_select {
+        let delete = actions.clone();
+        let cancel = actions.clone();
+        column = column.child(
+            Row::new()
+                .align(Align::Center)
+                .gap(space::SM)
+                .child(
+                    Text::caption(
+                        format!("已选 {} 张", model.selected_screenshots.len()),
+                        theme,
+                    )
+                    .grow(1.0),
+                )
+                .child(
+                    Button::destructive("删除选中", theme)
+                        .mini()
+                        .on_click(move || delete.push(Action::DeleteSelectedScreenshots)),
+                )
+                .child(
+                    Button::ghost("取消", theme)
+                        .mini()
+                        .on_click(move || cancel.push(Action::ToggleScreenshotSelect)),
+                ),
+        );
+    }
 
     if shots.is_empty() {
         column = column.child(
@@ -1192,7 +1251,7 @@ fn screenshots_grid(
             if index >= total {
                 break;
             }
-            grid = grid.child(shot_card(theme, shots[index], actions));
+            grid = grid.child(shot_card(theme, shots[index], model, actions));
         }
     }
     column = column.child(grid);
@@ -1204,15 +1263,31 @@ fn screenshots_grid(
     column
 }
 
-/// One screenshot cell: the thumbnail (a button that previews), the game and
-/// time, and the set-cover / reveal / delete controls.
-fn shot_card(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Actions) -> Column {
+/// One screenshot cell: the thumbnail (a button that previews, or ticks in
+/// select mode), the game and time, and the controls.
+fn shot_card(
+    theme: &'static dyn Theme,
+    shot: &ScreenshotRow,
+    model: &ViewModel,
+    actions: &Actions,
+) -> Column {
+    let selected = model.selected_screenshots.contains(&shot.id);
     Column::new()
         .gap(space::XXS)
         .padding(Edges::all(space::XXS))
         .min_size(0.0, SHOT_HEIGHT)
         .mouse_filter(MouseFilter::Ignore)
-        .child(thumbnail(theme, shot, actions))
+        .dynamic_background(move |state| {
+            let fill = if selected {
+                theme.palette().selection
+            } else if state.hovered {
+                theme.palette().surface_hover
+            } else {
+                Color::TRANSPARENT
+            };
+            SurfaceStyle::new(fill).radius(radius::MD)
+        })
+        .child(thumbnail(theme, shot, model.screenshot_select, actions))
         .child(
             Text::small(shot.game.as_str(), theme)
                 .max_lines(1)
@@ -1226,9 +1301,15 @@ fn shot_card(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Actions)
         .child(shot_controls(theme, shot, actions))
 }
 
-/// A screenshot thumbnail, cropped to fill the cell. Clicking it previews.
-fn thumbnail(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Actions) -> Flex {
-    let open = actions.clone();
+/// A screenshot thumbnail, cropped to fill the cell. Clicking it previews, or
+/// ticks it when the page is in select mode.
+fn thumbnail(
+    theme: &'static dyn Theme,
+    shot: &ScreenshotRow,
+    select: bool,
+    actions: &Actions,
+) -> Flex {
+    let click = actions.clone();
     let id = shot.id;
     let mut thumb = Flex::row()
         .align(Align::Center)
@@ -1236,7 +1317,13 @@ fn thumbnail(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Actions)
         .min_size(0.0, PLACEHOLDER_HEIGHT)
         .surface(SurfaceStyle::new(theme.palette().surface).radius(radius::SM))
         .clip(true)
-        .on_click(move || open.push(Action::PreviewScreenshot(id)));
+        .on_click(move || {
+            click.push(if select {
+                Action::ToggleScreenshotSelected(id)
+            } else {
+                Action::PreviewScreenshot(id)
+            })
+        });
     match shot.thumb {
         Some(handle) => {
             thumb = thumb.foreground(move |ctx, rect, _state| {
@@ -2478,7 +2565,7 @@ mod tests {
             })
             .expect("the console paints the frame");
 
-        let middle_end = RAIL_WIDTH + MIDDLE_WIDTH;
+        let middle_end = RAIL_WIDTH + 320.0;
         assert!(
             cover_x < middle_end,
             "the grid sits in the middle column: {cover_x}"

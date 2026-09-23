@@ -155,6 +155,10 @@ struct App {
     cheat_path: Option<PathBuf>,
     /// The running core's options, cached for the settings page.
     core_options: Vec<cgb_libretro::CoreOption>,
+    /// Screenshots ticked for a batch delete.
+    selected_shots: Vec<i64>,
+    /// Whether the screenshots page is in multi-select mode.
+    screenshot_select: bool,
     /// Whether the current screenshot preview paused a running game, so it can
     /// be resumed when the preview closes.
     preview_paused: bool,
@@ -167,6 +171,8 @@ struct App {
     rewinding: bool,
     /// The game-picture post-process preset.
     shader: ShaderKind,
+    /// The middle column's width in logical pixels.
+    middle_width: f32,
     gamepads: Option<Gamepads>,
     session: Option<Session>,
     /// `--rom` path to start once the window exists.
@@ -201,6 +207,11 @@ impl App {
         let _ = seed_dir(&bundled_arcade, &paths.system);
         let settings = Settings::load(&paths.settings_json);
         let shader = ShaderKind::from_key(&settings.shader);
+        let middle_width = if settings.middle_width > 0.0 {
+            settings.middle_width.clamp(200.0, 640.0)
+        } else {
+            320.0
+        };
         let library = Library::open(&paths.library_db).ok();
         let cores = load_core_manifest(&paths);
 
@@ -237,6 +248,8 @@ impl App {
             cheats: Vec::new(),
             cheat_path: None,
             core_options: Vec::new(),
+            selected_shots: Vec::new(),
+            screenshot_select: false,
             preview_paused: false,
             input: InputState::new(),
             bindings: cgb_systems::SYSTEMS
@@ -246,6 +259,7 @@ impl App {
             active_system: SystemId::Nes,
             rewinding: false,
             shader,
+            middle_width,
             gamepads: match Gamepads::new() {
                 Ok(gamepads) => Some(gamepads),
                 Err(error) => {
@@ -391,6 +405,22 @@ impl App {
             // No database: fall back to the scan, with no metadata to show.
             None => disk.iter().map(Game::from_disk).collect(),
         };
+        self.refresh_cover_textures();
+        self.refresh_screenshot_textures();
+        self.rebuild_game_rows();
+        self.rebuild_screenshot_rows();
+    }
+
+    /// Rebuild the view from the database without rescanning the ROM folders.
+    ///
+    /// Screenshot and cover changes only touch the database and the files under
+    /// the screenshots directory, so a full folder scan is wasted work.
+    fn reload_from_db(&mut self) {
+        self.game_source = self
+            .library
+            .as_ref()
+            .and_then(|library| library.games().ok())
+            .unwrap_or_default();
         self.refresh_cover_textures();
         self.refresh_screenshot_textures();
         self.rebuild_game_rows();
@@ -575,6 +605,8 @@ impl App {
                 }
             }
         }
+        self.model.screenshot_select = self.screenshot_select;
+        self.model.selected_screenshots = self.selected_shots.clone();
     }
 
     /// The id of the currently selected (usually playing) game.
@@ -646,7 +678,7 @@ impl App {
         if let Some(library) = &self.library {
             let _ = library.set_cover(id);
         }
-        self.refresh_library();
+        self.reload_from_db();
         self.model.status = "已设为封面".to_string();
     }
 
@@ -658,8 +690,25 @@ impl App {
         if self.model.preview == Some(id) {
             self.close_preview();
         }
-        self.refresh_library();
+        self.reload_from_db();
         self.model.status = "已删除截图".to_string();
+    }
+
+    /// Delete every ticked screenshot, then leave select mode.
+    fn delete_selected_screenshots(&mut self) {
+        let count = self.selected_shots.len();
+        if count == 0 {
+            return;
+        }
+        if let Some(library) = &self.library {
+            for id in &self.selected_shots {
+                let _ = library.remove_screenshot(*id);
+            }
+        }
+        self.selected_shots.clear();
+        self.screenshot_select = false;
+        self.reload_from_db();
+        self.model.status = format!("已删除 {count} 张截图");
     }
 
     /// Reveal a screenshot's file in the platform file browser.
@@ -981,6 +1030,7 @@ impl App {
             .unwrap_or_default();
         self.model.bindings_system = self.active_system.name().to_string();
         self.model.shader = self.shader;
+        self.model.middle_width = self.middle_width;
         self.model.core_options = self
             .core_options
             .iter()
@@ -1288,7 +1338,7 @@ impl App {
                 } else {
                     "已截图".to_string()
                 };
-                self.refresh_library();
+                self.reload_from_db();
             }
             Ok(None) => {
                 self.model.status = "该游戏不在游戏库中".to_string();
@@ -1410,6 +1460,13 @@ impl App {
                 }
                 Action::SetShader(kind) => self.set_shader(kind),
                 Action::CycleCoreOption(index, delta) => self.cycle_core_option(index, delta),
+                Action::ResizeMiddle(delta) => {
+                    self.middle_width = (self.middle_width + delta).clamp(200.0, 640.0);
+                    self.model.middle_width = self.middle_width;
+                    self.settings.middle_width = self.middle_width;
+                    let _ = self.settings.save(&self.paths.settings_json);
+                    self.dirty = true;
+                }
                 Action::SaveState(slot) => {
                     self.model.status = match self.session.as_ref() {
                         Some(session) => match session.save_state(slot) {
@@ -1464,6 +1521,24 @@ impl App {
                 Action::StepPreview(delta) => self.step_preview(delta),
                 Action::SetCover(id) => self.set_cover(id),
                 Action::RevealScreenshot(id) => self.reveal_screenshot(id),
+                Action::ToggleScreenshotSelect => {
+                    self.screenshot_select = !self.screenshot_select;
+                    if !self.screenshot_select {
+                        self.selected_shots.clear();
+                    }
+                    self.rebuild_screenshot_rows();
+                    self.dirty = true;
+                }
+                Action::ToggleScreenshotSelected(id) => {
+                    if let Some(index) = self.selected_shots.iter().position(|shot| *shot == id) {
+                        self.selected_shots.remove(index);
+                    } else {
+                        self.selected_shots.push(id);
+                    }
+                    self.rebuild_screenshot_rows();
+                    self.dirty = true;
+                }
+                Action::DeleteSelectedScreenshots => self.delete_selected_screenshots(),
                 Action::OpenScreenshotsFolder => self.open_screenshots_folder(),
                 Action::SaveToSlot(slot) => self.save_to_slot(slot),
                 Action::LoadFromSlot(slot) => self.load_from_slot(slot),
@@ -1754,7 +1829,16 @@ impl App {
                 self.refresh_saves();
             }
             Err(error) => {
-                self.model.status = error;
+                // An arcade ROM usually fails because its BIOS `.zip` is not in
+                // the system directory; say where to put it.
+                self.model.status = if self.active_system == SystemId::Arcade {
+                    format!(
+                        "{error}（街机 ROM 需要对应的 BIOS .zip，放到 {}）",
+                        self.paths.system.display()
+                    )
+                } else {
+                    error
+                };
                 self.model.playing = false;
             }
         }

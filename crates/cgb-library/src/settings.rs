@@ -35,6 +35,8 @@ pub struct Settings {
     pub shader: String,
     /// Remembered core options, keyed by `"<core key>:<option key>"`.
     pub core_options: BTreeMap<String, String>,
+    /// The middle column's width in logical pixels (0 means the default).
+    pub middle_width: f32,
 }
 
 impl Settings {
