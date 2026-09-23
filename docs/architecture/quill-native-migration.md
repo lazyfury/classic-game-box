@@ -374,3 +374,47 @@ ControlFlow::WaitUntil(now + frame_budget)
 - 端到端：加载合成 NROM / 一个真实 ROM，跑 N 帧，像素哈希稳定。
 
 「好不好看」由人看，不由断言。
+
+---
+
+## 12. 路线图（Q6 起）
+
+框架已闭环，剩下的是把「模拟器定制」按 libretro 的标准契约对齐，而不是绕路自己发明。
+顺序 A → E → C → D → F → B → G。
+
+### A. 输入抽象层（对齐 core 能力）
+让 UI/宿主按 core 声明的能力工作，而不是写死 12 个 joypad 按键。
+- `SET_INPUT_DESCRIPTORS`（已捕获）→ 设置页用它的标签；`GET_INPUT_DEVICE_CAPABILITIES`
+  返回 `JOYPAD | ANALOG`；`GET_INPUT_BITMASKS` 告诉 core 支持一次性位掩码查询。
+- `InputState` 扩展出**模拟轴**（每端口左右摇杆 X/Y，i16）；`input_state_cb` 支持
+  `RETRO_DEVICE_ANALOG`。手柄摇杆同时给轴值与阈值派生的方向位（core 各取所需，街机拿
+  原始轴值，不再被格式化成方向）。
+- joypad 补满 libretro 的 16 个 id（L2/R2/L3/R3）；绑定模型升级为
+  `Key/Pad → Target{port, device, index, id}`，**默认值按机种**（NES/GBA/GB/Arcade 各一套）。
+
+### E. 存档多槽（core 隔离）
+每游戏 10 个槽 + 缩略图。libretro 的即时存档是 core 私有字节块，**无跨核兼容**：
+文件名带 core key（`<rom>.<core>.state<N>` + `.png`），UI 只列当前运行 core 的槽；
+`retro_serialize_size() == 0` 的 core（含 legacy `custom_nes_core`）禁用存档并说明原因。
+
+### C. 金手指
+host 暴露 `retro_cheat_set/reset`（loader 已解析）；导入 RetroArch `.cht`，存 app data，
+`load_game` 后应用启用的条目；每游戏一个开关面板。
+
+### D. 倒带
+前端环缓冲：每 **2** 帧 `retro_serialize` 一次，回溯上限 **10 秒**；按住键 `unserialize` 回退。
+
+### F. 扫描线等后处理 shader
+扩展 quill `draw_backend_wgpu`，加一个「后处理」能力（把帧纹理经命名 shader + uniforms
+画到目标）。预置 关 / 扫描线 / CRT / LCD 网格 / 锐化，参数存 settings。
+
+### B. 核心能力增强
+`GET_CORE_OPTIONS_VERSION` / `SET_CORE_OPTIONS(_V2)` / `GET_VARIABLE` + 设置 UI
+（mGBA BIOS、FBNeo 区域、Mesen 调色板…）；`SET_CONTROLLER_PORT_DEVICE`；message interface。
+
+### G. 打磨
+Arcade 缺 BIOS 提示；截图多选 / 批量删 / 导出；FBNeo 编译 `-Os`/`-flto`/strip；
+库增量扫描（用 `mtime_ms`）；中栏可拖动分隔。
+
+### 仍后置
+中文输入法（IME，需 quill 上游或 `NSTextInputClient`）；mGBA `.gba` 整机人眼验证。

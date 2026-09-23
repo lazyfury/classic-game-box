@@ -1349,14 +1349,44 @@ fn settings_page(
             ));
         }
     }
+    let title = if model.bindings_system.is_empty() {
+        "按键".to_string()
+    } else {
+        format!("按键（{}）", model.bindings_system)
+    };
     body = body.child(
         Card::new(theme)
             .gap(space::SM)
             .padding(Edges::all(space::SM))
-            .child(Text::subheading("按键", theme))
+            .child(Text::subheading(title, theme))
             .child(bindings)
-            .child(Text::caption("手柄走 gilrs 自动映射；重绑定后置。", theme).tone(Tone::Subtle)),
+            .child(
+                Text::caption("键盘按机种分别保存；手柄走 gilrs 自动映射。", theme)
+                    .tone(Tone::Subtle),
+            ),
     );
+
+    // The core's own input descriptors, when a game has been loaded: mGBA's
+    // shoulder buttons, an arcade stick's buttons, and so on.
+    if !model.core_inputs.is_empty() {
+        let mut inputs = Column::new().gap(space::XS);
+        for row in &model.core_inputs {
+            inputs = inputs.child(Text::small(
+                format!(
+                    "端口 {} · 设备 {} · 索引 {} · id {}   —   {}",
+                    row.port, row.device, row.index, row.id, row.description
+                ),
+                theme,
+            ));
+        }
+        body = body.child(
+            Card::new(theme)
+                .gap(space::SM)
+                .padding(Edges::all(space::SM))
+                .child(Text::subheading("核心输入", theme))
+                .child(inputs),
+        );
+    }
 
     // Only the settings bodies scroll; the title stays put.
     let view = ScrollView::new(theme)

@@ -21,10 +21,14 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uint, c_void};
 use std::path::{Path, PathBuf};
 use std::ptr;
-use std::sync::atomic::{AtomicPtr, AtomicU16, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicI16, AtomicPtr, AtomicU16, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use cgb_systems::{RETRO_DEVICE_ID_JOYPAD_MASK, RETRO_DEVICE_JOYPAD};
+use cgb_systems::{
+    RETRO_DEVICE_ANALOG, RETRO_DEVICE_ANALOG_BIT, RETRO_DEVICE_ID_ANALOG_X,
+    RETRO_DEVICE_ID_ANALOG_Y, RETRO_DEVICE_ID_JOYPAD_MASK, RETRO_DEVICE_INDEX_ANALOG_LEFT,
+    RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD_BIT,
+};
 
 use crate::error::LibretroError;
 use crate::ffi::*;
@@ -93,6 +97,9 @@ struct HostShared {
     audio: Mutex<Vec<i16>>,
     /// Button bitmasks, one per port.
     input: [AtomicU16; 2],
+    /// Analog axes, one per port, indexed `stick * 2 + axis` (`stick` 0 left /
+    /// 1 right; `axis` 0 X / 1 Y), in libretro's i16 range.
+    analog: [[AtomicI16; 4]; 2],
     /// Descriptors from `SET_INPUT_DESCRIPTORS`, for the bindings UI.
     input_descriptors: Mutex<Vec<InputDescriptor>>,
 }
@@ -107,6 +114,7 @@ impl HostShared {
             video: Mutex::new(None),
             audio: Mutex::new(Vec::new()),
             input: [AtomicU16::new(0), AtomicU16::new(0)],
+            analog: Default::default(),
             input_descriptors: Mutex::new(Vec::new()),
         }
     }
@@ -240,6 +248,22 @@ impl HostShared {
             }
             RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS => {
                 *lock(&self.input_descriptors) = read_input_descriptors(data);
+                true
+            }
+            // We can answer both the button bitmask and analog axes, so a core
+            // that reads a stick gets real values instead of nothing. The
+            // capabilities value is a `uint64_t` of `1 << RETRO_DEVICE_*`.
+            RETRO_ENVIRONMENT_GET_INPUT_DEVICE_CAPABILITIES => {
+                if !data.is_null() {
+                    let caps = u64::from(RETRO_DEVICE_JOYPAD_BIT | RETRO_DEVICE_ANALOG_BIT);
+                    *(data as *mut u64) = caps;
+                }
+                true
+            }
+            RETRO_ENVIRONMENT_GET_INPUT_BITMASKS => {
+                if !data.is_null() {
+                    *(data as *mut bool) = true;
+                }
                 true
             }
             RETRO_ENVIRONMENT_SET_CONTROLLER_INFO => true,
@@ -383,6 +407,18 @@ impl CoreHost {
     pub fn set_buttons(&self, port: usize, mask: u16) {
         if let Some(slot) = self.shared.input.get(port) {
             slot.store(mask, Ordering::Relaxed);
+        }
+    }
+
+    /// Set one analog axis: `stick` 0 = left, 1 = right; `axis` 0 = X, 1 = Y.
+    pub fn set_analog(&self, port: usize, stick: usize, axis: usize, value: i16) {
+        if let Some(slot) = self
+            .shared
+            .analog
+            .get(port)
+            .and_then(|port| port.get(stick * 2 + axis))
+        {
+            slot.store(value, Ordering::Relaxed);
         }
     }
 
@@ -572,27 +608,46 @@ unsafe extern "C" fn input_poll_cb() {
 unsafe extern "C" fn input_state_cb(
     port: c_uint,
     device: c_uint,
-    _index: c_uint,
+    index: c_uint,
     id: c_uint,
 ) -> i16 {
-    if device != RETRO_DEVICE_JOYPAD {
-        return 0;
-    }
     let Some(host) = current() else {
         return 0;
     };
-    let mask = host
-        .input
-        .get(port as usize)
-        .map(|slot| slot.load(Ordering::Relaxed))
-        .unwrap_or(0);
-    if id == RETRO_DEVICE_ID_JOYPAD_MASK {
-        return mask as i16;
+    match device {
+        RETRO_DEVICE_JOYPAD => {
+            let mask = host
+                .input
+                .get(port as usize)
+                .map(|slot| slot.load(Ordering::Relaxed))
+                .unwrap_or(0);
+            if id == RETRO_DEVICE_ID_JOYPAD_MASK {
+                return mask as i16;
+            }
+            if id > 15 {
+                return 0;
+            }
+            ((mask >> id) & 1) as i16
+        }
+        RETRO_DEVICE_ANALOG => {
+            let stick = match index {
+                RETRO_DEVICE_INDEX_ANALOG_LEFT => 0,
+                RETRO_DEVICE_INDEX_ANALOG_RIGHT => 1,
+                _ => return 0,
+            };
+            let axis = match id {
+                RETRO_DEVICE_ID_ANALOG_X => 0,
+                RETRO_DEVICE_ID_ANALOG_Y => 1,
+                _ => return 0,
+            };
+            host.analog
+                .get(port as usize)
+                .and_then(|port| port.get(stick * 2 + axis))
+                .map(|slot| slot.load(Ordering::Relaxed))
+                .unwrap_or(0)
+        }
+        _ => 0,
     }
-    if id > 15 {
-        return 0;
-    }
-    ((mask >> id) & 1) as i16
 }
 
 /// Copy a null-terminated `retro_input_descriptor` array into owned values.

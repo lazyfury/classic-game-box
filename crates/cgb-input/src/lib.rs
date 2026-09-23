@@ -28,6 +28,9 @@ pub struct InputState {
     keyboard: [u16; 2],
     /// Buttons held by a gamepad.
     gamepad: [u16; 2],
+    /// Analog sticks: `[port][stick][axis]` in `-32768..=32767`, libretro's
+    /// convention (Y positive is down). Only a gamepad produces these.
+    analog: [[[i16; 2]; 2]; 2],
 }
 
 impl InputState {
@@ -41,6 +44,28 @@ impl InputState {
         let keyboard = self.keyboard.get(port).copied().unwrap_or(0);
         let gamepad = self.gamepad.get(port).copied().unwrap_or(0);
         keyboard | gamepad
+    }
+
+    /// An analog axis: `stick` 0 = left, 1 = right; `axis` 0 = X, 1 = Y.
+    pub fn analog(&self, port: usize, stick: usize, axis: usize) -> i16 {
+        self.analog
+            .get(port)
+            .and_then(|port| port.get(stick))
+            .and_then(|stick| stick.get(axis))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Set an analog axis (gamepad only; the keyboard has no analog source).
+    pub fn set_analog(&mut self, port: usize, stick: usize, axis: usize, value: i16) {
+        if let Some(slot) = self
+            .analog
+            .get_mut(port)
+            .and_then(|port| port.get_mut(stick))
+            .and_then(|stick| stick.get_mut(axis))
+        {
+            *slot = value;
+        }
     }
 
     /// Whether `button` is currently held on `port` by either source.
@@ -65,6 +90,9 @@ impl InputState {
         }
         if let Some(mask) = self.gamepad.get_mut(port) {
             *mask = 0;
+        }
+        if let Some(analog) = self.analog.get_mut(port) {
+            *analog = [[0; 2]; 2];
         }
     }
 }
@@ -222,11 +250,17 @@ impl Gamepads {
                     }
                 }
                 // Some pads report the D-pad and the sticks as axes, not
-                // buttons, so map those too.
+                // buttons, so map those too. A stick feeds both the raw analog
+                // value (for a core that reads `RETRO_DEVICE_ANALOG`) and the
+                // D-pad bits (for one that only reads buttons).
                 gilrs::EventType::AxisChanged(axis, value, _) => {
-                    if let (Some(port), Some((negative, positive))) =
-                        (self.port_of(event.id), axis_buttons(axis))
-                    {
+                    let Some(port) = self.port_of(event.id) else {
+                        continue;
+                    };
+                    if let Some((stick, axis_id)) = stick_of(axis) {
+                        state.set_analog(port, stick, axis_id, stick_value(axis_id, value));
+                    }
+                    if let Some((negative, positive)) = axis_buttons(axis) {
                         self.set_button(state, port, negative, value < -STICK_DEADZONE);
                         self.set_button(state, port, positive, value > STICK_DEADZONE);
                     }
@@ -262,7 +296,6 @@ impl Gamepads {
             self.held[port] = 0;
         }
     }
-
     fn port_of(&self, id: gilrs::GamepadId) -> Option<usize> {
         self.ports.iter().position(|slot| *slot == Some(id))
     }
@@ -330,6 +363,29 @@ fn axis_buttons(axis: gilrs::Axis) -> Option<(JoypadButton, JoypadButton)> {
         Axis::LeftStickY | Axis::DPadY => (Down, Up),
         _ => return None,
     })
+}
+
+/// The (`stick`, `axis`) an analog axis means, if it is a stick.
+fn stick_of(axis: gilrs::Axis) -> Option<(usize, usize)> {
+    use gilrs::Axis;
+    Some(match axis {
+        Axis::LeftStickX => (0, 0),
+        Axis::LeftStickY => (0, 1),
+        Axis::RightStickX => (1, 0),
+        Axis::RightStickY => (1, 1),
+        _ => return None,
+    })
+}
+
+/// gilrs's normalized axis → libretro's i16. libretro's Y is positive down and
+/// gilrs's is positive up, so Y is negated.
+fn stick_value(axis: usize, value: f32) -> i16 {
+    let scaled = (value.clamp(-1.0, 1.0) * 32767.0) as i16;
+    if axis == 1 {
+        scaled.saturating_neg()
+    } else {
+        scaled
+    }
 }
 
 /// The Xbox Wireless Controller's raw HID button usages.
@@ -474,6 +530,30 @@ mod tests {
             Some((JoypadButton::Down, JoypadButton::Up))
         );
         assert_eq!(axis_buttons(Axis::RightStickX), None);
+    }
+
+    #[test]
+    fn analog_sticks_are_tracked_and_cleared() {
+        let mut state = InputState::new();
+        state.set_analog(0, 0, 0, 16384);
+        state.set_analog(0, 1, 1, -32767);
+        assert_eq!(state.analog(0, 0, 0), 16384);
+        assert_eq!(state.analog(0, 1, 1), -32767);
+        assert_eq!(state.analog(1, 0, 0), 0);
+        state.clear(0);
+        assert_eq!(state.analog(0, 0, 0), 0);
+    }
+
+    #[test]
+    fn stick_axes_are_analog_and_y_is_negated() {
+        use gilrs::Axis;
+        assert_eq!(stick_of(Axis::LeftStickX), Some((0, 0)));
+        assert_eq!(stick_of(Axis::RightStickY), Some((1, 1)));
+        assert_eq!(stick_of(Axis::DPadX), None);
+        // gilrs up is +1; libretro's Y is positive down, so it is negated.
+        assert!(stick_value(1, 1.0) < 0);
+        assert!(stick_value(1, -1.0) > 0);
+        assert_eq!(stick_value(0, 1.0), 32767);
     }
 
     /// The legacy front end mapped the bottom face button (printed "A" on most

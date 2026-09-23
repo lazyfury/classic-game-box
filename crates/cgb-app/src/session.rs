@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use cgb_audio::AudioOutput;
+use cgb_input::InputState;
 use cgb_library::{battery_save_path, exists, read, save_state_path, write};
 use cgb_libretro::CoreHost;
 use cgb_systems::CoreSpec;
@@ -114,7 +115,7 @@ impl Session {
     }
 
     /// Advance the emulator by `dt` seconds, running whole frames to catch up.
-    pub fn advance(&mut self, dt: f64, backend: &mut WgpuBackend, masks: [u16; 2]) {
+    pub fn advance(&mut self, dt: f64, backend: &mut WgpuBackend, input: &InputState) {
         // Play time is wall clock while unpaused: the app only calls `advance`
         // for a running, unpaused session, so a pause or a minimised window
         // adds nothing.
@@ -122,7 +123,7 @@ impl Session {
         self.accumulator += dt.clamp(0.0, 0.25);
         let mut steps = 0;
         while self.accumulator >= self.frame_seconds && steps < 4 {
-            self.step(backend, masks);
+            self.step(backend, input);
             self.accumulator -= self.frame_seconds;
             steps += 1;
         }
@@ -133,9 +134,18 @@ impl Session {
     }
 
     /// Run exactly one frame and publish its video/audio.
-    fn step(&mut self, backend: &mut WgpuBackend, masks: [u16; 2]) {
-        self.core.set_buttons(0, masks[0]);
-        self.core.set_buttons(1, masks[1]);
+    fn step(&mut self, backend: &mut WgpuBackend, input: &InputState) {
+        // The core queries what it wants: buttons as a bitmask, sticks as raw
+        // axes (so an arcade core gets a real stick, not a fake D-pad).
+        for port in 0..2 {
+            self.core.set_buttons(port, input.mask(port));
+            for stick in 0..2 {
+                for axis in 0..2 {
+                    self.core
+                        .set_analog(port, stick, axis, input.analog(port, stick, axis));
+                }
+            }
+        }
         self.core.run_frame();
 
         if let Some(frame) = self.core.take_frame() {
@@ -245,6 +255,11 @@ impl Session {
 
     pub fn core_name(&self) -> &str {
         &self.core_name
+    }
+
+    /// The input descriptors the core declared, for the settings page.
+    pub fn input_descriptors(&self) -> Vec<cgb_libretro::InputDescriptor> {
+        self.core.input_descriptors()
     }
 
     /// One emulated frame, in seconds.

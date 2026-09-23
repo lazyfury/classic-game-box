@@ -32,7 +32,7 @@ use cgb_library::{
     collect_games, decode_png, encode_png, load_cores, seed_dir, DiskGame, Game, Library, Paths,
     Settings,
 };
-use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton};
+use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
 use cgb_ui::{
     Action, Actions, BindingRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow,
     SafeArea, ScreenshotRow, Section, SortKey, Ui, ViewModel,
@@ -147,7 +147,10 @@ struct App {
     /// be resumed when the preview closes.
     preview_paused: bool,
     input: InputState,
-    bindings: KeyboardBindings,
+    /// Keyboard bindings, one set per console (a NES and a GBA layout differ).
+    bindings: HashMap<SystemId, KeyboardBindings>,
+    /// The console whose binding set the keyboard feeds right now.
+    active_system: SystemId,
     gamepads: Option<Gamepads>,
     session: Option<Session>,
     /// `--rom` path to start once the window exists.
@@ -215,7 +218,11 @@ impl App {
             screenshot_textures: HashMap::new(),
             preview_paused: false,
             input: InputState::new(),
-            bindings: KeyboardBindings::default_bindings(),
+            bindings: cgb_systems::SYSTEMS
+                .iter()
+                .map(|system| (*system, KeyboardBindings::default_bindings()))
+                .collect(),
+            active_system: SystemId::Nes,
             gamepads: match Gamepads::new() {
                 Ok(gamepads) => Some(gamepads),
                 Err(error) => {
@@ -705,7 +712,27 @@ impl App {
             })
             .collect();
         self.model.library_dirs = self.settings.library_dirs.clone();
-        self.model.bindings = binding_rows(&self.bindings);
+        self.model.bindings = self
+            .bindings
+            .get(&self.active_system)
+            .map(binding_rows)
+            .unwrap_or_default();
+        self.model.bindings_system = self.active_system.name().to_string();
+        // The running core's own input descriptors, when a game is loaded.
+        self.model.core_inputs = self
+            .session
+            .as_ref()
+            .map(|session| session.input_descriptors())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|descriptor| cgb_ui::InputDescriptorRow {
+                port: descriptor.port,
+                device: descriptor.device,
+                index: descriptor.index,
+                id: descriptor.id,
+                description: descriptor.description,
+            })
+            .collect();
         self.dirty = true;
     }
 
@@ -1025,14 +1052,13 @@ impl App {
     fn feed(&mut self, event: &InputEvent) {
         let scroll_before = self.ui.scroll_offset();
         self.ui.route_input(event);
-        match event {
-            InputEvent::KeyDown { key } => {
-                self.bindings.apply(*key, true, &mut self.input, 0);
+        // The keyboard feeds the binding set for the console in the machine.
+        if let Some(bindings) = self.bindings.get(&self.active_system) {
+            match event {
+                InputEvent::KeyDown { key } => bindings.apply(*key, true, &mut self.input, 0),
+                InputEvent::KeyUp { key } => bindings.apply(*key, false, &mut self.input, 0),
+                _ => {}
             }
-            InputEvent::KeyUp { key } => {
-                self.bindings.apply(*key, false, &mut self.input, 0);
-            }
-            _ => {}
         }
         self.handle_actions();
         // A wheel or scrollbar move changes the offset; feed it back so the
@@ -1343,6 +1369,8 @@ impl App {
 
     /// Start a ROM by path: read it, pick a core, build a [`Session`].
     fn start_path(&mut self, rom_path: &Path) {
+        // The keyboard now feeds this console's binding set.
+        self.active_system = system_for_path(&rom_path.to_string_lossy());
         let data = match std::fs::read(rom_path) {
             Ok(data) => data,
             Err(error) => {
@@ -1485,10 +1513,9 @@ impl App {
 
         self.step_gamepad();
 
-        let masks = [self.input.mask(0), self.input.mask(1)];
         if let (Some(session), Some(backend)) = (self.session.as_mut(), self.backend.as_mut()) {
             if !session.paused() {
-                session.advance(dt, backend, masks);
+                session.advance(dt, backend, &self.input);
             }
         }
 

@@ -207,6 +207,18 @@ pub struct BindingRow {
     pub keys: String,
 }
 
+/// One input descriptor a core declared (`SET_INPUT_DESCRIPTORS`), shown in the
+/// settings page so a core's own buttons (mGBA's shoulders, an arcade stick)
+/// are visible.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InputDescriptorRow {
+    pub port: u32,
+    pub device: u32,
+    pub index: u32,
+    pub id: u32,
+    pub description: String,
+}
+
 /// A registered framebuffer texture and its size.
 ///
 /// The texture is registered in the wgpu backend by the app; the view only
@@ -260,6 +272,10 @@ pub struct ViewModel {
     pub library_dirs: Vec<String>,
     /// Keyboard bindings, for the settings page.
     pub bindings: Vec<BindingRow>,
+    /// The console the bindings belong to (they are per console).
+    pub bindings_system: String,
+    /// The input descriptors the running core declared, if any.
+    pub core_inputs: Vec<InputDescriptorRow>,
 }
 
 impl Default for ViewModel {
@@ -287,6 +303,8 @@ impl Default for ViewModel {
             cores: Vec::new(),
             library_dirs: Vec::new(),
             bindings: Vec::new(),
+            bindings_system: String::new(),
+            core_inputs: Vec::new(),
         }
     }
 }
