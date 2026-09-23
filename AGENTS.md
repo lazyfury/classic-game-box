@@ -17,6 +17,8 @@
   卡片 SVG 图标 + 截图收藏页 + 大图预览。
 - **性能**：DrawList 复用（运行游戏不重排重绘）+ 图标纹理化 + 库网格可见行虚拟化；
   `CGB_PERF=1` 打点。
+- **Q5 打包**：`scripts/package-macos.sh` / `scripts/release.sh` 出 macOS `.app` + zip
+  （cores/assets 入 Resources）；`--selfcheck` 无头自检。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
   （mesen / mgba / nestopia / custom_nes_core / fbneo）；`--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
@@ -61,6 +63,7 @@ cargo run -p cgb-app -- --rom /path/to/mario.nes
 cargo run -p cgb-app -- --rom mario.nes --core mesen           # 强制核心
 cargo run -p cgb-app -- --rom mario.nes --core ./mycore_libretro.dylib  # 任意模块
 ./scripts/package-macos.sh  # → dist/Classic Game Box.app（含 cores + assets）
+./scripts/release.sh        # gate + selfcheck + 版本戳 + 打包 + zip（dist/…-<版本>.zip）
 cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/cores/icons）
 ```
 
