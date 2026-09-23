@@ -42,7 +42,9 @@ use draw_ui::{Align, Justify, MouseFilter, SizeBasis, SurfaceStyle, Track};
 
 use crate::frame::{cover_fit, FrameImage};
 use crate::icons::{Icon as SvgIcon, IconName};
-use crate::model::{Action, Confirm, GameRow, ScreenshotRow, Section, SortKey, ViewModel};
+use crate::model::{
+    Action, Confirm, EditKind, EditState, GameRow, ScreenshotRow, Section, SortKey, ViewModel,
+};
 
 /// The rail's fixed width in logical pixels.
 const RAIL_WIDTH: f32 = 64.0;
@@ -349,6 +351,9 @@ fn library_page(
         .mouse_filter(MouseFilter::Ignore);
     column = column.child(Text::heading("游戏库", theme));
     column = column.child(sort_bar(theme, model, actions));
+    if let Some(edit) = &model.editing {
+        column = column.child(edit_bar(theme, edit, actions));
+    }
 
     if model.games.is_empty() {
         column = column.child(
@@ -414,6 +419,56 @@ fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> 
             .child(SvgIcon::new(arrow, theme.palette().foreground, CARD_ICON))
             .on_click(move || toggle.push(Action::ToggleSortOrder)),
     )
+}
+
+/// The rename / tags edit bar: a text field, the caret, and save / cancel.
+fn edit_bar(theme: &'static dyn Theme, edit: &EditState, actions: &Actions) -> Column {
+    let label = match edit.kind {
+        EditKind::Name => "改名",
+        EditKind::Tags => "标签（用逗号分隔）",
+    };
+    let save = actions.clone();
+    let cancel = actions.clone();
+    Column::new()
+        .gap(space::XS)
+        .child(Text::caption(label, theme).tone(Tone::Muted))
+        .child(
+            Row::new()
+                .align(Align::Center)
+                .gap(space::XS)
+                .child(edit_field(theme, &edit.text, edit.caret).grow(1.0))
+                .child(
+                    Button::primary("保存", theme)
+                        .mini()
+                        .on_click(move || save.push(Action::CommitEdit)),
+                )
+                .child(
+                    Button::ghost("取消", theme)
+                        .mini()
+                        .on_click(move || cancel.push(Action::CancelEdit)),
+                ),
+        )
+}
+
+/// A minimal text field: the text with a caret bar drawn between the two
+/// halves. quill has no `TextInput`, so the app owns the keyboard and this only
+/// renders the current state.
+fn edit_field(theme: &'static dyn Theme, text: &str, caret: usize) -> Flex {
+    let caret = caret.min(text.len());
+    let (before, after) = text.split_at(caret);
+    Flex::row()
+        .align(Align::Center)
+        .gap(0.0)
+        .padding(Edges::new(space::SM, space::XS, space::SM, space::XS))
+        .min_size(0.0, 26.0)
+        .surface(
+            SurfaceStyle::new(theme.palette().surface_raised)
+                .border(theme.palette().accent)
+                .radius(radius::SM),
+        )
+        .child(Text::small(before, theme).max_lines(1))
+        .child(Text::small("|", theme).color(theme.palette().accent))
+        .child(Text::small(after, theme).max_lines(1).ellipsis(true))
 }
 
 /// The library as a fixed-column grid of cover cards, mounted a window at a
@@ -645,27 +700,28 @@ fn card_controls(
     if game.screenshots > 0 {
         row = row.child(screenshot_entry(theme, game, actions));
     }
+    let game_id = game.id;
+    let ink = Color::WHITE.with_alpha(0.85);
+    row = row.child(icon_button(IconName::Pencil, ink, {
+        let actions = actions.clone();
+        move || actions.push(Action::StartRename(game_id))
+    }));
+    row = row.child(icon_button(IconName::Tag, ink, {
+        let actions = actions.clone();
+        move || actions.push(Action::StartTagEdit(game_id))
+    }));
     row.child(icon_button(
         IconName::Pin,
-        if game.pinned {
-            PIN_COLOR
-        } else {
-            Color::WHITE.with_alpha(0.85)
-        },
+        if game.pinned { PIN_COLOR } else { ink },
         {
             let actions = actions.clone();
             move || actions.push(Action::TogglePin(index))
         },
     ))
-    .child(icon_button(
-        IconName::Trash,
-        Color::WHITE.with_alpha(0.85),
-        {
-            let actions = actions.clone();
-            let game_id = game.id;
-            move || actions.push(Action::RequestDelete(Confirm::DeleteGame(game_id)))
-        },
-    ))
+    .child(icon_button(IconName::Trash, ink, {
+        let actions = actions.clone();
+        move || actions.push(Action::RequestDelete(Confirm::DeleteGame(game_id)))
+    }))
 }
 
 /// The card's screenshot count: a camera and the number, opening the
@@ -1356,8 +1412,11 @@ mod tests {
 
     /// The centres of the two SVG icons in a cover, split left/right by their
     /// drawn lines: the pin is left, the delete is right.
-    fn icon_centres(list: &draw_render::DrawList) -> (Vec2, Vec2) {
-        let mut points = Vec::new();
+    /// Cluster the icon line endpoints into `n` groups by the widest x gaps
+    /// and return each group's centre, left to right. The card's controls are
+    /// pencil, tag, pin, delete in that order.
+    fn icon_centres(list: &draw_render::DrawList, n: usize) -> Vec<Vec2> {
+        let mut points: Vec<Vec2> = Vec::new();
         for command in list.commands() {
             if let DrawCommand::Line { from, to, .. } = command {
                 points.push(*from);
@@ -1365,22 +1424,34 @@ mod tests {
             }
         }
         assert!(!points.is_empty(), "the cover drew no icon lines");
-        let min = points.iter().map(|p| p.x).fold(f32::MAX, f32::min);
-        let max = points.iter().map(|p| p.x).fold(f32::MIN, f32::max);
-        let mid = (min + max) / 2.0;
-        let mean = |left: bool| {
-            let picked: Vec<Vec2> = points
-                .iter()
-                .copied()
-                .filter(|p| (p.x < mid) == left)
-                .collect();
-            let count = picked.len() as f32;
-            Vec2::new(
-                picked.iter().map(|p| p.x).sum::<f32>() / count,
-                picked.iter().map(|p| p.y).sum::<f32>() / count,
-            )
-        };
-        (mean(true), mean(false))
+        points.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+        let mut gaps: Vec<(usize, f32)> = (1..points.len())
+            .map(|index| (index, points[index].x - points[index - 1].x))
+            .collect();
+        gaps.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        let mut cuts: Vec<usize> = gaps
+            .into_iter()
+            .take(n - 1)
+            .map(|(index, _)| index)
+            .collect();
+        cuts.sort_unstable();
+        let mut groups: Vec<&[Vec2]> = Vec::new();
+        let mut start = 0;
+        for cut in cuts {
+            groups.push(&points[start..cut]);
+            start = cut;
+        }
+        groups.push(&points[start..]);
+        groups
+            .iter()
+            .map(|group| {
+                let count = group.len() as f32;
+                Vec2::new(
+                    group.iter().map(|p| p.x).sum::<f32>() / count,
+                    group.iter().map(|p| p.y).sum::<f32>() / count,
+                )
+            })
+            .collect()
     }
 
     fn one_game_row() -> GameRow {
@@ -1392,9 +1463,21 @@ mod tests {
     fn clicking_pin_toggles_it() {
         let actions = Actions::default();
         let (mut tree, list) = isolated_cover(&one_game_row(), &actions);
-        let (pin, _delete) = icon_centres(&list);
-        click(&mut tree, pin);
+        let centres = icon_centres(&list, 4);
+        click(&mut tree, centres[2]);
         assert_eq!(actions.drain(), vec![Action::TogglePin(0)]);
+    }
+
+    /// The pencil and tag icons start a name / tag edit.
+    #[test]
+    fn clicking_rename_and_tag_start_edits() {
+        let actions = Actions::default();
+        let (mut tree, list) = isolated_cover(&one_game_row(), &actions);
+        let centres = icon_centres(&list, 4);
+        click(&mut tree, centres[0]);
+        assert_eq!(actions.drain(), vec![Action::StartRename(0)]);
+        click(&mut tree, centres[1]);
+        assert_eq!(actions.drain(), vec![Action::StartTagEdit(0)]);
     }
 
     /// The delete icon is its own button: it deletes, it does not start the
@@ -1403,8 +1486,8 @@ mod tests {
     fn clicking_delete_deletes_without_playing() {
         let actions = Actions::default();
         let (mut tree, list) = isolated_cover(&one_game_row(), &actions);
-        let (_pin, delete) = icon_centres(&list);
-        click(&mut tree, delete);
+        let centres = icon_centres(&list, 4);
+        click(&mut tree, centres[3]);
         assert_eq!(
             actions.drain(),
             vec![Action::RequestDelete(Confirm::DeleteGame(0))]
@@ -1613,6 +1696,38 @@ mod tests {
         let cancel = text_position(&list, "取消");
         click(&mut tree, cancel);
         assert_eq!(actions.drain(), vec![Action::CancelDelete]);
+    }
+
+    /// The edit bar shows the text with a caret, and its buttons commit or
+    /// cancel the edit.
+    #[test]
+    fn the_edit_bar_shows_the_field_and_commits() {
+        let actions = Actions::default();
+        let model = ViewModel {
+            editing: Some(EditState {
+                game_id: 0,
+                kind: EditKind::Name,
+                text: "New Name".to_string(),
+                caret: 3,
+            }),
+            ..ViewModel::default()
+        };
+        let (mut tree, list) = laid_out(&model, &actions);
+        let has = |needle: &str| {
+            list.commands().iter().any(|command| {
+                matches!(command,
+                    DrawCommand::DrawText { text, .. } if text == needle)
+            })
+        };
+        assert!(has("改名"), "the bar is labelled");
+        assert!(has("New"), "the text before the caret");
+        assert!(has("|"), "the caret");
+        assert!(has("Name"), "the text after the caret");
+
+        click(&mut tree, text_position(&list, "保存"));
+        assert_eq!(actions.drain(), vec![Action::CommitEdit]);
+        click(&mut tree, text_position(&list, "取消"));
+        assert_eq!(actions.drain(), vec![Action::CancelEdit]);
     }
 
     /// The rail is the only way to change what the middle column shows, so it

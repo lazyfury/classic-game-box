@@ -50,11 +50,17 @@ pub enum IconName {
     Library,
     /// Two sliders; the settings section.
     Settings2,
+    /// A pencil; rename.
+    Pencil,
+    /// A tag; edit tags.
+    Tag,
+    /// A check mark; commit an edit.
+    Check,
 }
 
 impl IconName {
     /// Every icon in the pack, for tests and iteration.
-    pub const ALL: [IconName; 13] = [
+    pub const ALL: [IconName; 16] = [
         IconName::Pin,
         IconName::Trash,
         IconName::ArrowUp,
@@ -68,6 +74,9 @@ impl IconName {
         IconName::ChevronRight,
         IconName::Library,
         IconName::Settings2,
+        IconName::Pencil,
+        IconName::Tag,
+        IconName::Check,
     ];
 
     /// The embedded SVG source for this icon.
@@ -86,6 +95,9 @@ impl IconName {
             IconName::ChevronRight => include_str!("../assets/icons/chevron-right.svg"),
             IconName::Library => include_str!("../assets/icons/library.svg"),
             IconName::Settings2 => include_str!("../assets/icons/settings-2.svg"),
+            IconName::Pencil => include_str!("../assets/icons/pencil.svg"),
+            IconName::Tag => include_str!("../assets/icons/tag.svg"),
+            IconName::Check => include_str!("../assets/icons/check.svg"),
         }
     }
 }

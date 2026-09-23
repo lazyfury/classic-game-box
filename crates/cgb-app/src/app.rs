@@ -34,8 +34,8 @@ use cgb_library::{
 };
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton};
 use cgb_ui::{
-    Action, Actions, BindingRow, Confirm, CoreRow, FrameHandle, GameRow, SafeArea, ScreenshotRow,
-    Section, SortKey, Ui, ViewModel,
+    Action, Actions, BindingRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow,
+    SafeArea, ScreenshotRow, Section, SortKey, Ui, ViewModel,
 };
 
 use crate::cli::{Args, CoreOverride};
@@ -1043,6 +1043,8 @@ impl App {
                 Action::Show(section) => {
                     let changed = self.model.section != section;
                     self.model.section = section;
+                    // Leaving the page drops any in-progress edit.
+                    self.model.editing = None;
                     // The screenshots section follows the playing game unless a
                     // card sent it to a specific one.
                     if section == Section::Screenshots && self.model.screenshot_game.is_none() {
@@ -1109,6 +1111,13 @@ impl App {
                     self.model.confirm = None;
                     self.dirty = true;
                 }
+                Action::StartRename(id) => self.start_edit(id, EditKind::Name),
+                Action::StartTagEdit(id) => self.start_edit(id, EditKind::Tags),
+                Action::CommitEdit => self.commit_edit(),
+                Action::CancelEdit => {
+                    self.model.editing = None;
+                    self.dirty = true;
+                }
                 Action::Sort(key) => self.set_sort(key),
                 Action::ToggleSortOrder => self.set_sort(self.model.sort),
                 Action::Screenshot => self.capture_screenshot(false),
@@ -1140,10 +1149,130 @@ impl App {
         }
     }
 
+    /// Begin editing a game's name or tags; the app takes the keyboard.
+    fn start_edit(&mut self, game_id: i64, kind: EditKind) {
+        let Some(game) = self.game_source.iter().find(|game| game.id == game_id) else {
+            return;
+        };
+        let text = match kind {
+            EditKind::Name => game.name.clone(),
+            EditKind::Tags => game.tags.join(", "),
+        };
+        let caret = text.len();
+        self.model.editing = Some(EditState {
+            game_id,
+            kind,
+            text,
+            caret,
+        });
+        self.dirty = true;
+    }
+
+    /// Commit the pending edit to the database and the in-memory rows.
+    fn commit_edit(&mut self) {
+        let Some(edit) = self.model.editing.take() else {
+            return;
+        };
+        let Some(path) = self
+            .game_source
+            .iter()
+            .find(|game| game.id == edit.game_id)
+            .map(|game| game.path.clone())
+        else {
+            return;
+        };
+        match edit.kind {
+            EditKind::Name => {
+                let name = edit.text.trim().to_string();
+                if name.is_empty() {
+                    self.model.status = "名字不能为空".to_string();
+                    self.dirty = true;
+                    return;
+                }
+                if let Some(library) = &self.library {
+                    let _ = library.rename(&path, &name);
+                }
+                if let Some(game) = self
+                    .game_source
+                    .iter_mut()
+                    .find(|game| game.id == edit.game_id)
+                {
+                    game.name = name.clone();
+                }
+                self.model.status = format!("已改名为：{name}");
+            }
+            EditKind::Tags => {
+                let tags: Vec<String> = edit
+                    .text
+                    .split([',', '，', ' '])
+                    .map(str::trim)
+                    .filter(|tag| !tag.is_empty())
+                    .map(str::to_string)
+                    .collect();
+                if let Some(library) = &self.library {
+                    let _ = library.set_tags(&path, &tags);
+                }
+                if let Some(game) = self
+                    .game_source
+                    .iter_mut()
+                    .find(|game| game.id == edit.game_id)
+                {
+                    game.tags = tags.clone();
+                }
+                self.model.status = format!("已更新标签（{} 个）", tags.len());
+            }
+        }
+        self.rebuild_game_rows();
+        self.dirty = true;
+    }
+
+    /// One key press while editing. Enter commits, Escape cancels, the arrows
+    /// move the caret, Backspace deletes, and any typed text is inserted.
+    fn edit_key(&mut self, event: &winit::event::KeyEvent) {
+        match &event.logical_key {
+            WinitKey::Named(NamedKey::Enter) => {
+                self.commit_edit();
+                return;
+            }
+            WinitKey::Named(NamedKey::Escape) => {
+                self.model.editing = None;
+                self.dirty = true;
+                return;
+            }
+            _ => {}
+        }
+        let Some(edit) = self.model.editing.as_mut() else {
+            return;
+        };
+        match &event.logical_key {
+            WinitKey::Named(NamedKey::Backspace) => {
+                let previous = prev_boundary(&edit.text, edit.caret);
+                edit.text.replace_range(previous..edit.caret, "");
+                edit.caret = previous;
+            }
+            WinitKey::Named(NamedKey::ArrowLeft) => {
+                edit.caret = prev_boundary(&edit.text, edit.caret);
+            }
+            WinitKey::Named(NamedKey::ArrowRight) => {
+                edit.caret = next_boundary(&edit.text, edit.caret);
+            }
+            _ => {
+                if let Some(text) = &event.text {
+                    for ch in text.chars().filter(|ch| !ch.is_control()) {
+                        edit.text.insert(edit.caret, ch);
+                        edit.caret += ch.len_utf8();
+                    }
+                }
+            }
+        }
+        self.dirty = true;
+    }
+
     fn start_game(&mut self, index: usize) {
         let Some(game) = self.model.games.get(index).cloned() else {
             return;
         };
+        self.model.editing = None;
         self.model.selected = Some(index);
         self.start_path(Path::new(&game.path));
     }
@@ -1481,6 +1610,17 @@ impl ApplicationHandler for App {
                 self.modifiers = modifiers.state();
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                // While a text edit is open the app owns the keyboard: every
+                // key goes to the field, not to the UI or the joypad bindings.
+                if self.model.editing.is_some() {
+                    if event.state == ElementState::Pressed {
+                        self.edit_key(&event);
+                        if let Some(window) = self.window.as_ref() {
+                            window.request_redraw();
+                        }
+                    }
+                    return;
+                }
                 // Save-state hotkeys are app commands, not joypad bindings, and
                 // only fire on press (so a held key does not re-save).
                 if event.state == ElementState::Pressed {
@@ -1559,6 +1699,26 @@ impl TextMeasurer for BackendTextMeasurer {
     fn measure_run_weighted(&self, text: &str, font_size: f32, weight: FontWeight) -> f32 {
         self.metrics.measure_run_weighted(text, font_size, weight)
     }
+}
+
+/// The byte index before `caret`, the previous character boundary.
+fn prev_boundary(text: &str, caret: usize) -> usize {
+    let caret = caret.min(text.len());
+    text[..caret]
+        .char_indices()
+        .last()
+        .map(|(index, _)| index)
+        .unwrap_or(0)
+}
+
+/// The byte index after `caret`, the next character boundary.
+fn next_boundary(text: &str, caret: usize) -> usize {
+    let caret = caret.min(text.len());
+    text[caret..]
+        .chars()
+        .next()
+        .map(|ch| caret + ch.len_utf8())
+        .unwrap_or(caret)
 }
 
 /// Wall-clock milliseconds since the Unix epoch.

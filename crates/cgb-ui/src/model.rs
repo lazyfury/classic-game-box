@@ -44,6 +44,26 @@ impl SafeArea {
     };
 }
 
+/// What an in-progress text edit is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditKind {
+    /// The game's display name.
+    Name,
+    /// The game's tags, comma-separated in the field.
+    Tags,
+}
+
+/// An in-progress text edit. The app owns the keyboard while this is set and
+/// commits or cancels it; the view draws the field.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditState {
+    pub game_id: i64,
+    pub kind: EditKind,
+    pub text: String,
+    /// Caret position, a byte index into `text` on a char boundary.
+    pub caret: usize,
+}
+
 /// A destructive action waiting for the player to confirm it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Confirm {
@@ -227,6 +247,8 @@ pub struct ViewModel {
     pub preview: Option<i64>,
     /// A destructive action waiting for confirmation, shown in a bar.
     pub confirm: Option<Confirm>,
+    /// An in-progress rename or tag edit, shown in a bar above the grid.
+    pub editing: Option<EditState>,
     /// Every core in the manifest, for the settings picker.
     pub cores: Vec<CoreRow>,
     /// Folders the library scans.
@@ -255,6 +277,7 @@ impl Default for ViewModel {
             library_viewport: 0.0,
             preview: None,
             confirm: None,
+            editing: None,
             cores: Vec::new(),
             library_dirs: Vec::new(),
             bindings: Vec::new(),
@@ -291,6 +314,14 @@ pub enum Action {
     ConfirmDelete,
     /// Dismiss the pending destructive action.
     CancelDelete,
+    /// Start editing the game's display name.
+    StartRename(i64),
+    /// Start editing the game's tags.
+    StartTagEdit(i64),
+    /// Commit the pending text edit.
+    CommitEdit,
+    /// Discard the pending text edit.
+    CancelEdit,
     /// Sort the library by this key.
     Sort(SortKey),
     /// Flip the library between ascending and descending.
