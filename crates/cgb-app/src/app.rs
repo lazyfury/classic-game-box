@@ -23,6 +23,7 @@ use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
+use winit::platform::macos::WindowAttributesExtMacOS;
 use winit::window::{Window, WindowId};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
@@ -197,6 +198,9 @@ impl App {
         }
         let attributes = Window::default_attributes()
             .with_title("Classic Game Box")
+            .with_titlebar_transparent(true)
+            .with_title_hidden(true)
+            .with_fullsize_content_view(true)
             .with_inner_size(LogicalSize::new(1100.0, 760.0));
         let window = Arc::new(event_loop.create_window(attributes).expect("create window"));
 
