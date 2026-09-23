@@ -27,6 +27,23 @@ impl Section {
     }
 }
 
+/// Insets the UI must leave for platform chrome, in logical pixels. On macOS
+/// with a full-size content view the content runs under the title bar, so the
+/// header has to clear the title bar (`top`) and the traffic lights (`left`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SafeArea {
+    pub top: f32,
+    pub left: f32,
+}
+
+impl SafeArea {
+    /// No chrome to avoid (the default on every platform but macOS).
+    pub const ZERO: Self = Self {
+        top: 0.0,
+        left: 0.0,
+    };
+}
+
 /// A destructive action waiting for the player to confirm it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Confirm {
@@ -184,6 +201,8 @@ pub struct FrameHandle {
 #[derive(Clone, Debug)]
 pub struct ViewModel {
     pub section: Section,
+    /// Platform chrome the header must clear (macOS title bar / traffic lights).
+    pub safe_area: SafeArea,
     pub games: Vec<GameRow>,
     pub selected: Option<usize>,
     /// The active library sort key, and whether it is descending.
@@ -215,6 +234,7 @@ impl Default for ViewModel {
     fn default() -> Self {
         Self {
             section: Section::Library,
+            safe_area: SafeArea::ZERO,
             games: Vec::new(),
             selected: None,
             sort: SortKey::Name,

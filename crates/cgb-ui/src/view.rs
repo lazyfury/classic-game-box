@@ -151,15 +151,25 @@ fn confirm_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) 
 }
 
 /// The slim top bar: the app name and what the middle column is showing.
+///
+/// It leaves the platform's safe area at the top and left, so on macOS the
+/// content running under the title bar does not hide the name behind the
+/// traffic lights.
 fn header(theme: &'static dyn Theme, model: &ViewModel) -> Column {
+    let safe = model.safe_area;
     Column::new()
         .gap(0.0)
         .child(
             Row::new()
                 .align(Align::Center)
                 .gap(space::SM)
-                .padding(Edges::new(space::LG, space::SM, space::LG, space::SM))
-                .min_size(0.0, 40.0)
+                .padding(Edges::new(
+                    space::LG + safe.left,
+                    space::SM + safe.top,
+                    space::LG,
+                    space::SM,
+                ))
+                .min_size(0.0, 40.0 + safe.top)
                 .child(Text::subheading("Classic Game Box", theme).bold())
                 .child(Text::caption(model.section.label(), theme).tone(Tone::Muted)),
         )

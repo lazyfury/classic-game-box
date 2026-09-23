@@ -23,6 +23,7 @@ use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
+#[cfg(target_os = "macos")]
 use winit::platform::macos::WindowAttributesExtMacOS;
 use winit::window::{Window, WindowId};
 
@@ -33,8 +34,8 @@ use cgb_library::{
 };
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton};
 use cgb_ui::{
-    Action, Actions, BindingRow, Confirm, CoreRow, FrameHandle, GameRow, ScreenshotRow, Section,
-    SortKey, Ui, ViewModel,
+    Action, Actions, BindingRow, Confirm, CoreRow, FrameHandle, GameRow, SafeArea, ScreenshotRow,
+    Section, SortKey, Ui, ViewModel,
 };
 
 use crate::cli::{Args, CoreOverride};
@@ -48,6 +49,32 @@ const COVER_TEXTURE_BASE: u32 = 0x1000;
 
 /// Screenshot thumbnails live in their own id space, above the covers.
 const SCREENSHOT_TEXTURE_BASE: u32 = 0x1_0000;
+
+/// macOS title bar height, in logical points. The window uses a full-size
+/// content view, so the UI runs under the title bar and the header must clear
+/// this much.
+#[cfg(target_os = "macos")]
+const MACOS_TITLEBAR_HEIGHT: f32 = 0.0;
+
+/// Room for the macOS traffic lights, which overlay the top-left of the
+/// content.
+#[cfg(target_os = "macos")]
+const MACOS_TRAFFIC_LIGHTS: f32 = 72.0;
+
+/// The chrome the UI must leave for the platform.
+fn safe_area() -> SafeArea {
+    #[cfg(target_os = "macos")]
+    {
+        SafeArea {
+            top: MACOS_TITLEBAR_HEIGHT,
+            left: MACOS_TRAFFIC_LIGHTS,
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        SafeArea::ZERO
+    }
+}
 
 /// A registered cover texture and the screenshot row it came from.
 struct CoverTexture {
@@ -196,12 +223,19 @@ impl App {
         if self.window.is_some() {
             return;
         }
-        let attributes = Window::default_attributes()
+        let mut attributes = Window::default_attributes()
             .with_title("Classic Game Box")
-            .with_titlebar_transparent(true)
-            .with_title_hidden(true)
-            .with_fullsize_content_view(true)
             .with_inner_size(LogicalSize::new(1100.0, 760.0));
+        // The content runs under a transparent, title-less macOS title bar; the
+        // header reserves the safe area so nothing hides behind the traffic
+        // lights.
+        #[cfg(target_os = "macos")]
+        {
+            attributes = attributes
+                .with_titlebar_transparent(true)
+                .with_title_hidden(true)
+                .with_fullsize_content_view(true);
+        }
         let window = Arc::new(event_loop.create_window(attributes).expect("create window"));
 
         let surface = self
@@ -252,6 +286,9 @@ impl App {
         self.backend = Some(backend);
         self.config = Some(config);
         self.last_frame = Instant::now();
+        // The window exists now, so its platform chrome (the macOS title bar)
+        // can be reserved in the header.
+        self.model.safe_area = safe_area();
 
         // The real font metrics can only be installed once the backend exists.
         self.dirty = true;
