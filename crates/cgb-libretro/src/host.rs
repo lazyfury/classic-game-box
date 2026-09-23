@@ -21,7 +21,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uint, c_void};
 use std::path::{Path, PathBuf};
 use std::ptr;
-use std::sync::atomic::{AtomicI16, AtomicPtr, AtomicU16, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI16, AtomicPtr, AtomicU16, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use cgb_systems::{
@@ -81,6 +81,27 @@ pub struct InputDescriptor {
     pub description: String,
 }
 
+/// One core option, owned, for the settings UI.
+#[derive(Clone, Debug)]
+pub struct CoreOption {
+    pub key: String,
+    pub label: String,
+    /// `(value, label)` pairs the option accepts.
+    pub values: Vec<(String, String)>,
+    /// The current value.
+    pub value: String,
+}
+
+/// A core option plus a `CString` for its value, so `GET_VARIABLE` can hand the
+/// core a pointer that stays valid until the value changes.
+struct HostOption {
+    key: String,
+    label: String,
+    values: Vec<(String, String)>,
+    value: String,
+    value_c: CString,
+}
+
 /// State shared with the callbacks.
 struct HostShared {
     /// From `RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY`; stable for the host's
@@ -102,6 +123,12 @@ struct HostShared {
     analog: [[AtomicI16; 4]; 2],
     /// Descriptors from `SET_INPUT_DESCRIPTORS`, for the bindings UI.
     input_descriptors: Mutex<Vec<InputDescriptor>>,
+    /// Core options from `SET_VARIABLES` / `SET_CORE_OPTIONS`.
+    core_options: Mutex<Vec<HostOption>>,
+    /// Set when an option value changed; cleared by `GET_VARIABLE_UPDATE`.
+    options_dirty: AtomicBool,
+    /// The last `SET_MESSAGE` text, taken by the app.
+    message: Mutex<Option<String>>,
 }
 
 impl HostShared {
@@ -116,6 +143,9 @@ impl HostShared {
             input: [AtomicU16::new(0), AtomicU16::new(0)],
             analog: Default::default(),
             input_descriptors: Mutex::new(Vec::new()),
+            core_options: Mutex::new(Vec::new()),
+            options_dirty: AtomicBool::new(false),
+            message: Mutex::new(None),
         }
     }
 
@@ -267,18 +297,69 @@ impl HostShared {
                 true
             }
             RETRO_ENVIRONMENT_SET_CONTROLLER_INFO => true,
-            RETRO_ENVIRONMENT_GET_VARIABLE => {
-                // No core options yet: an unset value tells the core to use its
-                // own default.
+            // Core options: we speak v1, so a core with v2/v1 definitions uses
+            // `SET_CORE_OPTIONS`; an older one falls back to `SET_VARIABLES`.
+            RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION => {
                 if !data.is_null() {
-                    (*(data as *mut retro_variable)).value = ptr::null();
+                    *(data as *mut c_uint) = 1;
                 }
-                false
+                true
             }
-            RETRO_ENVIRONMENT_SET_VARIABLES => true,
+            RETRO_ENVIRONMENT_SET_CORE_OPTIONS => {
+                *lock(&self.core_options) = read_core_options(data);
+                self.options_dirty.store(true, Ordering::Relaxed);
+                true
+            }
+            RETRO_ENVIRONMENT_GET_VARIABLE => {
+                if data.is_null() {
+                    return false;
+                }
+                let variable = &mut *(data as *mut retro_variable);
+                if variable.key.is_null() {
+                    return false;
+                }
+                let key = cstring(variable.key);
+                let options = lock(&self.core_options);
+                match options.iter().find(|option| option.key == key) {
+                    Some(option) => {
+                        variable.value = option.value_c.as_ptr();
+                        true
+                    }
+                    None => {
+                        variable.value = ptr::null();
+                        false
+                    }
+                }
+            }
+            RETRO_ENVIRONMENT_SET_VARIABLES => {
+                *lock(&self.core_options) = read_variables(data);
+                self.options_dirty.store(true, Ordering::Relaxed);
+                true
+            }
             RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE => {
                 if !data.is_null() {
-                    *(data as *mut bool) = false;
+                    *(data as *mut bool) = self.options_dirty.swap(false, Ordering::Relaxed);
+                }
+                true
+            }
+            // Message interface: the last message goes to the app's status line.
+            RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION => {
+                if !data.is_null() {
+                    *(data as *mut c_uint) = 1;
+                }
+                true
+            }
+            RETRO_ENVIRONMENT_SET_MESSAGE => {
+                if !data.is_null() {
+                    let message = &*(data as *const retro_message);
+                    *lock(&self.message) = Some(cstring(message.msg));
+                }
+                true
+            }
+            RETRO_ENVIRONMENT_SET_MESSAGE_EXT => {
+                if !data.is_null() {
+                    let message = &*(data as *const retro_message_ext);
+                    *lock(&self.message) = Some(cstring(message.msg));
                 }
                 true
             }
@@ -297,8 +378,7 @@ impl HostShared {
             // Accepted and ignored for now.
             RETRO_ENVIRONMENT_SET_ROTATION
             | RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL
-            | RETRO_ENVIRONMENT_SET_GEOMETRY
-            | RETRO_ENVIRONMENT_SET_MESSAGE => true,
+            | RETRO_ENVIRONMENT_SET_GEOMETRY => true,
             // Everything else (core options callbacks, VFS, hw render, …) is
             // reported unsupported so the core degrades predictably.
             _ => false,
@@ -425,6 +505,43 @@ impl CoreHost {
     /// The bindings the core describes, for the settings UI.
     pub fn input_descriptors(&self) -> Vec<InputDescriptor> {
         lock(&self.shared.input_descriptors).clone()
+    }
+
+    /// The core's options, owned, for the settings UI.
+    pub fn core_options(&self) -> Vec<CoreOption> {
+        lock(&self.shared.core_options)
+            .iter()
+            .map(|option| CoreOption {
+                key: option.key.clone(),
+                label: option.label.clone(),
+                values: option.values.clone(),
+                value: option.value.clone(),
+            })
+            .collect()
+    }
+
+    /// Set a core option value; the core sees it on the next `GET_VARIABLE`.
+    pub fn set_core_option(&self, key: &str, value: &str) {
+        let mut options = lock(&self.shared.core_options);
+        if let Some(option) = options.iter_mut().find(|option| option.key == key) {
+            if option.value == value {
+                return;
+            }
+            option.value = value.to_string();
+            option.value_c = CString::new(value).unwrap_or_default();
+            self.shared.options_dirty.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Take the last message the core pushed, if any.
+    pub fn take_message(&self) -> Option<String> {
+        lock(&self.shared.message).take()
+    }
+
+    /// Tell the core which device class a port uses; some cores require it
+    /// before they answer input.
+    pub fn set_controller_port_device(&self, port: u32, device: u32) {
+        unsafe { (self.core.api().set_controller_port_device)(port as c_uint, device as c_uint) };
     }
 
     /// The core's system info (name, version, extensions).
@@ -667,6 +784,98 @@ unsafe extern "C" fn input_state_cb(
                 .unwrap_or(0)
         }
         _ => 0,
+    }
+}
+
+/// Copy a core-options v1 array into owned options.
+///
+/// # Safety
+///
+/// `data` is the pointer libretro passed with `SET_CORE_OPTIONS`.
+unsafe fn read_core_options(data: *mut c_void) -> Vec<HostOption> {
+    let mut out = Vec::new();
+    if data.is_null() {
+        return out;
+    }
+    let mut cursor = data as *const retro_core_option_definition;
+    loop {
+        let definition = &*cursor;
+        if definition.key.is_null() {
+            break;
+        }
+        let key = cstring(definition.key);
+        let label = cstring(definition.desc);
+        let default = cstring(definition.default_value);
+        let mut values = Vec::new();
+        for value in definition.values.iter() {
+            if value.value.is_null() {
+                break;
+            }
+            values.push((cstring(value.value), cstring(value.label)));
+        }
+        out.push(host_option(key, label, values, default));
+        cursor = cursor.add(1);
+    }
+    out
+}
+
+/// Copy a core-options v0 array (`SET_VARIABLES`) into owned options.
+///
+/// Each `value` is `"Description; value1|value2|…"`; the first value is the
+/// default, as RetroArch treats it.
+///
+/// # Safety
+///
+/// `data` is the pointer libretro passed with `SET_VARIABLES`.
+unsafe fn read_variables(data: *mut c_void) -> Vec<HostOption> {
+    let mut out = Vec::new();
+    if data.is_null() {
+        return out;
+    }
+    let mut cursor = data as *const retro_variable;
+    loop {
+        let variable = &*cursor;
+        if variable.key.is_null() {
+            break;
+        }
+        let key = cstring(variable.key);
+        let raw = cstring(variable.value);
+        let (label, list) = raw
+            .split_once(';')
+            .map(|(desc, values)| (desc.trim().to_string(), values.trim()))
+            .unwrap_or_else(|| (key.clone(), raw.as_str()));
+        let mut values = Vec::new();
+        let mut default = String::new();
+        for (index, item) in list.split('|').enumerate() {
+            let item = item.trim();
+            if item.is_empty() {
+                continue;
+            }
+            if index == 0 {
+                default = item.to_string();
+            }
+            values.push((item.to_string(), item.to_string()));
+        }
+        out.push(host_option(key, label, values, default));
+        cursor = cursor.add(1);
+    }
+    out
+}
+
+/// Build a [`HostOption`], keeping a `CString` of the value alive.
+fn host_option(
+    key: String,
+    label: String,
+    values: Vec<(String, String)>,
+    value: String,
+) -> HostOption {
+    let value_c = CString::new(value.clone()).unwrap_or_default();
+    HostOption {
+        key,
+        label,
+        values,
+        value,
+        value_c,
     }
 }
 

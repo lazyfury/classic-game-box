@@ -5,6 +5,7 @@
 //! or swapped in `cores.json` without a settings migration; a key that no
 //! longer exists just falls back to the console default.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use cgb_systems::SystemId;
@@ -32,6 +33,8 @@ pub struct Settings {
     /// The game-picture post-process preset key (`"scanlines"`, `"crt"`, …);
     /// an unknown key means no effect.
     pub shader: String,
+    /// Remembered core options, keyed by `"<core key>:<option key>"`.
+    pub core_options: BTreeMap<String, String>,
 }
 
 impl Settings {

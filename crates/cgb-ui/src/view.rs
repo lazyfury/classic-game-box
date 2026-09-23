@@ -1561,6 +1561,44 @@ fn settings_page(
             .child(Text::caption("对游戏画面做后处理，不影响界面。", theme).tone(Tone::Subtle)),
     );
 
+    // The running core's own options, when a game has been loaded.
+    if !model.core_options.is_empty() {
+        let mut options = Column::new().gap(space::XS);
+        for (index, option) in model.core_options.iter().enumerate() {
+            let previous = actions.clone();
+            let next = actions.clone();
+            options = options.child(
+                Row::new()
+                    .align(Align::Center)
+                    .gap(space::XS)
+                    .child(
+                        Text::small(option.label.as_str(), theme)
+                            .grow(1.0)
+                            .max_lines(1)
+                            .ellipsis(true),
+                    )
+                    .child(
+                        Button::ghost("‹", theme)
+                            .mini()
+                            .on_click(move || previous.push(Action::CycleCoreOption(index, -1))),
+                    )
+                    .child(Text::caption(option.value.as_str(), theme).tone(Tone::Muted))
+                    .child(
+                        Button::ghost("›", theme)
+                            .mini()
+                            .on_click(move || next.push(Action::CycleCoreOption(index, 1))),
+                    ),
+            );
+        }
+        body = body.child(
+            Card::new(theme)
+                .gap(space::SM)
+                .padding(Edges::all(space::SM))
+                .child(Text::subheading("核心选项", theme))
+                .child(options),
+        );
+    }
+
     // Keyboard bindings, read-only for now.
     let mut bindings = Column::new().gap(space::XS);
     if model.bindings.is_empty() {
@@ -2293,6 +2331,34 @@ mod tests {
         let (mut tree, list) = laid_out(&model, &actions);
         click(&mut tree, text_position(&list, "CRT"));
         assert_eq!(actions.drain(), vec![Action::SetShader(ShaderKind::Crt)]);
+    }
+
+    #[test]
+    fn the_settings_core_options_cycle() {
+        let actions = Actions::default();
+        let model = ViewModel {
+            section: Section::Settings,
+            core_options: vec![crate::model::CoreOptionRow {
+                key: "region".to_string(),
+                label: "Region".to_string(),
+                values: vec![
+                    ("auto".to_string(), "Auto".to_string()),
+                    ("ntsc".to_string(), "NTSC".to_string()),
+                ],
+                value: "auto".to_string(),
+            }],
+            ..ViewModel::default()
+        };
+        let (mut tree, list) = laid_out(&model, &actions);
+        let has = |needle: &str| {
+            list.commands().iter().any(|command| {
+                matches!(command,
+                    DrawCommand::DrawText { text, .. } if text.contains(needle))
+            })
+        };
+        assert!(has("Region"));
+        click(&mut tree, text_position(&list, "›"));
+        assert_eq!(actions.drain(), vec![Action::CycleCoreOption(0, 1)]);
     }
 
     #[test]

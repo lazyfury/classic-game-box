@@ -15,7 +15,7 @@ use cgb_library::{
     save_state_thumb_path, write, StateSlot,
 };
 use cgb_libretro::CoreHost;
-use cgb_systems::CoreSpec;
+use cgb_systems::{CoreSpec, RETRO_DEVICE_JOYPAD};
 use cgb_ui::FrameHandle;
 use draw_backend_wgpu::{TextureEffect, TextureFilter, WgpuBackend};
 use draw_render::TextureId;
@@ -86,6 +86,9 @@ impl Session {
             CoreHost::new(&spec.module, system_dir, save_dir).map_err(|error| error.to_string())?;
         core.load_game(rom_path, data)
             .map_err(|error| error.to_string())?;
+        // Both ports are joypads; some cores expect this before input.
+        core.set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+        core.set_controller_port_device(1, RETRO_DEVICE_JOYPAD);
 
         // A battery save (`.srm`) must be written back into the freshly loaded
         // machine *before* the first frame, or the game boots without its save.
@@ -388,6 +391,26 @@ impl Session {
     /// Set the post-process applied to this session's framebuffer.
     pub fn set_effect(&self, backend: &mut WgpuBackend, effect: TextureEffect) {
         backend.set_texture_effect(self.texture, effect);
+    }
+
+    /// The core's manifest key (save states are namespaced by it).
+    pub fn core_key(&self) -> &str {
+        &self.core_key
+    }
+
+    /// The core's options, for the settings UI.
+    pub fn core_options(&self) -> Vec<cgb_libretro::CoreOption> {
+        self.core.core_options()
+    }
+
+    /// Set a core option value on the running core.
+    pub fn set_core_option(&self, key: &str, value: &str) {
+        self.core.set_core_option(key, value);
+    }
+
+    /// Take the last message the core pushed, if any.
+    pub fn take_message(&self) -> Option<String> {
+        self.core.take_message()
     }
 
     /// One emulated frame, in seconds.

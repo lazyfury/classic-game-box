@@ -33,5 +33,5 @@ mod host;
 mod loader;
 
 pub use error::LibretroError;
-pub use host::{AvInfo, CoreHost, Frame, InputDescriptor, SystemInfo};
+pub use host::{AvInfo, CoreHost, CoreOption, Frame, InputDescriptor, SystemInfo};
 pub use loader::CoreLibrary;

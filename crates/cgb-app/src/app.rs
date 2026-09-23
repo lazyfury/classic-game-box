@@ -34,9 +34,9 @@ use cgb_library::{
 };
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
 use cgb_ui::{
-    Action, Actions, BindingRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow,
-    InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow, Section, ShaderKind, SortKey, Ui,
-    ViewModel,
+    Action, Actions, BindingRow, Confirm, CoreOptionRow, CoreRow, EditKind, EditState, FrameHandle,
+    GameRow, InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow, Section, ShaderKind,
+    SortKey, Ui, ViewModel,
 };
 
 use crate::cli::{Args, CoreOverride};
@@ -153,6 +153,8 @@ struct App {
     /// The running game's cheats, and the `.cht` file they came from.
     cheats: Vec<cgb_library::Cheat>,
     cheat_path: Option<PathBuf>,
+    /// The running core's options, cached for the settings page.
+    core_options: Vec<cgb_libretro::CoreOption>,
     /// Whether the current screenshot preview paused a running game, so it can
     /// be resumed when the preview closes.
     preview_paused: bool,
@@ -234,6 +236,7 @@ impl App {
             save_textures: HashMap::new(),
             cheats: Vec::new(),
             cheat_path: None,
+            core_options: Vec::new(),
             preview_paused: false,
             input: InputState::new(),
             bindings: cgb_systems::SYSTEMS
@@ -859,6 +862,62 @@ impl App {
         session.set_effect(backend, texture_effect(self.shader));
     }
 
+    /// Read the running core's options, apply any remembered values, and
+    /// project them into the settings page.
+    fn reload_core_options(&mut self) {
+        let Some(session) = self.session.as_ref() else {
+            self.core_options.clear();
+            self.rebuild_settings_view();
+            return;
+        };
+        let core_key = session.core_key().to_string();
+        for option in session.core_options() {
+            let key = format!("{core_key}:{}", option.key);
+            if let Some(value) = self.settings.core_options.get(&key) {
+                session.set_core_option(&option.key, value);
+            }
+        }
+        self.core_options = session.core_options();
+        self.rebuild_settings_view();
+    }
+
+    /// Cycle one core option to its previous/next value and persist it.
+    fn cycle_core_option(&mut self, index: usize, delta: i32) {
+        let Some(option) = self.core_options.get(index) else {
+            return;
+        };
+        if option.values.is_empty() {
+            return;
+        }
+        let current = option
+            .values
+            .iter()
+            .position(|(value, _)| *value == option.value)
+            .unwrap_or(0) as i32;
+        let next = (current + delta).rem_euclid(option.values.len() as i32) as usize;
+        let value = option.values[next].0.clone();
+        let display = option.values[next].1.clone();
+        let option_key = option.key.clone();
+        let core_key = self
+            .session
+            .as_ref()
+            .map(|session| session.core_key().to_string());
+        if let Some(session) = self.session.as_ref() {
+            session.set_core_option(&option_key, &value);
+        }
+        if let Some(core_key) = core_key {
+            self.settings
+                .core_options
+                .insert(format!("{core_key}:{option_key}"), value.clone());
+            let _ = self.settings.save(&self.paths.settings_json);
+        }
+        if let Some(option) = self.core_options.get_mut(index) {
+            option.value = value;
+        }
+        self.rebuild_settings_view();
+        self.model.status = format!("{option_key} = {display}");
+    }
+
     /// Rebuild the library rows from [`App::game_source`], applying the saved
     /// sort order. Pinned games always come first; the sort key only orders
     /// within the pinned and unpinned groups. Cheap enough to run on every sort
@@ -922,6 +981,16 @@ impl App {
             .unwrap_or_default();
         self.model.bindings_system = self.active_system.name().to_string();
         self.model.shader = self.shader;
+        self.model.core_options = self
+            .core_options
+            .iter()
+            .map(|option| CoreOptionRow {
+                key: option.key.clone(),
+                label: option.label.clone(),
+                values: option.values.clone(),
+                value: option.value.clone(),
+            })
+            .collect();
         // The running core's own input descriptors, when a game is loaded.
         self.model.core_inputs = self
             .session
@@ -1072,6 +1141,7 @@ impl App {
             self.session = None;
             self.cheats.clear();
             self.cheat_path = None;
+            self.core_options.clear();
             self.model.selected = None;
             self.model.playing = false;
             self.model.paused = false;
@@ -1339,6 +1409,7 @@ impl App {
                     self.dirty = true;
                 }
                 Action::SetShader(kind) => self.set_shader(kind),
+                Action::CycleCoreOption(index, delta) => self.cycle_core_option(index, delta),
                 Action::SaveState(slot) => {
                     self.model.status = match self.session.as_ref() {
                         Some(session) => match session.save_state(slot) {
@@ -1674,6 +1745,8 @@ impl App {
                 self.populate_cheats();
                 // The picture effect follows the session.
                 self.apply_shader();
+                // Core options are known only after load.
+                self.reload_core_options();
                 // Count the run and stamp it; this also re-points the selection
                 // at the row, which a sort by "recent" may have moved.
                 self.note_started(rom_path);
@@ -1791,6 +1864,11 @@ impl App {
             self.model.frame = session.frame();
             self.model.paused = session.paused();
             self.model.playing = true;
+            // A core message (SET_MESSAGE) goes to the status line.
+            if let Some(message) = session.take_message() {
+                self.model.status = message;
+                self.dirty = true;
+            }
         }
 
         if self.dirty {

@@ -14,7 +14,7 @@
 //! against the same header.
 #![allow(non_camel_case_types)]
 
-use std::os::raw::{c_char, c_uint, c_void};
+use std::os::raw::{c_char, c_int, c_uint, c_void};
 
 /// The libretro ABI version this header describes (`RETRO_API_VERSION`).
 pub const RETRO_API_VERSION: c_uint = 1;
@@ -37,6 +37,10 @@ pub const RETRO_ENVIRONMENT_GET_LOG_INTERFACE: c_uint = 27;
 pub const RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY: c_uint = 31;
 pub const RETRO_ENVIRONMENT_SET_CONTROLLER_INFO: c_uint = 35;
 pub const RETRO_ENVIRONMENT_SET_GEOMETRY: c_uint = 37;
+pub const RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION: c_uint = 52;
+pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS: c_uint = 53;
+pub const RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION: c_uint = 59;
+pub const RETRO_ENVIRONMENT_SET_MESSAGE_EXT: c_uint = 60;
 /// `RETRO_ENVIRONMENT_GET_INPUT_BITMASKS` is experimental (`51 | 0x10000`).
 pub const RETRO_ENVIRONMENT_EXPERIMENTAL: c_uint = 0x10000;
 pub const RETRO_ENVIRONMENT_GET_INPUT_BITMASKS: c_uint = 51 | RETRO_ENVIRONMENT_EXPERIMENTAL;
@@ -106,6 +110,47 @@ pub struct retro_game_info {
 pub struct retro_variable {
     pub key: *const c_char,
     pub value: *const c_char,
+}
+
+/// `struct retro_message`.
+#[repr(C)]
+pub struct retro_message {
+    pub msg: *const c_char,
+    pub frames: c_uint,
+}
+
+/// `struct retro_message_ext`.
+#[repr(C)]
+pub struct retro_message_ext {
+    pub msg: *const c_char,
+    pub duration: c_uint,
+    pub priority: c_uint,
+    pub level: c_uint,
+    pub target: c_uint,
+    pub progress: c_int,
+    pub type_: c_uint,
+}
+
+/// `struct retro_core_option_value`.
+#[repr(C)]
+pub struct retro_core_option_value {
+    pub value: *const c_char,
+    pub label: *const c_char,
+}
+
+/// `RETRO_NUM_CORE_OPTION_VALUES_MAX`.
+pub const RETRO_NUM_CORE_OPTION_VALUES_MAX: usize = 128;
+
+/// `struct retro_core_option_definition` (core options v1).
+///
+/// The array is terminated by an entry whose `key` is null.
+#[repr(C)]
+pub struct retro_core_option_definition {
+    pub key: *const c_char,
+    pub desc: *const c_char,
+    pub info: *const c_char,
+    pub values: [retro_core_option_value; RETRO_NUM_CORE_OPTION_VALUES_MAX],
+    pub default_value: *const c_char,
 }
 
 /// `struct retro_input_descriptor`.

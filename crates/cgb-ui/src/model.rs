@@ -302,6 +302,16 @@ pub struct InputDescriptorRow {
     pub description: String,
 }
 
+/// One core option, for the settings page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CoreOptionRow {
+    pub key: String,
+    pub label: String,
+    /// The `(value, label)` choices.
+    pub values: Vec<(String, String)>,
+    pub value: String,
+}
+
 /// A registered framebuffer texture and its size.
 ///
 /// The texture is registered in the wgpu backend by the app; the view only
@@ -368,6 +378,8 @@ pub struct ViewModel {
     pub core_inputs: Vec<InputDescriptorRow>,
     /// The post-process preset for the game picture.
     pub shader: ShaderKind,
+    /// The running core's options, for the settings page.
+    pub core_options: Vec<CoreOptionRow>,
 }
 
 impl Default for ViewModel {
@@ -401,6 +413,7 @@ impl Default for ViewModel {
             bindings_system: String::new(),
             core_inputs: Vec::new(),
             shader: ShaderKind::Off,
+            core_options: Vec::new(),
         }
     }
 }
@@ -418,6 +431,8 @@ pub enum Action {
     Rewind,
     /// Pick the post-process preset for the game picture.
     SetShader(ShaderKind),
+    /// Cycle the core option at this index by `+1` / `-1`.
+    CycleCoreOption(usize, i32),
     /// Write a save state to a slot (`0` is the quick slot).
     SaveState(u8),
     /// Restore a save state from a slot.
