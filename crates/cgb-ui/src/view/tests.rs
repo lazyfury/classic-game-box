@@ -12,6 +12,7 @@ use crate::model::{
     BindingRow, CheatRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow, SaveSlotRow,
     ScreenshotRow, ShaderKind, SortKey, SystemCount,
 };
+use crate::theme::ThemeChoice;
 use cgb_systems::SystemId;
 use draw_components::{Component, Flex};
 use draw_core::{InputEvent, PointerButton, Size, Vec2};
@@ -921,6 +922,24 @@ fn the_settings_page_shows_the_library_and_cores() {
     assert!(has("/roms/nes"), "the library folder is shown");
     assert!(has("Mesen"), "the selected core is shown in the pull-down");
     assert!(has("X / K"), "the binding is shown");
+}
+
+/// The appearance section switches the theme family and the light / dark look.
+#[test]
+fn the_settings_page_switches_the_theme_and_appearance() {
+    let actions = Actions::default();
+    let model = ViewModel {
+        section: Section::Settings,
+        ..ViewModel::default()
+    };
+    let (mut tree, list) = laid_out(&model, &actions);
+    click(&mut tree, text_position(&list, "浅色"));
+    assert_eq!(actions.drain(), vec![Action::SetLight(true)]);
+    click(&mut tree, text_position(&list, "默认"));
+    assert_eq!(
+        actions.drain(),
+        vec![Action::SetThemeChoice(ThemeChoice::Default)]
+    );
 }
 
 /// The grid mounts a window of rows, not the whole library.

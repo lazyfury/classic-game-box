@@ -9,10 +9,10 @@ use draw_theme::{space, Theme, Tone};
 use draw_ui::{Align, MouseFilter};
 
 use crate::model::{Action, ShaderKind, ViewModel};
+use crate::theme::ThemeChoice;
 
+use super::components::{chip, chip_group};
 use super::Actions;
-
-use super::components::chip;
 
 pub(super) fn settings_page(
     theme: &'static dyn Theme,
@@ -49,6 +49,35 @@ pub(super) fn settings_page(
                 Button::secondary("切换游戏库…", theme)
                     .on_click(move || switch.push(Action::SwitchLibrary)),
             ),
+    );
+
+    // Appearance: the theme family and light / dark.
+    let mut theme_chips = chip_group();
+    for choice in ThemeChoice::ALL {
+        let pick = actions.clone();
+        theme_chips = theme_chips.child(
+            chip(theme, choice.label(), model.theme_choice == choice)
+                .on_click(move || pick.push(Action::SetThemeChoice(choice))),
+        );
+    }
+    let mut look_chips = chip_group();
+    for light in [false, true] {
+        let pick = actions.clone();
+        let label = if light { "浅色" } else { "深色" };
+        look_chips = look_chips.child(
+            chip(theme, label, model.light == light)
+                .on_click(move || pick.push(Action::SetLight(light))),
+        );
+    }
+    body = body.child(
+        Card::new(theme)
+            .gap(space::SM)
+            .padding(Edges::all(space::SM))
+            .child(Text::subheading("外观", theme))
+            .child(Text::caption("主题", theme).tone(Tone::Muted))
+            .child(theme_chips)
+            .child(Text::caption("明暗", theme).tone(Tone::Muted))
+            .child(look_chips),
     );
 
     // One core pick per console. The selected one is the core that would run

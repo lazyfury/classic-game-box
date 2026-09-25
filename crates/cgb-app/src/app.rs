@@ -17,7 +17,7 @@ use draw_backend_wgpu::{wgpu, FontConfig, FontMetrics, FontMode, TextureEffect, 
 use draw_core::{FontWeight, InputEvent, Key, PointerButton, Size, Vec2, ViewportSize};
 use draw_profile::{inspect, FrameCounters, FrameStats, Profiler, StageTimes};
 use draw_render::{DrawList, PaintContext, RenderBackend, TextureId};
-use draw_theme::{default_theme, Mode, Theme};
+use draw_theme::{Mode, Theme};
 use draw_ui::TextMeasurer;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
@@ -37,8 +37,8 @@ use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId
 use cgb_ui::{
     library_columns, Action, Actions, BindingRow, Confirm, CoreOptionRow, CoreRow, EditKind,
     EditState, FrameHandle, GameRow, InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow,
-    Section, ShaderKind, SortKey, StatusKind, SystemCount, Ui, ViewModel, MIDDLE_MAX_WIDTH,
-    MIDDLE_MIN_WIDTH,
+    Section, ShaderKind, SortKey, StatusKind, SystemCount, ThemeChoice, Ui, ViewModel,
+    MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
 };
 
 use crate::cli::{Args, CoreOverride};
@@ -135,6 +135,10 @@ struct App {
     cursor: Vec2,
 
     theme: &'static dyn Theme,
+    /// The theme family and light/dark appearance in use, so the settings page
+    /// can switch them and the choice is remembered.
+    theme_choice: ThemeChoice,
+    light: bool,
     actions: Actions,
     model: ViewModel,
     ui: Ui,
@@ -242,9 +246,25 @@ impl App {
             settings.library_root = Some(root);
             settings_changed = true;
         }
+        // The theme: a CLI pick (or `--light`) overrides the saved preference
+        // and then sticks the same way a settings-page change does.
+        if let Some(choice) = args.theme {
+            settings.theme = Some(choice.key().to_string());
+            settings_changed = true;
+        }
+        if args.light && !settings.light {
+            settings.light = true;
+            settings_changed = true;
+        }
         if settings_changed {
             let _ = settings.save(&paths.settings_json);
         }
+        let theme_choice = settings
+            .theme
+            .as_deref()
+            .and_then(ThemeChoice::parse)
+            .unwrap_or_default();
+        let light = settings.light;
         let shader = ShaderKind::from_key(&settings.shader);
         let middle_width = if settings.middle_width > 0.0 {
             settings
@@ -257,11 +277,14 @@ impl App {
         let cores = load_core_manifest(&paths);
 
         let actions = Actions::default();
-        let theme = default_theme(Mode::Dark);
+        let mode = if light { Mode::Light } else { Mode::Dark };
+        let theme = theme_choice.theme(mode);
         let model = ViewModel {
             core_name: "—".to_string(),
             middle_width,
             grid_columns: library_columns(middle_width),
+            theme_choice,
+            light,
             ..ViewModel::default()
         };
         let ui = Ui::new(theme, &model, &actions);
@@ -275,6 +298,8 @@ impl App {
             scale_factor: 1.0,
             cursor: Vec2::ZERO,
             theme,
+            theme_choice,
+            light,
             actions,
             model,
             ui,
@@ -379,7 +404,7 @@ impl App {
 
         self.scale_factor = window.scale_factor();
         backend.set_scale_factor(self.scale_factor as f32);
-        backend.set_clear_color(draw_core::Color::new(0.039, 0.039, 0.039, 1.0));
+        backend.set_clear_color(self.theme.background());
         if let Err(error) = backend.set_font_config(FontConfig {
             mode: FontMode::System,
             device_pixel_rasterization: true,
@@ -963,6 +988,27 @@ impl App {
             .set_status(format!("画面效果：{}", kind.label()), StatusKind::Info);
     }
 
+    /// Switch the UI theme / appearance, persist it and rebuild so the change
+    /// shows immediately (a theme switch also rebuilds the overlays).
+    fn set_theme(&mut self, choice: ThemeChoice, light: bool) {
+        self.theme_choice = choice;
+        self.light = light;
+        self.settings.theme = Some(choice.key().to_string());
+        self.settings.light = light;
+        let _ = self.settings.save(&self.paths.settings_json);
+        self.theme = choice.theme(if light { Mode::Light } else { Mode::Dark });
+        if let Some(backend) = self.backend.as_mut() {
+            backend.set_clear_color(self.theme.background());
+        }
+        self.rebuild_settings_view();
+        self.dirty = true;
+        let label = if light { "浅色" } else { "深色" };
+        self.model.set_status(
+            format!("外观：{} · {label}", choice.label()),
+            StatusKind::Info,
+        );
+    }
+
     /// Apply the current preset to the running game's texture.
     fn apply_shader(&mut self) {
         let Some(session) = self.session.as_ref() else {
@@ -1112,6 +1158,8 @@ impl App {
             .unwrap_or_default();
         self.model.bindings_system = self.active_system.name().to_string();
         self.model.shader = self.shader;
+        self.model.theme_choice = self.theme_choice;
+        self.model.light = self.light;
         self.model.core_options = self
             .core_options
             .iter()
@@ -1648,6 +1696,8 @@ impl App {
                     self.dirty = true;
                 }
                 Action::SetShader(kind) => self.set_shader(kind),
+                Action::SetThemeChoice(choice) => self.set_theme(choice, self.light),
+                Action::SetLight(light) => self.set_theme(self.theme_choice, light),
                 Action::CycleCoreOption(index, delta) => self.cycle_core_option(index, delta),
                 Action::SaveState(slot) => {
                     let (message, kind) = match self.session.as_ref() {

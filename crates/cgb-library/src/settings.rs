@@ -46,6 +46,11 @@ pub struct Settings {
     /// The game-picture post-process preset key (`"scanlines"`, `"crt"`, …);
     /// an unknown key means no effect.
     pub shader: String,
+    /// The UI theme key (`"game"` / `"default"`); an unknown or missing key
+    /// means the app picks its own default.
+    pub theme: Option<String>,
+    /// Whether the light appearance is used (default: dark).
+    pub light: bool,
     /// Remembered core options, keyed by `"<core key>:<option key>"`.
     pub core_options: BTreeMap<String, String>,
     /// The middle column's width in logical pixels (0 means the default).

@@ -12,6 +12,7 @@
 use std::path::PathBuf;
 
 use cgb_systems::CoreSpec;
+use cgb_ui::ThemeChoice;
 
 /// Everything the process was asked to do at startup.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -25,6 +26,11 @@ pub struct Args {
     /// the whole library. Omitted, the remembered library (or the first
     /// scanned folder) is used.
     pub library_dir: Option<PathBuf>,
+    /// Which theme to paint with (`--theme`): the custom house style or the
+    /// library default. `None` keeps the saved preference.
+    pub theme: Option<ThemeChoice>,
+    /// Use the light appearance instead of the dark one (`--light`).
+    pub light: bool,
     /// Run the headless checks and exit, without opening a window.
     pub selfcheck: bool,
 }
@@ -45,7 +51,7 @@ Classic Game Box
 
 USAGE:
     classic-game-box [--rom <path>] [--core <key|module>] [--library-dir <path>]
-                     [--selfcheck]
+                     [--theme <name>] [--light] [--selfcheck]
 
 OPTIONS:
     --rom <path>          Load a ROM at startup (also accepted positionally).
@@ -54,6 +60,9 @@ OPTIONS:
     --library-dir <path>  Use this game library folder: the database,
                           screenshots, saves and cheats live under it. The
                           pick is remembered for later runs.
+    --theme <name>        Theme: game (custom house style, default) or default
+                          (the library's built-in palette).
+    --light               Use the light appearance (default: dark).
     --selfcheck           Run the headless checks (paths, library, settings,
                           cores, icons) and exit; opens no window.
     -h, --help            Print this help.
@@ -77,6 +86,14 @@ impl Args {
                     out.library_dir =
                         Some(PathBuf::from(require_value("--library-dir", &mut iter)?))
                 }
+                "--theme" => {
+                    let value = require_value("--theme", &mut iter)?;
+                    out.theme =
+                        Some(ThemeChoice::parse(&value).ok_or_else(|| {
+                            format!("未知主题 `{value}`（可用：default | game）")
+                        })?);
+                }
+                "--light" => out.light = true,
                 "--selfcheck" => out.selfcheck = true,
                 other if other.starts_with('-') => return Err(format!("未知参数：{other}")),
                 other if out.rom.is_none() => out.rom = Some(PathBuf::from(other)),
@@ -145,6 +162,23 @@ mod tests {
     #[test]
     fn selfcheck_parses() {
         assert!(parse(&["--selfcheck"]).unwrap().selfcheck);
+    }
+
+    #[test]
+    fn theme_and_appearance_flags_parse() {
+        assert_eq!(
+            parse(&["--theme", "game"]).unwrap().theme,
+            Some(ThemeChoice::Game)
+        );
+        assert_eq!(
+            parse(&["--theme", "default"]).unwrap().theme,
+            Some(ThemeChoice::Default)
+        );
+        assert_eq!(Args::default().theme, None);
+        assert!(!Args::default().light);
+        assert!(parse(&["--light"]).unwrap().light);
+        assert!(parse(&["--theme", "nope"]).is_err());
+        assert!(parse(&["--theme"]).is_err());
     }
 
     #[test]

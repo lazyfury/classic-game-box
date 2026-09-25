@@ -5,6 +5,8 @@ use cgb_systems::SystemId;
 use draw_core::{NodeId, Vec2};
 use draw_render::TextureId;
 
+use crate::theme::ThemeChoice;
+
 /// Which page the middle column is showing. The console is the right column
 /// and is always there, so it is not a section.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -422,6 +424,9 @@ pub struct ViewModel {
     pub core_inputs: Vec<InputDescriptorRow>,
     /// The post-process preset for the game picture.
     pub shader: ShaderKind,
+    /// The UI theme family, and whether the light appearance is used.
+    pub theme_choice: ThemeChoice,
+    pub light: bool,
     /// The running core's options, for the settings page.
     pub core_options: Vec<CoreOptionRow>,
     /// The middle column's initial width in logical pixels. The live width is
@@ -479,6 +484,8 @@ impl Default for ViewModel {
             bindings_system: String::new(),
             core_inputs: Vec::new(),
             shader: ShaderKind::Off,
+            theme_choice: ThemeChoice::default(),
+            light: false,
             core_options: Vec::new(),
             middle_width: 320.0,
             grid_columns: 2,
@@ -501,6 +508,10 @@ pub enum Action {
     Rewind,
     /// Pick the post-process preset for the game picture.
     SetShader(ShaderKind),
+    /// Pick the UI theme family.
+    SetThemeChoice(ThemeChoice),
+    /// Switch the light / dark appearance.
+    SetLight(bool),
     /// Cycle the core option at this index by `+1` / `-1`.
     CycleCoreOption(usize, i32),
     /// Write a save state to a slot (`0` is the quick slot).

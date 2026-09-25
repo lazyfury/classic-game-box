@@ -11,6 +11,7 @@
 mod frame;
 mod icons;
 mod model;
+mod theme;
 mod view;
 
 pub use frame::{centered_fit, contain_fit, cover_fit, FrameImage};
@@ -20,6 +21,7 @@ pub use model::{
     FrameHandle, GameRow, InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow, Section,
     ShaderKind, SortKey, StatusKind, SystemCount, ViewModel,
 };
+pub use theme::{game_theme, ThemeChoice};
 pub use view::{
     grid_window, library_columns, Actions, MAX_LIBRARY_COLUMNS, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
     MIN_LIBRARY_COLUMNS,
@@ -134,8 +136,14 @@ impl Ui {
             &self.resize_handle,
             &self.mounted_rows,
         );
+        let retheme = !std::ptr::eq(self.theme, theme);
         self.tree = tree;
         self.theme = theme;
+        // Overlays hold the theme they were built with, so a theme switch (the
+        // settings page) rebuilds them; a plain rebuild keeps them.
+        if retheme {
+            self.overlays = Overlays::new(theme);
+        }
         // NodeIds from the old tree are dead, so any anchored overlay (tip or
         // menu) would point at nothing; close them and re-collect tooltips.
         self.overlays.close_all();
@@ -630,6 +638,25 @@ mod tests {
         ui.layout(viewport);
         let after = ui.middle_scroll.as_ref().unwrap().offset();
         assert_eq!(after, before, "the offset survives the rebuild");
+    }
+
+    /// Switching the theme at runtime rebuilds with the new palette (and its
+    /// overlays) rather than keeping the old one.
+    #[test]
+    fn a_retheme_swaps_the_active_theme() {
+        let actions = Actions::default();
+        let model = ViewModel::default();
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+        let mut ui = Ui::new(default_theme(Mode::Dark), &model, &actions);
+        ui.layout(viewport);
+
+        ui.rebuild(game_theme(Mode::Dark), &model, &actions);
+        ui.layout(viewport);
+        assert_eq!(
+            ui.theme.palette().accent.to_rgba8(),
+            [0xFF, 0xB0, 0x20, 0xFF],
+            "the custom accent is active after the switch"
+        );
     }
 
     /// Switching pages must not carry the library's offset into the settings
