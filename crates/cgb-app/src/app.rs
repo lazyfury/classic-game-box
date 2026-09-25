@@ -37,7 +37,7 @@ use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId
 use cgb_ui::{
     library_columns, Action, Actions, BindingRow, Confirm, CoreOptionRow, CoreRow, EditKind,
     EditState, FrameHandle, GameRow, InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow,
-    Section, ShaderKind, SortKey, Ui, ViewModel, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
+    Section, ShaderKind, SortKey, StatusKind, Ui, ViewModel, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
 };
 
 use crate::cli::{Args, CoreOverride};
@@ -172,6 +172,8 @@ struct App {
     /// Whether the current screenshot preview paused a running game, so it can
     /// be resumed when the preview closes.
     preview_paused: bool,
+    /// The destructive action the open confirmation dialog is asking about.
+    pending_confirm: Option<Confirm>,
     input: InputState,
     /// Keyboard bindings, one set per console (a NES and a GBA layout differ).
     bindings: HashMap<SystemId, KeyboardBindings>,
@@ -267,6 +269,7 @@ impl App {
             selected_shots: Vec::new(),
             screenshot_select: false,
             preview_paused: false,
+            pending_confirm: None,
             input: InputState::new(),
             bindings: cgb_systems::SYSTEMS
                 .iter()
@@ -695,7 +698,8 @@ impl App {
             let _ = library.set_cover(id);
         }
         self.reload_from_db();
-        self.model.status = "已设为封面".to_string();
+        self.model
+            .set_status("已设为封面".to_string(), StatusKind::Success);
     }
 
     /// Delete a screenshot (row and file).
@@ -707,7 +711,8 @@ impl App {
             self.close_preview();
         }
         self.reload_from_db();
-        self.model.status = "已删除截图".to_string();
+        self.model
+            .set_status("已删除截图".to_string(), StatusKind::Success);
     }
 
     /// Delete every ticked screenshot, then leave select mode.
@@ -724,7 +729,8 @@ impl App {
         self.selected_shots.clear();
         self.screenshot_select = false;
         self.reload_from_db();
-        self.model.status = format!("已删除 {count} 张截图");
+        self.model
+            .set_status(format!("已删除 {count} 张截图"), StatusKind::Success);
     }
 
     /// Reveal a screenshot's file in the platform file browser.
@@ -747,26 +753,28 @@ impl App {
     /// Write a save state to a slot, with a thumbnail.
     fn save_to_slot(&mut self, slot: u8) {
         self.flush_playtime();
-        self.model.status = match self.session.as_ref() {
+        let (message, kind) = match self.session.as_ref() {
             Some(session) => match session.save_state(slot) {
-                Ok(()) => format!("已存档（槽位 {}）", slot + 1),
-                Err(error) => error,
+                Ok(()) => (format!("已存档（槽位 {}）", slot + 1), StatusKind::Success),
+                Err(error) => (error, StatusKind::Error),
             },
-            None => "没有正在运行的游戏".to_string(),
+            None => ("没有正在运行的游戏".to_string(), StatusKind::Info),
         };
+        self.model.set_status(message, kind);
         self.refresh_saves();
         self.dirty = true;
     }
 
     /// Load a save state from a slot.
     fn load_from_slot(&mut self, slot: u8) {
-        self.model.status = match self.session.as_ref() {
+        let (message, kind) = match self.session.as_ref() {
             Some(session) => match session.load_state(slot) {
-                Ok(()) => format!("已读档（槽位 {}）", slot + 1),
-                Err(error) => error,
+                Ok(()) => (format!("已读档（槽位 {}）", slot + 1), StatusKind::Success),
+                Err(error) => (error, StatusKind::Error),
             },
-            None => "没有正在运行的游戏".to_string(),
+            None => ("没有正在运行的游戏".to_string(), StatusKind::Info),
         };
+        self.model.set_status(message, kind);
         self.dirty = true;
     }
 
@@ -775,7 +783,10 @@ impl App {
         if let Some(session) = self.session.as_ref() {
             session.delete_save(slot);
         }
-        self.model.status = format!("已删除存档（槽位 {}）", slot + 1);
+        self.model.set_status(
+            format!("已删除存档（槽位 {}）", slot + 1),
+            StatusKind::Success,
+        );
         self.refresh_saves();
         self.dirty = true;
     }
@@ -854,7 +865,8 @@ impl App {
     /// Import a RetroArch `.cht` for the running game, replacing its list.
     fn import_cheats(&mut self) {
         let Some(path) = self.cheat_path.clone() else {
-            self.model.status = "没有正在运行的游戏".to_string();
+            self.model
+                .set_status("没有正在运行的游戏".to_string(), StatusKind::Info);
             self.dirty = true;
             return;
         };
@@ -866,13 +878,15 @@ impl App {
             return;
         };
         let Ok(text) = std::fs::read_to_string(&file) else {
-            self.model.status = "读取金手指文件失败".to_string();
+            self.model
+                .set_status("读取金手指文件失败".to_string(), StatusKind::Error);
             self.dirty = true;
             return;
         };
         let cheats = cgb_library::parse_cht(&text);
         if cheats.is_empty() {
-            self.model.status = "文件里没有可用的金手指".to_string();
+            self.model
+                .set_status("文件里没有可用的金手指".to_string(), StatusKind::Error);
             self.dirty = true;
             return;
         }
@@ -883,7 +897,8 @@ impl App {
             session.apply_cheats(&self.cheats);
         }
         self.populate_cheats();
-        self.model.status = format!("已导入 {count} 条金手指");
+        self.model
+            .set_status(format!("已导入 {count} 条金手指"), StatusKind::Success);
     }
 
     /// Enable or disable one cheat on the running core, and persist the list.
@@ -903,7 +918,10 @@ impl App {
             session.apply_cheats(&self.cheats);
         }
         self.populate_cheats();
-        self.model.status = format!("{}：{desc}", if enabled { "已开启" } else { "已关闭" });
+        self.model.set_status(
+            format!("{}：{desc}", if enabled { "已开启" } else { "已关闭" }),
+            StatusKind::Success,
+        );
     }
 
     /// Pick the picture post-process, persist it, and apply it.
@@ -913,7 +931,8 @@ impl App {
         let _ = self.settings.save(&self.paths.settings_json);
         self.apply_shader();
         self.rebuild_settings_view();
-        self.model.status = format!("画面效果：{}", kind.label());
+        self.model
+            .set_status(format!("画面效果：{}", kind.label()), StatusKind::Info);
     }
 
     /// Apply the current preset to the running game's texture.
@@ -980,7 +999,8 @@ impl App {
             option.value = value;
         }
         self.rebuild_settings_view();
-        self.model.status = format!("{option_key} = {display}");
+        self.model
+            .set_status(format!("{option_key} = {display}"), StatusKind::Info);
     }
 
     /// Rebuild the library rows from [`App::game_source`], applying the saved
@@ -1131,7 +1151,8 @@ impl App {
             let _ = self.settings.save(&self.paths.settings_json);
         }
         self.reload_library();
-        self.model.status = import_status(&report, dirs_added);
+        self.model
+            .set_status(import_status(&report, dirs_added), StatusKind::Info);
     }
 
     /// Add any files dropped since the last frame, in one batch.
@@ -1173,7 +1194,7 @@ impl App {
             "已取消置顶"
         };
         let message = format!("{verb}：{}", self.name_of(&path));
-        self.model.status = message;
+        self.model.set_status(message, StatusKind::Info);
     }
 
     /// Delete a game outright: remove the ROM file, forget it in the settings
@@ -1188,7 +1209,8 @@ impl App {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => {
-                self.model.status = format!("删除失败：{error}");
+                self.model
+                    .set_status(format!("删除失败：{error}"), StatusKind::Error);
                 self.dirty = true;
                 return;
             }
@@ -1212,7 +1234,8 @@ impl App {
             let _ = library.remove(&path);
         }
         self.reload_library();
-        self.model.status = format!("已删除：{name}");
+        self.model
+            .set_status(format!("已删除：{name}"), StatusKind::Success);
     }
 
     /// The display name of a library path, for status messages; falls back to
@@ -1247,7 +1270,10 @@ impl App {
         let (system, key) = (row.system, row.key.clone());
         self.settings.set_core_key(system, Some(&key));
         let _ = self.settings.save(&self.paths.settings_json);
-        self.model.status = format!("{} 的核心已切换为 {key}", system.short());
+        self.model.set_status(
+            format!("{} 的核心已切换为 {key}", system.short()),
+            StatusKind::Success,
+        );
         self.rebuild_settings_view();
     }
 
@@ -1308,20 +1334,23 @@ impl App {
     /// new picture the game's cover.
     fn capture_screenshot(&mut self, as_cover: bool) {
         let Some(session) = self.session.as_ref() else {
-            self.model.status = "没有正在运行的游戏".to_string();
+            self.model
+                .set_status("没有正在运行的游戏".to_string(), StatusKind::Info);
             self.dirty = true;
             return;
         };
         let rom_path = session.rom_path().to_string_lossy().into_owned();
         let Some((width, height, pixels)) = session.last_pixels() else {
-            self.model.status = "还没有画面可以截图".to_string();
+            self.model
+                .set_status("还没有画面可以截图".to_string(), StatusKind::Info);
             self.dirty = true;
             return;
         };
         let png = match encode_png(width, height, pixels) {
             Ok(png) => png,
             Err(error) => {
-                self.model.status = format!("截图失败：{error}");
+                self.model
+                    .set_status(format!("截图失败：{error}"), StatusKind::Error);
                 self.dirty = true;
                 return;
             }
@@ -1335,26 +1364,30 @@ impl App {
                 as_cover,
             ),
             None => {
-                self.model.status = "游戏库不可用".to_string();
+                self.model
+                    .set_status("游戏库不可用".to_string(), StatusKind::Error);
                 self.dirty = true;
                 return;
             }
         };
         match saved {
             Ok(Some(_)) => {
-                self.model.status = if as_cover {
-                    "已截图并设为封面".to_string()
+                let message = if as_cover {
+                    "已截图并设为封面"
                 } else {
-                    "已截图".to_string()
+                    "已截图"
                 };
+                self.model.set_status(message, StatusKind::Success);
                 self.reload_from_db();
             }
             Ok(None) => {
-                self.model.status = "该游戏不在游戏库中".to_string();
+                self.model
+                    .set_status("该游戏不在游戏库中".to_string(), StatusKind::Info);
                 self.dirty = true;
             }
             Err(error) => {
-                self.model.status = format!("截图失败：{error}");
+                self.model
+                    .set_status(format!("截图失败：{error}"), StatusKind::Error);
                 self.dirty = true;
             }
         }
@@ -1386,13 +1419,41 @@ impl App {
     /// Route one input event: the UI first, then the emulator bindings.
     fn feed(&mut self, event: &InputEvent) {
         let scroll_before = self.ui.scroll_offset();
-        self.ui.route_input(event);
-        // The keyboard feeds the binding set for the console in the machine.
-        if let Some(bindings) = self.bindings.get(&self.active_system) {
-            match event {
-                InputEvent::KeyDown { key } => bindings.apply(*key, true, &mut self.input, 0),
-                InputEvent::KeyUp { key } => bindings.apply(*key, false, &mut self.input, 0),
-                _ => {}
+        let captured = self
+            .session
+            .as_ref()
+            .is_some_and(|session| !session.paused());
+        let keyboard = matches!(event, InputEvent::KeyDown { .. } | InputEvent::KeyUp { .. });
+        // An open overlay owns the event first, even while a game captures the
+        // keyboard: a menu opened from the UI must close on Escape.
+        if !self.ui.route_overlay_input(event) {
+            if captured && keyboard {
+                // The running game owns the keyboard; Escape is the one way
+                // back to the UI.
+                if matches!(event, InputEvent::KeyDown { key: Key::Escape }) {
+                    self.escape_game();
+                } else if let Some(bindings) = self.bindings.get(&self.active_system) {
+                    match event {
+                        InputEvent::KeyDown { key } => {
+                            bindings.apply(*key, true, &mut self.input, 0)
+                        }
+                        InputEvent::KeyUp { key } => {
+                            bindings.apply(*key, false, &mut self.input, 0)
+                        }
+                        _ => {}
+                    }
+                }
+            } else {
+                // No game, or paused: the UI owns the keyboard. Tab moves the
+                // focus; Enter / Space activate the focused control.
+                if !self.ui.route_ui_input(event)
+                    && matches!(event, InputEvent::KeyDown { key: Key::Tab })
+                {
+                    self.ui.move_focus(self.modifiers.shift_key());
+                }
+                if matches!(event, InputEvent::KeyDown { key: Key::Escape }) {
+                    self.escape_game();
+                }
             }
         }
         self.handle_actions();
@@ -1443,8 +1504,30 @@ impl App {
 
     /// Act on whatever the UI recorded this event.
     fn handle_actions(&mut self) {
-        for action in self.actions.drain() {
+        let actions = self.actions.drain();
+        if actions.is_empty() {
+            return;
+        }
+        let mut opened_overlay = false;
+        for action in actions {
             match action {
+                Action::GameContextMenu { index, position } => {
+                    if let Some(game) = self.model.games.get(index) {
+                        self.ui
+                            .open_game_menu(self.theme, game, index, position, &self.actions);
+                    }
+                    opened_overlay = true;
+                }
+                Action::OpenCoreMenu { system, anchor } => {
+                    self.ui.open_core_menu(
+                        self.theme,
+                        system,
+                        anchor,
+                        &self.model.cores,
+                        &self.actions,
+                    );
+                    opened_overlay = true;
+                }
                 Action::Show(section) => {
                     let changed = self.model.section != section;
                     self.model.section = section;
@@ -1505,23 +1588,25 @@ impl App {
                 Action::SetShader(kind) => self.set_shader(kind),
                 Action::CycleCoreOption(index, delta) => self.cycle_core_option(index, delta),
                 Action::SaveState(slot) => {
-                    self.model.status = match self.session.as_ref() {
+                    let (message, kind) = match self.session.as_ref() {
                         Some(session) => match session.save_state(slot) {
-                            Ok(()) => format!("已存档（槽位 {slot}）"),
-                            Err(error) => error,
+                            Ok(()) => (format!("已存档（槽位 {slot}）"), StatusKind::Success),
+                            Err(error) => (error, StatusKind::Error),
                         },
-                        None => "没有正在运行的游戏".to_string(),
+                        None => ("没有正在运行的游戏".to_string(), StatusKind::Info),
                     };
+                    self.model.set_status(message, kind);
                     self.dirty = true;
                 }
                 Action::LoadState(slot) => {
-                    self.model.status = match self.session.as_ref() {
+                    let (message, kind) = match self.session.as_ref() {
                         Some(session) => match session.load_state(slot) {
-                            Ok(()) => format!("已读档（槽位 {slot}）"),
-                            Err(error) => error,
+                            Ok(()) => (format!("已读档（槽位 {slot}）"), StatusKind::Success),
+                            Err(error) => (error, StatusKind::Error),
                         },
-                        None => "没有正在运行的游戏".to_string(),
+                        None => ("没有正在运行的游戏".to_string(), StatusKind::Info),
                     };
+                    self.model.set_status(message, kind);
                     self.dirty = true;
                 }
                 Action::AddGames => self.add_games_dialog(),
@@ -1530,14 +1615,16 @@ impl App {
                 Action::RemoveLibraryDir(index) => self.remove_library_dir(index),
                 Action::TogglePin(index) => self.toggle_pin(index),
                 Action::RequestDelete(confirm) => {
-                    self.model.confirm = Some(confirm);
-                    self.dirty = true;
+                    self.pending_confirm = Some(confirm);
+                    self.ui.confirm_destructive(
+                        confirm.title(),
+                        confirm.message(),
+                        Action::ConfirmDelete,
+                        &self.actions,
+                    );
+                    opened_overlay = true;
                 }
                 Action::ConfirmDelete => self.confirm_delete(),
-                Action::CancelDelete => {
-                    self.model.confirm = None;
-                    self.dirty = true;
-                }
                 Action::StartRename(id) => self.start_edit(id, EditKind::Name),
                 Action::StartTagEdit(id) => self.start_edit(id, EditKind::Tags),
                 Action::StartSearch => self.start_search(),
@@ -1584,11 +1671,15 @@ impl App {
                 Action::ToggleCheat(index) => self.toggle_cheat(index),
             }
         }
+        // A menu item action closes the menu; opening one keeps it.
+        if !opened_overlay {
+            self.ui.close_overlays();
+        }
     }
 
-    /// Run the destructive action the confirmation bar was asking about.
+    /// Run the destructive action the confirmation dialog was asking about.
     fn confirm_delete(&mut self) {
-        let Some(confirm) = self.model.confirm.take() else {
+        let Some(confirm) = self.pending_confirm.take() else {
             return;
         };
         self.dirty = true;
@@ -1596,6 +1687,35 @@ impl App {
             Confirm::DeleteGame(id) => self.delete_game(id),
             Confirm::DeleteScreenshot(id) => self.remove_screenshot(id),
         }
+    }
+
+    /// Escape while a game is running: pause it so the keyboard returns to the
+    /// UI, or resume a paused one. In fullscreen it also leaves fullscreen, so
+    /// Escape is always "give me back the window".
+    fn escape_game(&mut self) {
+        let Some(paused) = self.session.as_mut().map(|session| {
+            session.toggle_pause();
+            session.paused()
+        }) else {
+            return;
+        };
+        if paused {
+            self.flush_playtime();
+        }
+        self.model.paused = paused;
+        self.model.set_status(
+            if paused {
+                "已暂停（再按 Esc 继续）"
+            } else {
+                "已继续"
+            },
+            StatusKind::Info,
+        );
+        if self.model.fullscreen {
+            self.toggle_fullscreen();
+        }
+        self.dirty = true;
+        self.ui.request_repaint();
     }
 
     /// Begin editing a game's name or tags; the app takes the keyboard.
@@ -1653,11 +1773,12 @@ impl App {
         };
         // A search is applied as it is typed; committing just closes it.
         if edit.kind == EditKind::Search {
-            self.model.status = if self.model.search.is_empty() {
+            let message = if self.model.search.is_empty() {
                 String::new()
             } else {
                 format!("搜索：{}", self.model.search)
             };
+            self.model.set_status(message, StatusKind::Info);
             self.dirty = true;
             return;
         }
@@ -1673,7 +1794,8 @@ impl App {
             EditKind::Name => {
                 let name = edit.text.trim().to_string();
                 if name.is_empty() {
-                    self.model.status = "名字不能为空".to_string();
+                    self.model
+                        .set_status("名字不能为空".to_string(), StatusKind::Error);
                     self.dirty = true;
                     return;
                 }
@@ -1687,7 +1809,8 @@ impl App {
                 {
                     game.name = name.clone();
                 }
-                self.model.status = format!("已改名为：{name}");
+                self.model
+                    .set_status(format!("已改名为：{name}"), StatusKind::Success);
             }
             EditKind::Tags => {
                 let tags: Vec<String> = edit
@@ -1707,7 +1830,10 @@ impl App {
                 {
                     game.tags = tags.clone();
                 }
-                self.model.status = format!("已更新标签（{} 个）", tags.len());
+                self.model.set_status(
+                    format!("已更新标签（{} 个）", tags.len()),
+                    StatusKind::Success,
+                );
             }
             EditKind::Search => {}
         }
@@ -1788,7 +1914,8 @@ impl App {
         let data = match std::fs::read(rom_path) {
             Ok(data) => data,
             Err(error) => {
-                self.model.status = format!("读取 ROM 失败：{error}");
+                self.model
+                    .set_status(format!("读取 ROM 失败：{error}"), StatusKind::Error);
                 self.dirty = true;
                 return;
             }
@@ -1797,16 +1924,19 @@ impl App {
         let spec = match self.resolve_core(rom_path) {
             Ok(spec) => spec,
             Err(status) => {
-                self.model.status = status;
+                self.model.set_status(status, StatusKind::Info);
                 self.dirty = true;
                 return;
             }
         };
 
         if !spec.module.is_file() {
-            self.model.status = format!(
-                "找不到核心 {}：先跑 ./scripts/build-cores.sh，或用 --core 指定模块",
-                spec.module.display()
+            self.model.set_status(
+                format!(
+                    "找不到核心 {}：先跑 ./scripts/build-cores.sh，或用 --core 指定模块",
+                    spec.module.display()
+                ),
+                StatusKind::Error,
             );
             self.model.core_name = spec.name.clone();
             self.dirty = true;
@@ -1852,7 +1982,10 @@ impl App {
                     session.apply_cheats(&self.cheats);
                 }
                 if !self.cheats.is_empty() {
-                    self.model.status = format!("已应用 {} 条金手指", self.cheats.len());
+                    self.model.set_status(
+                        format!("已应用 {} 条金手指", self.cheats.len()),
+                        StatusKind::Success,
+                    );
                 }
                 self.populate_cheats();
                 // The picture effect follows the session.
@@ -1868,7 +2001,7 @@ impl App {
             Err(error) => {
                 // An arcade ROM usually fails because its BIOS `.zip` is not in
                 // the system directory; say where to put it.
-                self.model.status = if self.active_system == SystemId::Arcade {
+                let message = if self.active_system == SystemId::Arcade {
                     format!(
                         "{error}（街机 ROM 需要对应的 BIOS .zip，放到 {}）",
                         self.paths.system.display()
@@ -1876,6 +2009,7 @@ impl App {
                 } else {
                     error
                 };
+                self.model.set_status(message, StatusKind::Error);
                 self.model.playing = false;
                 // A failed load leaves nothing to fill the immersive view.
                 self.set_fullscreen(false);
@@ -1976,6 +2110,8 @@ impl App {
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame).as_secs_f64().min(0.25);
         self.last_frame = now;
+        // Overlay timers (a message counting down) advance with the clock.
+        self.ui.update(dt as f32);
 
         self.step_gamepad();
 
@@ -2013,7 +2149,7 @@ impl App {
             self.model.playing = true;
             // A core message (SET_MESSAGE) goes to the status line.
             if let Some(message) = session.take_message() {
-                self.model.status = message;
+                self.model.set_status(message, StatusKind::Info);
                 self.dirty = true;
             }
         }
@@ -2189,6 +2325,17 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // An overlay with a timer (a message) or a fade needs frames even when
+        // no game is running.
+        if self.ui.overlays_animating() {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(
+                Instant::now() + Duration::from_millis(16),
+            ));
+            if let Some(window) = self.window.as_ref() {
+                window.request_redraw();
+            }
+            return;
+        }
         // A running game drives its own clock: wake at the next frame and draw.
         // Otherwise wait for an event and do nothing.
         match self.next_deadline() {
@@ -2278,19 +2425,6 @@ impl ApplicationHandler for App {
                 // Save-state hotkeys are app commands, not joypad bindings, and
                 // only fire on press (so a held key does not re-save).
                 if event.state == ElementState::Pressed {
-                    // Escape dismisses a pending delete confirmation, or leaves
-                    // the immersive view. Either way it is an app command, not
-                    // a joypad key.
-                    if matches!(event.logical_key, WinitKey::Named(NamedKey::Escape)) {
-                        if self.model.confirm.is_some() {
-                            self.model.confirm = None;
-                            self.dirty = true;
-                        } else if self.model.fullscreen {
-                            self.actions.push(Action::ToggleFullscreen);
-                            self.handle_actions();
-                            return;
-                        }
-                    }
                     if let Some(action) =
                         state_shortcut(&event.logical_key, self.modifiers.shift_key())
                     {

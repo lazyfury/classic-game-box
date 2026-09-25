@@ -2,6 +2,7 @@
 //! needs to know, so the view builder can be tested headlessly.
 
 use cgb_systems::SystemId;
+use draw_core::{NodeId, Vec2};
 use draw_render::TextureId;
 
 /// Which page the middle column is showing. The console is the right column
@@ -140,13 +141,33 @@ pub enum Confirm {
 }
 
 impl Confirm {
-    /// The question the confirmation bar asks.
-    pub fn message(self) -> &'static str {
+    /// The dialog's title.
+    pub fn title(self) -> &'static str {
         match self {
-            Confirm::DeleteGame(_) => "删除这个游戏？ROM 文件和它的截图都会被删除。",
-            Confirm::DeleteScreenshot(_) => "删除这张截图？",
+            Confirm::DeleteGame(_) => "删除游戏？",
+            Confirm::DeleteScreenshot(_) => "删除截图？",
         }
     }
+
+    /// The dialog's body: what the action does.
+    pub fn message(self) -> &'static str {
+        match self {
+            Confirm::DeleteGame(_) => "ROM 文件和它的截图都会被删除，此操作无法撤销。",
+            Confirm::DeleteScreenshot(_) => "这张截图会被删除，此操作无法撤销。",
+        }
+    }
+}
+
+/// How serious a status message is, so the status line can colour it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StatusKind {
+    /// Neutral information (the default).
+    #[default]
+    Info,
+    /// The action succeeded.
+    Success,
+    /// The action failed; the message says what went wrong.
+    Error,
 }
 
 /// One row in the library list.
@@ -344,6 +365,9 @@ pub struct ViewModel {
     pub core_name: String,
     pub frame: Option<FrameHandle>,
     pub status: String,
+    /// The severity of [`status`](Self::status), so the line can colour an
+    /// error differently from a success.
+    pub status_kind: StatusKind,
     /// Every screenshot, newest first. The section filters it by game.
     pub screenshots: Vec<ScreenshotRow>,
     /// The game whose screenshots the section shows, by game id. `None` falls
@@ -370,8 +394,6 @@ pub struct ViewModel {
     pub screenshot_select: bool,
     /// The screenshots ticked for a batch delete.
     pub selected_screenshots: Vec<i64>,
-    /// A destructive action waiting for confirmation, shown in a bar.
-    pub confirm: Option<Confirm>,
     /// An in-progress rename or tag edit, shown in a bar above the grid.
     pub editing: Option<EditState>,
     /// Every core in the manifest, for the settings picker.
@@ -397,6 +419,15 @@ pub struct ViewModel {
     pub grid_columns: usize,
 }
 
+impl ViewModel {
+    /// Set the status line's text and severity together, so its colour cannot
+    /// go stale.
+    pub fn set_status(&mut self, text: impl Into<String>, kind: StatusKind) {
+        self.status = text.into();
+        self.status_kind = kind;
+    }
+}
+
 impl Default for ViewModel {
     fn default() -> Self {
         Self {
@@ -412,6 +443,7 @@ impl Default for ViewModel {
             core_name: String::new(),
             frame: None,
             status: String::new(),
+            status_kind: StatusKind::Info,
             screenshots: Vec::new(),
             screenshot_game: None,
             saves: Vec::new(),
@@ -423,7 +455,6 @@ impl Default for ViewModel {
             preview: None,
             screenshot_select: false,
             selected_screenshots: Vec::new(),
-            confirm: None,
             editing: None,
             cores: Vec::new(),
             library_dirs: Vec::new(),
@@ -469,12 +500,10 @@ pub enum Action {
     RemoveLibraryDir(usize),
     /// Pin or unpin the game at this library index.
     TogglePin(usize),
-    /// Ask to delete something destructive; the app shows a confirmation bar.
+    /// Ask to delete something destructive; the app opens a confirmation dialog.
     RequestDelete(Confirm),
     /// Confirm the pending destructive action.
     ConfirmDelete,
-    /// Dismiss the pending destructive action.
-    CancelDelete,
     /// Start editing the game's display name.
     StartRename(i64),
     /// Start editing the game's tags.
@@ -525,4 +554,27 @@ pub enum Action {
     DeleteSelectedScreenshots,
     /// Open the screenshots directory in the file browser.
     OpenScreenshotsFolder,
+    /// Open a game card's context menu at `position` (a right click).
+    GameContextMenu {
+        index: usize,
+        position: Vec2,
+    },
+    /// Open a console's core picker menu, anchored to the `Select` trigger.
+    OpenCoreMenu {
+        system: SystemId,
+        anchor: NodeId,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_status_sets_text_and_severity_together() {
+        let mut model = ViewModel::default();
+        model.set_status("boom", StatusKind::Error);
+        assert_eq!(model.status, "boom");
+        assert_eq!(model.status_kind, StatusKind::Error);
+    }
 }

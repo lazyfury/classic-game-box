@@ -32,7 +32,7 @@ use std::rc::Rc;
 
 use draw_components::{
     Badge, Button, Card, Column, Component, Divider, EmptyState, Flex, Grid, NodeRef, Panel,
-    ResizeHandle, Row, ScrollView, ScrollViewState, Text,
+    ResizeHandle, Row, ScrollView, ScrollViewState, Select, Text,
 };
 use draw_core::{Color, Edges};
 use draw_render::Paint;
@@ -45,7 +45,7 @@ use crate::frame::{cover_fit, FrameImage};
 use crate::icons::{Icon as SvgIcon, IconName};
 use crate::model::{
     Action, CheatRow, Confirm, EditKind, EditState, GameRow, SaveSlotRow, ScreenshotRow, Section,
-    ShaderKind, SortKey, ViewModel,
+    ShaderKind, SortKey, StatusKind, ViewModel,
 };
 
 /// The rail's fixed width in logical pixels.
@@ -89,14 +89,37 @@ const SHOT_HEIGHT: f32 = 180.0;
 const CARD_ICON: f32 = 12.0;
 const CARD_ICON_BUTTON: f32 = 16.0;
 
-/// The pinned pin's colour (the old front end's `#ffd60a`).
-const PIN_COLOR: Color = Color::new(1.0, 0.84, 0.04, 1.0);
+/// Colors painted over game artwork (covers, screenshots), not over a theme
+/// surface. They are deliberately independent of light/dark: the scrim is dark
+/// and the labels light so they stay legible against arbitrary imagery.
+/// Centralised so the badge and the controls cannot drift apart.
+mod media {
+    use draw_core::Color;
+
+    /// A translucent dark scrim behind labels on artwork.
+    pub const SCRIM: Color = Color::new(0.0, 0.0, 0.0, 0.4);
+    /// The small surface behind a console badge on a cover.
+    pub const BADGE: Color = Color::new(0.11, 0.11, 0.13, 0.72);
+    /// Primary ink on artwork.
+    pub const ON_MEDIA: Color = Color::new(1.0, 1.0, 1.0, 0.92);
+    /// Secondary ink on artwork (the control icons and badge label).
+    pub const ON_MEDIA_MUTED: Color = Color::new(1.0, 1.0, 1.0, 0.85);
+    /// Hover fill for a control sitting on artwork.
+    pub const ON_MEDIA_HOVER: Color = Color::new(1.0, 1.0, 1.0, 0.16);
+    /// Dark ink for a light artwork placeholder.
+    pub const ON_MEDIA_DARK: Color = Color::new(0.07, 0.07, 0.09, 0.92);
+}
 
 /// Where view callbacks deposit what the user did. The app drains it once per
 /// frame (see the quill UI guide's "state lives in cells" rule).
+///
+/// It also carries the tooltip text the current tree registered: the view
+/// cannot open an overlay (the host owns the overlay layer), so it records
+/// `control → tooltip` here and [`crate::Ui`] opens the tip after layout.
 #[derive(Clone, Default)]
 pub struct Actions {
     queue: Rc<RefCell<Vec<Action>>>,
+    tips: Rc<RefCell<Vec<(NodeRef, String)>>>,
 }
 
 impl Actions {
@@ -108,6 +131,16 @@ impl Actions {
     /// Take everything recorded since the last drain.
     pub fn drain(&self) -> Vec<Action> {
         std::mem::take(&mut *self.queue.borrow_mut())
+    }
+
+    /// Register a tooltip for the control mounted into `node`.
+    pub fn tip(&self, node: &NodeRef, text: impl Into<String>) {
+        self.tips.borrow_mut().push((node.clone(), text.into()));
+    }
+
+    /// Take the tooltips registered by the tree just built.
+    pub fn take_tips(&self) -> Vec<(NodeRef, String)> {
+        std::mem::take(&mut *self.tips.borrow_mut())
     }
 }
 
@@ -147,7 +180,7 @@ pub fn build(
     // The layout root places its direct children by anchors, so the vertical
     // stack is one level down: the root's single child is a column, and *its*
     // children (header / columns / status) are the flex items.
-    let mut inner = Flex::column()
+    let inner = Flex::column()
         .gap(0.0)
         .padding(Edges::ZERO)
         .mouse_filter(MouseFilter::Ignore)
@@ -166,9 +199,6 @@ pub fn build(
                 .child(resize_handle(theme, middle_width, middle_ref).ref_(handle_ref))
                 .child(play_column(theme, model, actions)),
         );
-    if model.confirm.is_some() {
-        inner = inner.child(confirm_bar(theme, model, actions));
-    }
     let tree = Flex::column()
         .mouse_filter(MouseFilter::Ignore)
         .child(inner.child(status_bar(theme, model)))
@@ -257,37 +287,6 @@ fn fullscreen_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Action
         .gap(0.0)
         .child(row)
         .child(Divider::horizontal(theme))
-}
-
-/// The confirmation bar, above the status line, for a pending destructive
-/// action. Its buttons run the action or dismiss it.
-fn confirm_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
-    let message = model.confirm.map(Confirm::message).unwrap_or_default();
-    let confirm = actions.clone();
-    let cancel = actions.clone();
-    Column::new()
-        .gap(0.0)
-        .child(Divider::horizontal(theme))
-        .child(
-            Row::new()
-                .align(Align::Center)
-                .gap(space::SM)
-                .padding(Edges::new(space::MD, space::XS, space::MD, space::XS))
-                .child(
-                    Text::small(message, theme)
-                        .grow(1.0)
-                        .max_lines(1)
-                        .ellipsis(true),
-                )
-                .child(
-                    Button::destructive("删除", theme)
-                        .on_click(move || confirm.push(Action::ConfirmDelete)),
-                )
-                .child(
-                    Button::secondary("取消", theme)
-                        .on_click(move || cancel.push(Action::CancelDelete)),
-                ),
-        )
 }
 
 /// The slim top bar: the app name and what the middle column is showing.
@@ -556,6 +555,21 @@ fn library_page(
     column
 }
 
+/// A single-choice chip for a toolbar: ghost at rest, a soft accent fill and
+/// accent label when selected. The fill comes from `selection`, not the solid
+/// accent, so a row of choices does not read as several primary actions.
+fn chip(theme: &'static dyn Theme, label: &str, selected: bool) -> Button {
+    if selected {
+        Button::ghost(label, theme)
+            .text_color(theme.palette().accent)
+            .dynamic_background(move |_| {
+                SurfaceStyle::new(theme.palette().selection).radius(radius::MD)
+            })
+    } else {
+        Button::ghost(label, theme)
+    }
+}
+
 /// The library's sort controls: one chip per key, then a direction toggle.
 /// Pinned games are always on top, so the key only orders within the groups.
 fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Row {
@@ -565,11 +579,7 @@ fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> 
         .child(Text::caption("排序", theme).tone(Tone::Muted));
     for key in SortKey::ALL {
         let actions = actions.clone();
-        let button = if model.sort == key {
-            Button::primary(key.label(), theme)
-        } else {
-            Button::ghost(key.label(), theme)
-        };
+        let button = chip(theme, key.label(), model.sort == key);
         bar = bar.child(
             button
                 .mini()
@@ -582,11 +592,14 @@ fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> 
     } else {
         IconName::ArrowUp
     };
+    let dir_node = NodeRef::new();
+    actions.tip(&dir_node, "切换升降序");
     bar.child(
         Button::ghost("", theme)
             .mini()
             .child(SvgIcon::new(arrow, theme.palette().foreground, CARD_ICON))
-            .on_click(move || toggle.push(Action::ToggleSortOrder)),
+            .on_click(move || toggle.push(Action::ToggleSortOrder))
+            .ref_(&dir_node),
     )
 }
 
@@ -628,6 +641,8 @@ fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -
         row = row.child(icon_button(
             IconName::Close,
             theme.palette().foreground,
+            "清除搜索",
+            actions,
             move || clear.push(Action::ClearSearch),
         ));
     }
@@ -826,6 +841,7 @@ fn game_card(
     actions: &Actions,
 ) -> Column {
     let click = actions.clone();
+    let menu = actions.clone();
     let playing = model.selected == Some(index);
     Column::new()
         .gap(space::XXS)
@@ -844,6 +860,7 @@ fn game_card(
             SurfaceStyle::new(fill).radius(radius::MD)
         })
         .on_click(move || click.push(Action::Play(index)))
+        .on_secondary_click(move |position| menu.push(Action::GameContextMenu { index, position }))
         .child(cover(theme, game, index, actions))
         .child(
             Text::small(game.name.as_str(), theme)
@@ -889,12 +906,13 @@ fn tags_label(game: &GameRow) -> String {
 /// drawn from its ROM path (so a game without artwork keeps the same colour
 /// between runs). Without a screenshot the title is clipped in and centred.
 fn cover(theme: &'static dyn Theme, game: &GameRow, index: usize, actions: &Actions) -> Column {
+    let color = cover_color(&game.path);
     let mut cover = Column::new()
         .gap(space::XXS)
         // No outer padding: the controls sit flush in the top-right corner.
         .padding(Edges::ZERO)
         .min_size(0.0, PLACEHOLDER_HEIGHT)
-        .surface(SurfaceStyle::new(cover_color(&game.path)).radius(radius::SM))
+        .surface(SurfaceStyle::new(color).radius(radius::SM))
         .child(
             Row::new()
                 .align(Align::Center)
@@ -905,7 +923,7 @@ fn cover(theme: &'static dyn Theme, game: &GameRow, index: usize, actions: &Acti
                     right: 2.0,
                     bottom: 2.0,
                 })
-                .background(Color::BLACK.with_alpha(0.4))
+                .background(media::SCRIM)
                 // The badge and the controls both hug their corner, no inset.
                 .child(system_badge(theme, game))
                 .child(Flex::column().grow(1.0).padding(Edges::all(0.0)))
@@ -932,7 +950,7 @@ fn cover(theme: &'static dyn Theme, game: &GameRow, index: usize, actions: &Acti
                     .padding(Edges::all(space::XS))
                     .child(
                         Text::caption(game.name.as_str(), theme)
-                            .color(Color::WHITE.with_alpha(0.92))
+                            .color(cover_ink(color))
                             .max_lines(3)
                             .ellipsis(true),
                     ),
@@ -956,8 +974,8 @@ fn system_badge(theme: &'static dyn Theme, game: &GameRow) -> Flex {
             bottom: 1.0,
         })
         .min_size(CARD_ICON_BUTTON, CARD_ICON_BUTTON)
-        .surface(SurfaceStyle::new(Color::new(0.11, 0.11, 0.13, 0.72)).radius(radius::SM))
-        .child(Text::caption(game.system.short(), theme).color(Color::WHITE.with_alpha(0.88)))
+        .surface(SurfaceStyle::new(media::BADGE).radius(radius::SM))
+        .child(Text::caption(game.system.short(), theme).color(media::ON_MEDIA_MUTED))
 }
 
 /// The card's controls, top-right on the cover: the screenshot count (when
@@ -974,24 +992,30 @@ fn card_controls(
         row = row.child(screenshot_entry(theme, game, actions));
     }
     let game_id = game.id;
-    let ink = Color::WHITE.with_alpha(0.85);
-    row = row.child(icon_button(IconName::Pencil, ink, {
+    let ink = media::ON_MEDIA_MUTED;
+    let pin_ink = if game.pinned {
+        theme.palette().warning
+    } else {
+        ink
+    };
+    row = row.child(icon_button(IconName::Pencil, ink, "改名", actions, {
         let actions = actions.clone();
         move || actions.push(Action::StartRename(game_id))
     }));
-    row = row.child(icon_button(IconName::Tag, ink, {
+    row = row.child(icon_button(IconName::Tag, ink, "标签", actions, {
         let actions = actions.clone();
         move || actions.push(Action::StartTagEdit(game_id))
     }));
-    row.child(icon_button(
-        IconName::Pin,
-        if game.pinned { PIN_COLOR } else { ink },
-        {
-            let actions = actions.clone();
-            move || actions.push(Action::TogglePin(index))
-        },
-    ))
-    .child(icon_button(IconName::Trash, ink, {
+    let pin_tip = if game.pinned {
+        "取消置顶"
+    } else {
+        "置顶"
+    };
+    row.child(icon_button(IconName::Pin, pin_ink, pin_tip, actions, {
+        let actions = actions.clone();
+        move || actions.push(Action::TogglePin(index))
+    }))
+    .child(icon_button(IconName::Trash, ink, "删除", actions, {
         let actions = actions.clone();
         move || actions.push(Action::RequestDelete(Confirm::DeleteGame(game_id)))
     }))
@@ -999,21 +1023,39 @@ fn card_controls(
 
 /// The card's screenshot count: a camera and the number, opening the
 /// screenshots section for this game. Only shown when the game has any.
-fn screenshot_entry(theme: &'static dyn Theme, game: &GameRow, actions: &Actions) -> Flex {
-    let actions = actions.clone();
+fn screenshot_entry(
+    theme: &'static dyn Theme,
+    game: &GameRow,
+    actions: &Actions,
+) -> impl Component {
+    let node = NodeRef::new();
+    actions.tip(&node, "截图");
+    let click = actions.clone();
     let game_id = game.id;
-    let ink = Color::WHITE.with_alpha(0.85);
-    compact_button(move || actions.push(Action::ShowScreenshots(game_id)))
+    let ink = media::ON_MEDIA_MUTED;
+    compact_button(move || click.push(Action::ShowScreenshots(game_id)))
         .gap(2.0)
         .child(SvgIcon::new(IconName::Camera, ink, CARD_ICON))
         .child(Text::caption(game.screenshots.to_string(), theme).color(ink))
+        .ref_(&node)
 }
 
 /// A small, transparent-until-hovered icon button on a coloured cover. No
 /// padding, so it hugs the corner; the icon is `Ignore` for input, so the
-/// click lands on the button.
-fn icon_button(icon: IconName, color: Color, on_click: impl FnMut() + 'static) -> Flex {
-    compact_button(on_click).child(SvgIcon::new(icon, color, CARD_ICON))
+/// click lands on the button. `tip` is registered with `actions` so the host
+/// can show it on hover.
+fn icon_button(
+    icon: IconName,
+    color: Color,
+    tip: &str,
+    actions: &Actions,
+    on_click: impl FnMut() + 'static,
+) -> impl Component {
+    let node = NodeRef::new();
+    actions.tip(&node, tip);
+    compact_button(on_click)
+        .child(SvgIcon::new(icon, color, CARD_ICON))
+        .ref_(&node)
 }
 
 /// The bare frame a compact icon button shares: a fixed square, a hover fill
@@ -1033,7 +1075,7 @@ fn compact_button(on_click: impl FnMut() + 'static) -> Flex {
         .min_size(CARD_ICON_BUTTON, CARD_ICON_BUTTON)
         .dynamic_background(move |state| {
             let fill = if state.hovered || state.pressed {
-                Color::WHITE.with_alpha(0.16)
+                media::ON_MEDIA_HOVER
             } else {
                 Color::TRANSPARENT
             };
@@ -1096,7 +1138,19 @@ fn cover_color(path: &str) -> Color {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    hsv((hash % 360) as f32, 0.45, 0.55)
+    hsv((hash % 360) as f32, 0.45, 0.45)
+}
+
+/// Ink that stays legible on a cover color: dark on a light hue, light on a
+/// dark one.
+fn cover_ink(color: Color) -> Color {
+    let [r, g, b, _] = color.to_rgba8();
+    let luminance = (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32) / 255.0;
+    if luminance > 0.55 {
+        media::ON_MEDIA_DARK
+    } else {
+        media::ON_MEDIA
+    }
 }
 
 /// HSV (h in degrees) to an RGB [`Color`]. Only used for cover hues.
@@ -1326,6 +1380,8 @@ fn screenshots_page(
 
     let open = actions.clone();
     let toggle = actions.clone();
+    let folder_node = NodeRef::new();
+    actions.tip(&folder_node, "在访达中显示");
     let select_label = if model.screenshot_select {
         "完成"
     } else {
@@ -1354,7 +1410,8 @@ fn screenshots_page(
                             theme.palette().foreground,
                             CARD_ICON,
                         ))
-                        .on_click(move || open.push(Action::OpenScreenshotsFolder)),
+                        .on_click(move || open.push(Action::OpenScreenshotsFolder))
+                        .ref_(&folder_node),
                 ),
         );
     let subtitle = match &game_name {
@@ -1541,6 +1598,8 @@ fn shot_controls(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Acti
         row = row.child(icon_button(
             IconName::ImagePlus,
             theme.palette().foreground,
+            "设为封面",
+            actions,
             move || set.push(Action::SetCover(id)),
         ));
     }
@@ -1549,6 +1608,8 @@ fn shot_controls(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Acti
     row = row.child(icon_button(
         IconName::FolderSearch,
         theme.palette().foreground,
+        "在访达中显示",
+        actions,
         move || reveal.push(Action::RevealScreenshot(reveal_id)),
     ));
     let remove = actions.clone();
@@ -1556,6 +1617,8 @@ fn shot_controls(theme: &'static dyn Theme, shot: &ScreenshotRow, actions: &Acti
     row.child(icon_button(
         IconName::Trash,
         theme.palette().foreground,
+        "删除",
+        actions,
         move || remove.push(Action::RequestDelete(Confirm::DeleteScreenshot(remove_id))),
     ))
 }
@@ -1619,6 +1682,10 @@ fn preview_column(
 
     let previous = actions.clone();
     let next = actions.clone();
+    let prev_node = NodeRef::new();
+    let next_node = NodeRef::new();
+    actions.tip(&prev_node, "上一张");
+    actions.tip(&next_node, "下一张");
     column = column.child(
         Row::new()
             .align(Align::Center)
@@ -1631,7 +1698,8 @@ fn preview_column(
                         theme.palette().foreground,
                         14.0,
                     ))
-                    .on_click(move || previous.push(Action::StepPreview(-1))),
+                    .on_click(move || previous.push(Action::StepPreview(-1)))
+                    .ref_(&prev_node),
             )
             .child(Text::caption(format_when(shot.created_at), theme).tone(Tone::Subtle))
             .child(
@@ -1641,7 +1709,8 @@ fn preview_column(
                         theme.palette().foreground,
                         14.0,
                     ))
-                    .on_click(move || next.push(Action::StepPreview(1))),
+                    .on_click(move || next.push(Action::StepPreview(1)))
+                    .ref_(&next_node),
             ),
     );
 
@@ -1690,10 +1759,15 @@ fn format_when(created_ms: i64) -> String {
 
 /// The bottom status line: the last app message, plus the save hotkeys.
 fn status_bar(theme: &'static dyn Theme, model: &ViewModel) -> Column {
-    let status = if model.status.is_empty() {
-        "就绪"
+    let (status, tone) = if model.status.is_empty() {
+        ("就绪", Tone::Muted)
     } else {
-        model.status.as_str()
+        let tone = match model.status_kind {
+            StatusKind::Info => Tone::Muted,
+            StatusKind::Success => Tone::Success,
+            StatusKind::Error => Tone::Error,
+        };
+        (model.status.as_str(), tone)
     };
     Column::new()
         .gap(0.0)
@@ -1706,7 +1780,7 @@ fn status_bar(theme: &'static dyn Theme, model: &ViewModel) -> Column {
                 .min_size(0.0, 22.0)
                 .child(
                     Text::caption(status, theme)
-                        .tone(Tone::Muted)
+                        .tone(tone)
                         .grow(1.0)
                         .max_lines(1)
                         .ellipsis(true),
@@ -1777,27 +1851,35 @@ fn settings_page(
     let mut cores = Column::new().gap(space::SM);
     let mut any_core = false;
     for system in cgb_systems::SYSTEMS {
-        let mut group = Column::new().gap(space::XS);
-        let mut any = false;
-        for (index, core) in model.cores.iter().enumerate() {
-            if core.system != *system {
-                continue;
-            }
-            any = true;
-            any_core = true;
-            let actions = actions.clone();
-            let button = if core.selected {
-                Button::primary(format!("{}（当前）", core.name), theme)
-            } else {
-                Button::ghost(core.name.clone(), theme)
-            };
-            group = group.child(button.on_click(move || actions.push(Action::SelectCore(index))));
-        }
-        if any {
-            cores = cores
-                .child(Text::small(system.name(), theme).tone(Tone::Muted))
-                .child(group);
-        }
+        // The current pick names the trigger; the host builds the menu of
+        // alternatives and anchors it to this node.
+        let system = *system;
+        let Some(current) = model
+            .cores
+            .iter()
+            .find(|core| core.system == system && core.selected)
+        else {
+            continue;
+        };
+        any_core = true;
+        let node = NodeRef::new();
+        let anchor = node.clone();
+        let open = actions.clone();
+        let select = Select::new(theme)
+            .value(current.name.clone())
+            .min_width(170.0)
+            .on_open(move || {
+                if let Some(anchor) = anchor.get() {
+                    open.push(Action::OpenCoreMenu { system, anchor });
+                }
+            });
+        cores = cores.child(
+            Row::new()
+                .align(Align::Center)
+                .gap(space::SM)
+                .child(Text::small(system.name(), theme).grow(1.0))
+                .child(select.ref_(&node)),
+        );
     }
     if !any_core {
         cores =
@@ -1815,11 +1897,7 @@ fn settings_page(
     let mut shaders = Row::new().gap(space::XS);
     for kind in ShaderKind::ALL {
         let actions = actions.clone();
-        let button = if model.shader == kind {
-            Button::primary(kind.label(), theme)
-        } else {
-            Button::ghost(kind.label(), theme)
-        };
+        let button = chip(theme, kind.label(), model.shader == kind);
         shaders = shaders.child(
             button
                 .mini()
@@ -2031,6 +2109,83 @@ mod tests {
             },
         );
         assert_eq!(actions.drain(), vec![Action::Play(0)]);
+    }
+
+    /// A right click on a card opens its context menu at the pointer.
+    #[test]
+    fn right_clicking_a_card_opens_its_context_menu() {
+        let actions = Actions::default();
+        let model = one_game();
+        let (mut tree, list) = laid_out(&model, &actions);
+        let point = text_position(&list, "Game 0");
+        for event in [
+            InputEvent::PointerDown {
+                position: point,
+                button: PointerButton::Right,
+            },
+            InputEvent::PointerUp {
+                position: point,
+                button: PointerButton::Right,
+            },
+        ] {
+            draw_ui::handle_input(&mut tree, &event);
+        }
+        match actions.drain().as_slice() {
+            [Action::GameContextMenu { index, .. }] => assert_eq!(*index, 0),
+            other => panic!("expected a context-menu action, got {other:?}"),
+        }
+    }
+
+    /// The card controls register the tooltips the host shows on hover.
+    #[test]
+    fn card_controls_register_tooltips() {
+        let actions = Actions::default();
+        let mut game = one_game_row();
+        game.screenshots = 2;
+        let (_tree, _list) = isolated_cover(&game, &actions);
+        let tips: Vec<String> = actions
+            .take_tips()
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect();
+        for expected in ["截图", "改名", "标签", "置顶", "删除"] {
+            assert!(
+                tips.iter().any(|tip| tip == expected),
+                "missing tip {expected}: {tips:?}"
+            );
+        }
+    }
+
+    /// The settings core pick-up raises an action naming the console, so the
+    /// host can open the picker menu.
+    #[test]
+    fn the_core_picker_raises_an_action() {
+        let actions = Actions::default();
+        let model = ViewModel {
+            section: Section::Settings,
+            cores: vec![
+                CoreRow {
+                    key: "mesen".to_string(),
+                    name: "Mesen".to_string(),
+                    system: SystemId::Nes,
+                    selected: true,
+                },
+                CoreRow {
+                    key: "nestopia".to_string(),
+                    name: "Nestopia".to_string(),
+                    system: SystemId::Nes,
+                    selected: false,
+                },
+            ],
+            ..ViewModel::default()
+        };
+        let (mut tree, list) = laid_out(&model, &actions);
+        let point = text_position(&list, "Mesen");
+        click(&mut tree, point);
+        match actions.drain().as_slice() {
+            [Action::OpenCoreMenu { system, .. }] => assert_eq!(*system, SystemId::Nes),
+            other => panic!("expected a core-picker action, got {other:?}"),
+        }
     }
 
     /// Press and release at `point`, the way a mouse click arrives.
@@ -2338,34 +2493,40 @@ mod tests {
             .contains(&Action::Show(Section::Screenshots)));
     }
 
-    /// A pending delete shows a confirmation bar whose buttons confirm or
-    /// cancel it.
+    /// Clicking a card's delete control asks the host to confirm the delete.
     #[test]
-    fn a_pending_delete_shows_a_confirmation_bar() {
+    fn clicking_delete_asks_to_confirm() {
         let actions = Actions::default();
-        let model = ViewModel {
-            confirm: Some(Confirm::DeleteGame(0)),
-            ..ViewModel::default()
-        };
-        let (mut tree, list) = laid_out(&model, &actions);
-        let has = |needle: &str| {
-            list.commands().iter().any(|command| {
-                matches!(command,
-                    DrawCommand::DrawText { text, .. } if text == needle)
+        let (mut tree, list) = isolated_cover(&one_game_row(), &actions);
+        let centres = icon_centres(&list, 4);
+        click(&mut tree, centres[3]);
+        assert_eq!(
+            actions.drain(),
+            vec![Action::RequestDelete(Confirm::DeleteGame(0))]
+        );
+    }
+
+    /// An error status is painted in the error colour, a success in success.
+    #[test]
+    fn the_status_line_colours_by_severity() {
+        let theme = default_theme(Mode::Dark);
+        let colour = |model: &ViewModel| {
+            let actions = Actions::default();
+            let (_tree, list) = laid_out(model, &actions);
+            list.commands().iter().find_map(|command| match command {
+                DrawCommand::DrawText { text, paint, .. } if text == &model.status => {
+                    Some(paint.color)
+                }
+                _ => None,
             })
         };
-        assert!(
-            has(Confirm::DeleteGame(0).message()),
-            "the confirmation asks the question"
-        );
 
-        let confirm = text_position(&list, "删除");
-        click(&mut tree, confirm);
-        assert_eq!(actions.drain(), vec![Action::ConfirmDelete]);
+        let mut model = ViewModel::default();
+        model.set_status("读取 ROM 失败", StatusKind::Error);
+        assert_eq!(colour(&model), Some(theme.palette().error));
 
-        let cancel = text_position(&list, "取消");
-        click(&mut tree, cancel);
-        assert_eq!(actions.drain(), vec![Action::CancelDelete]);
+        model.set_status("已存档", StatusKind::Success);
+        assert_eq!(colour(&model), Some(theme.palette().success));
     }
 
     /// The edit bar shows the text with a caret, and its buttons commit or
@@ -2720,8 +2881,7 @@ mod tests {
             })
         };
         assert!(has("/roms/nes"), "the folder is listed");
-        assert!(has("Nestopia"), "every core for the console is offered");
-        assert!(has("Mesen"), "the selected core is shown");
+        assert!(has("Mesen"), "the selected core is shown in the pull-down");
         assert!(has("X / K"), "the binding is shown");
     }
 
@@ -2855,17 +3015,10 @@ mod tests {
     fn the_settings_page_scrolls_when_it_overflows() {
         let theme = default_theme(Mode::Dark);
         let actions = Actions::default();
-        let cores: Vec<CoreRow> = (0..40)
-            .map(|index| CoreRow {
-                key: format!("core{index}"),
-                name: format!("Core {index}"),
-                system: SystemId::Nes,
-                selected: index == 0,
-            })
-            .collect();
+        let library_dirs: Vec<String> = (0..40).map(|index| format!("/roms/{index}")).collect();
         let model = ViewModel {
             section: Section::Settings,
-            cores,
+            library_dirs,
             ..ViewModel::default()
         };
         let width = Rc::new(Cell::new(model.middle_width));

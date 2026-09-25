@@ -18,7 +18,7 @@ pub use icons::{clear_textures, rasterize_icon, set_texture, Icon, IconName};
 pub use model::{
     Action, BindingRow, CheatRow, Confirm, CoreOptionRow, CoreRow, EditKind, EditState,
     FrameHandle, GameRow, InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow, Section,
-    ShaderKind, SortKey, ViewModel,
+    ShaderKind, SortKey, StatusKind, ViewModel,
 };
 pub use view::{
     grid_window, library_columns, Actions, MAX_LIBRARY_COLUMNS, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
@@ -28,16 +28,28 @@ pub use view::{
 use std::cell::Cell;
 use std::rc::Rc;
 
-use draw_components::{NodeRef, ScrollViewState};
-use draw_core::{InputEvent, Vec2, ViewportSize};
+use draw_components::{Menu, MenuItem, NodeRef, OverlayId, Overlays, ScrollViewState};
+use draw_core::{InputEvent, NodeId, Vec2, ViewportSize};
 use draw_render::PaintContext;
 use draw_scene::SceneTree;
 use draw_theme::Theme;
 use draw_ui::{Control, DragPhase, TextMeasurer};
 
+use cgb_systems::SystemId;
+
 /// The mounted tree plus the frame-loop calls.
 pub struct Ui {
     tree: SceneTree,
+    /// The active theme, kept so the focus ring can read `focus_ring`.
+    theme: &'static dyn Theme,
+    /// The overlay layer (tooltips, context menus, core pickers). It owns its
+    /// own tree and paints on top of the UI.
+    overlays: Overlays,
+    /// Tooltips the current tree registered (`control → text`), resolved to
+    /// mounted controls after the build.
+    tips: Vec<(NodeId, String)>,
+    /// The tip currently open, and the control it explains.
+    open_tip: Option<(NodeId, OverlayId)>,
     /// The middle column's scroll state (the library grid, the screenshots
     /// grid or the settings bodies); `None` when the page has nothing to
     /// scroll.
@@ -79,8 +91,13 @@ impl Ui {
             &resize_handle,
             &mounted_rows,
         );
+        let tips = resolve_tips(actions.take_tips());
         Self {
             tree,
+            theme,
+            overlays: Overlays::new(theme),
+            tips,
+            open_tip: None,
             middle_scroll,
             middle_section: model.section,
             scroll_target: None,
@@ -118,6 +135,12 @@ impl Ui {
             &self.mounted_rows,
         );
         self.tree = tree;
+        self.theme = theme;
+        // NodeIds from the old tree are dead, so any anchored overlay (tip or
+        // menu) would point at nothing; close them and re-collect tooltips.
+        self.overlays.close_all();
+        self.open_tip = None;
+        self.tips = resolve_tips(actions.take_tips());
         self.scroll_target = if middle_scroll.is_some() {
             previous
         } else {
@@ -211,7 +234,8 @@ impl Ui {
     /// Install the backend's real font metrics so layout measures what is
     /// painted. Call after [`Ui::new`] and after every [`Ui::rebuild`].
     pub fn install_measurer(&mut self, measurer: Rc<dyn TextMeasurer>) {
-        draw_ui::set_text_measurer(&mut self.tree, measurer);
+        draw_ui::set_text_measurer(&mut self.tree, measurer.clone());
+        self.overlays.set_text_measurer(measurer);
     }
 
     /// Resolve geometry and flush deferred tree work.
@@ -224,33 +248,264 @@ impl Ui {
     pub fn layout(&mut self, viewport: ViewportSize) {
         draw_ui::layout(&mut self.tree, viewport);
         self.tree.update();
-        let Some(scroll) = self.middle_scroll.as_mut() else {
-            return;
-        };
-        let mut changed = scroll.sync(&mut self.tree);
-        if let Some(target) = self.scroll_target.take() {
-            scroll.scroll_to(target);
-            changed |= scroll.sync(&mut self.tree);
+        if let Some(scroll) = self.middle_scroll.as_mut() {
+            let mut changed = scroll.sync(&mut self.tree);
+            if let Some(target) = self.scroll_target.take() {
+                scroll.scroll_to(target);
+                changed |= scroll.sync(&mut self.tree);
+            }
+            if changed {
+                draw_ui::layout(&mut self.tree, viewport);
+                self.tree.update();
+            }
         }
-        if changed {
-            draw_ui::layout(&mut self.tree, viewport);
-            self.tree.update();
-        }
+        // Tooltips are anchored to laid-out controls, so open them after the
+        // host layout and let the overlay layer position them.
+        self.sync_tip();
+        self.overlays.layout(&self.tree, viewport);
     }
 
     /// Emit this frame's draw list into `ctx`.
     pub fn paint(&self, ctx: &mut PaintContext) {
         draw_ui::paint(&self.tree, ctx);
+        self.paint_focus_ring(ctx);
+        self.overlays.paint(ctx);
     }
 
-    /// Route one input event. The app maps platform events to
-    /// [`InputEvent`] first.
-    pub fn route_input(&mut self, event: &InputEvent) {
-        let _ = draw_ui::route_input(&mut self.tree, event);
-        // Input can change hover / press / focus / the scroll offset, so the
-        // next present must rebuild the draw list.
+    /// Stroke a ring around the focused control, so keyboard navigation is
+    /// visible. Components do not draw one themselves (their backgrounds only
+    /// read hover / press), so the host paints it once from the resolved rect.
+    fn paint_focus_ring(&self, ctx: &mut PaintContext) {
+        let Some(id) = draw_ui::focused(&self.tree) else {
+            return;
+        };
+        let Some(control) = draw_ui::control(&self.tree, id) else {
+            return;
+        };
+        if control.disabled || matches!(control.clip_rect, Some(rect) if rect.is_empty()) {
+            return;
+        }
+        ctx.stroke_rect(control.rect, 2.0, self.theme.palette().focus_ring);
+    }
+
+    /// Advance overlay timers (message auto-dismiss, fades).
+    pub fn update(&mut self, dt: f32) {
+        self.overlays.update(dt);
+    }
+
+    /// Whether the overlay layer still needs frames (an open message counting
+    /// down, a fade). The host schedules another redraw while this is true.
+    pub fn overlays_animating(&self) -> bool {
+        self.overlays.is_animating()
+    }
+
+    /// Close every open overlay. Called after an action so a menu does not
+    /// linger once the user acted on it.
+    pub fn close_overlays(&mut self) {
+        self.overlays.close_all();
+        self.open_tip = None;
         self.repaint = true;
     }
+
+    /// Open a game card's context menu at `position` (a right click).
+    pub fn open_game_menu(
+        &mut self,
+        theme: &'static dyn Theme,
+        game: &GameRow,
+        index: usize,
+        position: Vec2,
+        actions: &Actions,
+    ) {
+        let game_id = game.id;
+        let pinned = game.pinned;
+        let actions = actions.clone();
+        self.overlays.menu_at(position, move |tree, node| {
+            let item = |label: &str, action: Action| {
+                let actions = actions.clone();
+                MenuItem::new(label, theme).on_click(move || actions.push(action))
+            };
+            let menu = Menu::new(theme)
+                .item(item("开始游戏", Action::Play(index)))
+                .item(item("改名…", Action::StartRename(game_id)))
+                .item(item("标签…", Action::StartTagEdit(game_id)))
+                .item(item(
+                    if pinned { "取消置顶" } else { "置顶" },
+                    Action::TogglePin(index),
+                ))
+                .item(item("截图", Action::ShowScreenshots(game_id)))
+                .separator()
+                .item({
+                    let actions = actions.clone();
+                    MenuItem::new("删除…", theme)
+                        .destructive()
+                        .on_click(move || {
+                            actions.push(Action::RequestDelete(Confirm::DeleteGame(game_id)))
+                        })
+                });
+            tree.add_child(node, menu);
+        });
+        self.repaint = true;
+    }
+
+    /// Open a console's core picker, anchored below its `Select` trigger.
+    pub fn open_core_menu(
+        &mut self,
+        theme: &'static dyn Theme,
+        system: SystemId,
+        anchor: NodeId,
+        cores: &[CoreRow],
+        actions: &Actions,
+    ) {
+        let rows: Vec<(usize, String, bool)> = cores
+            .iter()
+            .enumerate()
+            .filter(|(_, core)| core.system == system)
+            .map(|(index, core)| (index, core.name.clone(), core.selected))
+            .collect();
+        let actions = actions.clone();
+        self.overlays.menu(anchor, move |tree, node| {
+            let mut menu = Menu::new(theme);
+            for (index, name, selected) in rows.clone() {
+                let label = if selected {
+                    format!("{name} ✓")
+                } else {
+                    name
+                };
+                let actions = actions.clone();
+                menu = menu.item(
+                    MenuItem::new(label, theme)
+                        .on_click(move || actions.push(Action::SelectCore(index))),
+                );
+            }
+            tree.add_child(node, menu);
+        });
+        self.repaint = true;
+    }
+
+    /// Open a modal confirmation for a destructive action. Confirming runs
+    /// `on_confirm`; Escape / clicking outside cancels.
+    pub fn confirm_destructive(
+        &mut self,
+        title: impl Into<String>,
+        message: impl Into<String>,
+        on_confirm: Action,
+        actions: &Actions,
+    ) {
+        let id = self.overlays.confirm(title.into(), message.into());
+        self.overlays.destructive(id, true);
+        let actions = actions.clone();
+        self.overlays
+            .on_confirm(id, move || actions.push(on_confirm));
+        self.repaint = true;
+    }
+
+    /// Open the tooltip the hovered control registered, or close the current
+    /// one when the pointer left it.
+    fn sync_tip(&mut self) {
+        let wanted = draw_ui::hovered(&self.tree).and_then(|node| self.tip_for(node));
+        let unchanged = match (&self.open_tip, &wanted) {
+            (Some((node, _)), Some((wanted, _))) => node == wanted,
+            (None, None) => true,
+            _ => false,
+        };
+        if unchanged {
+            return;
+        }
+        if let Some((_, id)) = self.open_tip.take() {
+            self.overlays.close(id);
+        }
+        if let Some((node, text)) = wanted {
+            let id = self.overlays.tips(node, text);
+            self.open_tip = Some((node, id));
+        }
+    }
+
+    /// The tooltip registered for `node` or its nearest registered ancestor.
+    /// The hovered node is often a child of the button's root.
+    fn tip_for(&self, node: NodeId) -> Option<(NodeId, String)> {
+        let mut current = Some(node);
+        while let Some(id) = current {
+            if let Some((_, text)) = self.tips.iter().find(|(tip, _)| *tip == id) {
+                return Some((id, text.clone()));
+            }
+            current = self.tree.parent(id);
+        }
+        None
+    }
+
+    /// Route one input event to the overlay layer only. The app calls this
+    /// first so a menu can consume Escape even while a game captures the
+    /// keyboard. Returns `true` when an overlay consumed it.
+    pub fn route_overlay_input(&mut self, event: &InputEvent) -> bool {
+        self.repaint = true;
+        self.overlays.handle_input(event).is_handled()
+    }
+
+    /// Route one input event to the main UI (overlays excluded). Returns
+    /// whether a control handled it.
+    pub fn route_ui_input(&mut self, event: &InputEvent) -> bool {
+        self.repaint = true;
+        draw_ui::route_input(&mut self.tree, event).is_handled()
+    }
+
+    /// Route one input event: overlays first, then the UI. Returns `true` when
+    /// the event was consumed (the app then skips the game bindings).
+    pub fn route_input(&mut self, event: &InputEvent) -> bool {
+        if self.route_overlay_input(event) {
+            return true;
+        }
+        self.route_ui_input(event)
+    }
+
+    /// Move keyboard focus to the next (or previous) interactive control, in
+    /// tree order. Returns `false` when the UI has nothing to focus.
+    pub fn move_focus(&mut self, backward: bool) -> bool {
+        let order = focus_order(&self.tree);
+        if order.is_empty() {
+            return false;
+        }
+        let current = draw_ui::focused(&self.tree);
+        let index = current.and_then(|id| order.iter().position(|node| *node == id));
+        let next = match index {
+            Some(index) if backward => (index + order.len() - 1) % order.len(),
+            Some(index) => (index + 1) % order.len(),
+            None if backward => order.len() - 1,
+            None => 0,
+        };
+        draw_ui::gui_state_mut(&mut self.tree).focused = Some(order[next]);
+        self.repaint = true;
+        true
+    }
+}
+
+/// Every focusable control in tree order: the nodes that own a click or drag
+/// callback, are enabled, and are not clipped away.
+fn focus_order(tree: &SceneTree) -> Vec<NodeId> {
+    let mut order = Vec::new();
+    collect_focusable(tree, tree.root(), &mut order);
+    order
+}
+
+fn collect_focusable(tree: &SceneTree, id: NodeId, out: &mut Vec<NodeId>) {
+    if let Some(control) = tree.data::<Control>(id) {
+        let interactive = control.callback.is_some() || control.drag_callback.is_some();
+        let clipped = matches!(control.data.clip_rect, Some(rect) if rect.is_empty());
+        if interactive && !control.data.disabled && !clipped {
+            out.push(id);
+        }
+    }
+    if let Some(children) = tree.children(id) {
+        for child in children {
+            collect_focusable(tree, *child, out);
+        }
+    }
+}
+
+/// Resolve the view's `control → tooltip` refs to the mounted ids.
+fn resolve_tips(raw: Vec<(NodeRef, String)>) -> Vec<(NodeId, String)> {
+    raw.into_iter()
+        .filter_map(|(node, text)| node.get().map(|id| (id, text)))
+        .collect()
 }
 
 #[cfg(test)]
@@ -434,6 +689,58 @@ mod tests {
             (ui.middle_width() - (model.middle_width + 60.0)).abs() < 1e-3,
             "the drag continued after the rebuild: {}",
             ui.middle_width()
+        );
+    }
+
+    /// Tab moves the focus to the next interactive control, Shift+Tab back.
+    #[test]
+    fn tab_moves_the_focus_between_controls() {
+        let theme = default_theme(Mode::Dark);
+        let actions = Actions::default();
+        let model = ViewModel {
+            games: (0..3).map(game).collect(),
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+        let mut ui = Ui::new(theme, &model, &actions);
+        ui.layout(viewport);
+        assert!(
+            draw_ui::focused(ui.tree()).is_none(),
+            "nothing is focused until the keyboard is used"
+        );
+
+        assert!(ui.move_focus(false), "a control takes focus");
+        let first = draw_ui::focused(ui.tree()).expect("focused");
+        assert!(ui.move_focus(false), "focus advances");
+        let second = draw_ui::focused(ui.tree()).expect("focused");
+        assert_ne!(first, second, "Tab moved the focus to another control");
+
+        assert!(ui.move_focus(true), "focus goes back");
+        assert_eq!(draw_ui::focused(ui.tree()), Some(first));
+    }
+
+    /// The focused control is stroked with a focus ring when painted.
+    #[test]
+    fn the_focused_control_gets_a_ring() {
+        let theme = default_theme(Mode::Dark);
+        let actions = Actions::default();
+        let model = ViewModel {
+            games: (0..3).map(game).collect(),
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+        let mut ui = Ui::new(theme, &model, &actions);
+        ui.layout(viewport);
+        ui.move_focus(false);
+
+        let mut ctx = draw_render::PaintContext::new();
+        ui.paint(&mut ctx);
+        let list = ctx.into_draw_list();
+        assert!(
+            list.commands()
+                .iter()
+                .any(|command| matches!(command, draw_render::DrawCommand::StrokeRect { .. })),
+            "the focus ring is stroked"
         );
     }
 }
