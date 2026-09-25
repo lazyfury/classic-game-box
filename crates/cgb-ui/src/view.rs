@@ -38,7 +38,7 @@ use draw_core::{Color, Edges};
 use draw_render::Paint;
 use draw_scene::{SceneChild, SceneTree};
 use draw_theme::radius::MD;
-use draw_theme::{radius, space, Theme, Tone};
+use draw_theme::{radius, space, ControlSize, Theme, Tone};
 use draw_ui::{Align, Justify, MouseFilter, SizeBasis, SurfaceStyle, Track};
 
 use crate::frame::{cover_fit, FrameImage};
@@ -573,6 +573,7 @@ fn chip(theme: &'static dyn Theme, label: &str, selected: bool) -> Button {
     if selected {
         Button::ghost(label, theme)
             .text_color(theme.palette().accent)
+            .size(ControlSize::Mini)
             .dynamic_background(move |_| {
                 SurfaceStyle::new(theme.palette().selection).radius(radius::MD)
             })
@@ -581,27 +582,20 @@ fn chip(theme: &'static dyn Theme, label: &str, selected: bool) -> Button {
     }
 }
 
-/// The width reserved for a toolbar's leading caption, so the console filter
-/// and the sort chips line up on the same column whatever the label's glyphs
-/// measure.
-const TOOLBAR_LABEL_WIDTH: f32 = 40.0;
-
-/// A toolbar row: a fixed-width leading caption, then a wrapping group of
-/// chips. The console filter and the sort controls share it, so their chips
-/// line up on the same column.
-fn toolbar_row(theme: &'static dyn Theme, label: &str, chips: Flex) -> Grid {
-    Grid::new(vec![Track::Px(TOOLBAR_LABEL_WIDTH), Track::Fr(1.0)])
-        .gap(space::SM)
-        .padding(Edges::ZERO)
-        .child(Text::caption(label, theme).tone(Tone::Muted))
-        .child(chips)
-}
-
 /// The library's console filter: one chip per console present (with its count)
 /// plus an “全部” chip. The total lives by the page title. The chips wrap, so a
 /// library with many consoles does not overflow the middle column.
-fn stats_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Grid {
-    let mut chips = Flex::row().wrap(true).gap(space::XS).align(Align::Center);
+fn stats_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Flex {
+    let mut container = Flex::column()
+        .padding(Edges::ZERO)
+        .gap(space::XXXS)
+        .child(Text::caption("按模拟器筛选", theme).tone(Tone::Muted));
+
+    let mut chips = Flex::row()
+        .padding(Edges::all(space::XXXS))
+        .wrap(true)
+        .gap(space::XS)
+        .align(Align::Center);
     let all = actions.clone();
     chips = chips.child(
         chip(theme, "全部", model.system_filter.is_none())
@@ -618,13 +612,24 @@ fn stats_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) ->
                 .on_click(move || filter.push(Action::FilterSystem(Some(system)))),
         );
     }
-    toolbar_row(theme, "机种", chips)
+
+    container = container.child(chips);
+    container
 }
 
 /// The library's sort controls: one chip per key, then a direction toggle.
 /// Pinned games are always on top, so the key only orders within the groups.
-fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Grid {
-    let mut chips = Flex::row().wrap(true).gap(space::XS).align(Align::Center);
+fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Flex {
+    let mut container = Flex::column()
+        .padding(Edges::ZERO)
+        .gap(space::XXXS)
+        .child(Text::caption("排序", theme).tone(Tone::Muted));
+
+    let mut chips = Flex::row()
+        .wrap(true)
+        .padding(Edges::all(space::XXXS))
+        .gap(space::XS)
+        .align(Align::Center);
     for key in SortKey::ALL {
         let actions = actions.clone();
         chips = chips.child(
@@ -648,7 +653,8 @@ fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> 
             .on_click(move || toggle.push(Action::ToggleSortOrder))
             .ref_(&dir_node),
     );
-    toolbar_row(theme, "排序", chips)
+    container = container.child(chips);
+    container
 }
 
 /// The search row: a button that opens the field, or the field while typing,
