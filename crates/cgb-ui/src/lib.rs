@@ -445,7 +445,9 @@ impl Ui {
     /// whether a control handled it.
     pub fn route_ui_input(&mut self, event: &InputEvent) -> bool {
         self.repaint = true;
-        draw_ui::route_input(&mut self.tree, event).is_handled()
+        let handled = draw_ui::route_input(&mut self.tree, event).is_handled();
+        self.normalize_focus();
+        handled
     }
 
     /// Route one input event: overlays first, then the UI. Returns `true` when
@@ -476,6 +478,73 @@ impl Ui {
         self.repaint = true;
         true
     }
+
+    /// Activate the focused control the way Enter / Space should: run its
+    /// click callback. quill's own keyboard activation only fires for its
+    /// low-level `Widget::Button`, which the themed components and this app's
+    /// custom targets do not use, so the host drives it here.
+    pub fn activate_focus(&mut self) -> bool {
+        let Some(id) = draw_ui::focused(&self.tree) else {
+            return false;
+        };
+        // A disabled control (or one under a disabled ancestor) never fires.
+        let mut guard = Some(id);
+        while let Some(node) = guard {
+            if self
+                .tree
+                .data::<Control>(node)
+                .is_some_and(|control| control.data.disabled)
+            {
+                return false;
+            }
+            guard = self.tree.parent(node);
+        }
+        // The nearest ancestor with a callback owns the click.
+        let mut current = Some(id);
+        while let Some(node) = current {
+            if let Some(callback) = self
+                .tree
+                .data::<Control>(node)
+                .and_then(|control| control.callback.clone())
+            {
+                (callback.borrow_mut())();
+                self.repaint = true;
+                return true;
+            }
+            current = self.tree.parent(node);
+        }
+        false
+    }
+
+    /// A pointer click lands on the deepest control under it, which for a card
+    /// or a row is a text label with no click action. Snap the focus to the
+    /// nearest ancestor that has one (the card / button the label belongs to),
+    /// or clear it when there is none, so the ring and Tab agree with what Tab
+    /// would pick.
+    fn normalize_focus(&mut self) {
+        let Some(id) = draw_ui::focused(&self.tree) else {
+            return;
+        };
+        let target = interactive_ancestor(&self.tree, id);
+        if target != Some(id) {
+            draw_ui::gui_state_mut(&mut self.tree).focused = target;
+        }
+    }
+}
+
+/// The nearest ancestor of `id` (including itself) with a click callback.
+fn interactive_ancestor(tree: &SceneTree, id: NodeId) -> Option<NodeId> {
+    let mut current = Some(id);
+    while let Some(node) = current {
+        if tree
+            .data::<Control>(node)
+            .is_some_and(|control| control.callback.is_some())
+        {
+            return Some(node);
+        }
+        current = tree.parent(node);
+    }
+    None
 }
 
 /// Every focusable control in tree order: the nodes that own a click or drag
@@ -488,7 +557,9 @@ fn focus_order(tree: &SceneTree) -> Vec<NodeId> {
 
 fn collect_focusable(tree: &SceneTree, id: NodeId, out: &mut Vec<NodeId>) {
     if let Some(control) = tree.data::<Control>(id) {
-        let interactive = control.callback.is_some() || control.drag_callback.is_some();
+        // Only controls a keyboard can activate: a click callback. (A drag
+        // handle has no keyboard equivalent yet, so it is not a focus stop.)
+        let interactive = control.callback.is_some();
         let clipped = matches!(control.data.clip_rect, Some(rect) if rect.is_empty());
         if interactive && !control.data.disabled && !clipped {
             out.push(id);
@@ -719,6 +790,26 @@ mod tests {
         assert_eq!(draw_ui::focused(ui.tree()), Some(first));
     }
 
+    /// Enter / Space on the focused control runs its click callback.
+    #[test]
+    fn activating_the_focus_fires_its_click() {
+        let theme = default_theme(Mode::Dark);
+        let actions = Actions::default();
+        let model = ViewModel {
+            games: (0..3).map(game).collect(),
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+        let mut ui = Ui::new(theme, &model, &actions);
+        ui.layout(viewport);
+        assert!(ui.move_focus(false), "a control takes focus");
+        assert!(ui.activate_focus(), "the focused control fires its click");
+        assert!(
+            !actions.drain().is_empty(),
+            "activating the focus pushed an action"
+        );
+    }
+
     /// The focused control is stroked with a focus ring when painted.
     #[test]
     fn the_focused_control_gets_a_ring() {
@@ -742,5 +833,57 @@ mod tests {
                 .any(|command| matches!(command, draw_render::DrawCommand::StrokeRect { .. })),
             "the focus ring is stroked"
         );
+    }
+
+    /// A click on a card's text focuses the card (the click target), not the
+    /// label, so the ring and Tab agree.
+    #[test]
+    fn clicking_card_text_focuses_the_card() {
+        let theme = default_theme(Mode::Dark);
+        let actions = Actions::default();
+        let model = ViewModel {
+            games: (0..3).map(game).collect(),
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+        let mut ui = Ui::new(theme, &model, &actions);
+        ui.layout(viewport);
+        let mut ctx = draw_render::PaintContext::new();
+        ui.paint(&mut ctx);
+        let list = ctx.into_draw_list();
+        let point = list
+            .commands()
+            .iter()
+            .find_map(|command| match command {
+                draw_render::DrawCommand::DrawText { text, position, .. } if text == "Game 0" => {
+                    Some(*position)
+                }
+                _ => None,
+            })
+            .expect("the name is painted");
+
+        for event in [
+            InputEvent::PointerDown {
+                position: point,
+                button: PointerButton::Left,
+            },
+            InputEvent::PointerUp {
+                position: point,
+                button: PointerButton::Left,
+            },
+        ] {
+            ui.route_input(&event);
+        }
+
+        let focused = draw_ui::focused(ui.tree()).expect("something is focused");
+        let control = ui.tree().data::<Control>(focused).expect("a control");
+        assert!(
+            control.callback.is_some(),
+            "the focus snapped to the click target, not the label"
+        );
+
+        // Tab continues from that control instead of restarting.
+        assert!(ui.move_focus(false));
+        assert_ne!(draw_ui::focused(ui.tree()), Some(focused));
     }
 }

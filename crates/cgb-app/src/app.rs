@@ -1446,10 +1446,18 @@ impl App {
             } else {
                 // No game, or paused: the UI owns the keyboard. Tab moves the
                 // focus; Enter / Space activate the focused control.
-                if !self.ui.route_ui_input(event)
-                    && matches!(event, InputEvent::KeyDown { key: Key::Tab })
-                {
-                    self.ui.move_focus(self.modifiers.shift_key());
+                if !self.ui.route_ui_input(event) {
+                    if let InputEvent::KeyDown { key } = event {
+                        match key {
+                            Key::Tab => {
+                                self.ui.move_focus(self.modifiers.shift_key());
+                            }
+                            Key::Enter | Key::Space => {
+                                self.ui.activate_focus();
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 if matches!(event, InputEvent::KeyDown { key: Key::Escape }) {
                     self.escape_game();
