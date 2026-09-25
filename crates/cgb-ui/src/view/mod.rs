@@ -1,0 +1,413 @@
+//! Builds the quill tree from a [`ViewModel`].
+//!
+//! Three columns, following the old Electron front end: a narrow icon rail on
+//! the left picks what the middle column shows (the game library or settings);
+//! the right column is the console and is always mounted. A slim header and a
+//! status line top and tail the shell.
+//!
+//! ```text
+//! Flex::column()                     <- layout root, one anchor-sized child
+//!   └─ Flex::column()                <- the vertical stack (flex starts here)
+//!        ├─ header
+//!        ├─ Flex::row()              <- the three columns
+//!        │    ├─ rail         (64px, shrink 0)   icon + label sections
+//!        │    ├─ middle       (draggable, shrink 0)  library grid / settings
+//!        │    ├─ resize handle (6px gutter)       drags the middle column
+//!        │    └─ play column  (grow 1)           the console, always
+//!        └─ status bar
+//! ```
+//!
+//! This still uses only public `draw_components` APIs. Callbacks push
+//! [`Action`]s into an [`Actions`] queue; the app drains them after routing
+//! input.
+//!
+//! ## Layout shape (matters)
+//!
+//! quill's layout root places its direct children by **anchors**, and flex
+//! starts one level down (see `examples/file_browser/src/ui.rs`). So the row
+//! of columns must live inside the root column, not at the root itself.
+//!
+//! ## Module layout
+//!
+//! This module owns the shell and the wiring; each feature is its own module:
+//!
+//! - `components` — the toolbar chip, the cover icon buttons, the minimal text
+//!   field, and the grid virtualization helpers the pages share;
+//! - `library` — the game library page, its console filter / sort / search and
+//!   its cover-card grid;
+//! - `screenshots` — the screenshot grid and its cover / reveal / delete
+//!   controls;
+//! - `saves` and `cheats` — the running game's save slots and cheat list;
+//! - `settings` — the settings page (library, cores, shader, options, keys);
+//! - `play` — the right column: the console, the immersive fullscreen view and
+//!   the screenshot preview it swaps in;
+//! - `tests` — the behaviour tests for all of the above.
+
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+use draw_components::{
+    Column, Component, Divider, Flex, NodeRef, Panel, ResizeHandle, Row, ScrollViewState, Text,
+};
+use draw_core::{Color, Edges};
+use draw_scene::{SceneChild, SceneTree};
+use draw_theme::{radius, space, Theme, Tone};
+use draw_ui::{Align, MouseFilter, SizeBasis, SurfaceStyle};
+
+use crate::icons::{Icon as SvgIcon, IconName};
+use crate::model::{Action, Section, StatusKind, ViewModel};
+
+mod cheats;
+mod components;
+mod library;
+mod play;
+mod saves;
+mod screenshots;
+mod settings;
+
+use cheats::cheats_page;
+use library::{library_grid_window, library_page};
+use play::{fullscreen_play, play_column};
+use saves::saves_page;
+use screenshots::{screenshots_grid_window, screenshots_page};
+use settings::settings_page;
+
+#[cfg(test)]
+mod tests;
+
+/// The rail's fixed width in logical pixels.
+const RAIL_WIDTH: f32 = 64.0;
+
+/// The middle column's width limits in logical pixels. The resize handle
+/// clamps the shared width cell to this range, and the app clamps the saved
+/// width to it on startup.
+pub const MIDDLE_MIN_WIDTH: f32 = 300.0;
+pub const MIDDLE_MAX_WIDTH: f32 = 640.0;
+
+/// The library / screenshots grid column limits. The count follows the middle
+/// column's width, so a wider pane shows more cards per row.
+pub const MIN_LIBRARY_COLUMNS: usize = 2;
+pub const MAX_LIBRARY_COLUMNS: usize = 4;
+
+/// The card width the column count aims for: the widest pane packs four
+/// columns near this width, and the narrowest still gets the minimum two.
+const TARGET_CARD_WIDTH: f32 = 128.0;
+
+/// The library grid's column count for a middle-column width, stepping
+/// 2 / 3 / 4 as the pane widens.
+pub fn library_columns(width: f32) -> usize {
+    let content = (width - 2.0 * space::MD).max(0.0);
+    let columns = ((content + space::SM) / (TARGET_CARD_WIDTH + space::SM)).floor() as usize;
+    columns.clamp(MIN_LIBRARY_COLUMNS, MAX_LIBRARY_COLUMNS)
+}
+
+/// Height of a card's cover placeholder in logical pixels.
+const PLACEHOLDER_HEIGHT: f32 = 112.0;
+
+/// A library card's fixed height. Uniform rows let the grid mount only the
+/// visible ones: the content is padded to this, and every card's text is one
+/// line, so it is never taller.
+const CARD_HEIGHT: f32 = 184.0;
+
+/// A screenshot cell's fixed height, for the same virtualization.
+const SHOT_HEIGHT: f32 = 180.0;
+
+/// The card controls' icon size, and the square tap target around them.
+const CARD_ICON: f32 = 12.0;
+const CARD_ICON_BUTTON: f32 = 16.0;
+
+/// Colors painted over game artwork (covers, screenshots), not over a theme
+/// surface. They are deliberately independent of light/dark: the scrim is dark
+/// and the labels light so they stay legible against arbitrary imagery.
+/// Centralised so the badge and the controls cannot drift apart.
+mod media {
+    use draw_core::Color;
+
+    /// A translucent dark scrim behind labels on artwork.
+    pub const SCRIM: Color = Color::new(0.0, 0.0, 0.0, 0.4);
+    /// The small surface behind a console badge on a cover.
+    pub const BADGE: Color = Color::new(0.11, 0.11, 0.13, 0.72);
+    /// Primary ink on artwork.
+    pub const ON_MEDIA: Color = Color::new(1.0, 1.0, 1.0, 0.92);
+    /// Secondary ink on artwork (the control icons and badge label).
+    pub const ON_MEDIA_MUTED: Color = Color::new(1.0, 1.0, 1.0, 0.85);
+    /// Hover fill for a control sitting on artwork.
+    pub const ON_MEDIA_HOVER: Color = Color::new(1.0, 1.0, 1.0, 0.16);
+    /// Dark ink for a light artwork placeholder.
+    pub const ON_MEDIA_DARK: Color = Color::new(0.07, 0.07, 0.09, 0.92);
+}
+
+/// Where view callbacks deposit what the user did. The app drains it once per
+/// frame (see the quill UI guide's "state lives in cells" rule).
+///
+/// It also carries the tooltip text the current tree registered: the view
+/// cannot open an overlay (the host owns the overlay layer), so it records
+/// `control → tooltip` here and [`crate::Ui`] opens the tip after layout.
+#[derive(Clone, Default)]
+pub struct Actions {
+    queue: Rc<RefCell<Vec<Action>>>,
+    tips: Rc<RefCell<Vec<(NodeRef, String)>>>,
+}
+
+impl Actions {
+    /// Record an action.
+    pub fn push(&self, action: Action) {
+        self.queue.borrow_mut().push(action);
+    }
+
+    /// Take everything recorded since the last drain.
+    pub fn drain(&self) -> Vec<Action> {
+        std::mem::take(&mut *self.queue.borrow_mut())
+    }
+
+    /// Register a tooltip for the control mounted into `node`.
+    pub fn tip(&self, node: &NodeRef, text: impl Into<String>) {
+        self.tips.borrow_mut().push((node.clone(), text.into()));
+    }
+
+    /// Take the tooltips registered by the tree just built.
+    pub fn take_tips(&self) -> Vec<(NodeRef, String)> {
+        std::mem::take(&mut *self.tips.borrow_mut())
+    }
+}
+
+/// Build the whole tree for one frame, plus the persistent view state the app
+/// must drive across frames (the library grid's scroll offset).
+///
+/// `middle_width` is the shared width cell the resize handle writes and the
+/// middle panel reads; the caller owns it so the width survives a rebuild.
+/// `handle_ref` receives the resize handle's node, so the caller can re-arm a
+/// drag across a rebuild (a column-count change rebuilds mid-drag).
+/// `mounted_rows` is set to the row range the active virtualized grid mounts,
+/// so the caller can tell whether a scroll still fits inside it.
+pub fn build(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &Actions,
+    middle_width: &Rc<Cell<f32>>,
+    handle_ref: &NodeRef,
+    mounted_rows: &Cell<(usize, usize)>,
+) -> (SceneTree, Option<ScrollViewState>) {
+    mounted_rows.set(grid_window(model));
+    // Immersive play: mount only the game picture and a slim overlay bar, so
+    // the heavy library grid is not re-submitted every emulator frame. The
+    // app drives the window's fullscreen state separately.
+    if model.fullscreen {
+        mounted_rows.set((0, 0));
+        let tree = Flex::column()
+            .mouse_filter(MouseFilter::Ignore)
+            .child(fullscreen_play(theme, model, actions))
+            .into_tree();
+        return (tree, None);
+    }
+    let mut scroll = None;
+    // The resize handle points at the middle panel, so bind a slot before the
+    // panel is built and read it into the handle.
+    let middle_ref = NodeRef::new();
+    // The layout root places its direct children by anchors, so the vertical
+    // stack is one level down: the root's single child is a column, and *its*
+    // children (header / columns / status) are the flex items.
+    let inner = Flex::column()
+        .gap(0.0)
+        .padding(Edges::ZERO)
+        .mouse_filter(MouseFilter::Ignore)
+        .child(header(theme, model))
+        .child(
+            Flex::row()
+                .grow(1.0)
+                .gap(0.0)
+                .padding(Edges::ZERO)
+                .mouse_filter(MouseFilter::Ignore)
+                .child(rail(theme, model, actions))
+                .child(middle(theme, model, actions, &mut scroll, middle_width).ref_(&middle_ref))
+                .child(resize_handle(theme, middle_width, middle_ref).ref_(handle_ref))
+                .child(play_column(theme, model, actions)),
+        );
+    let tree = Flex::column()
+        .mouse_filter(MouseFilter::Ignore)
+        .child(inner.child(status_bar(theme, model)))
+        .into_tree();
+    (tree, scroll)
+}
+
+/// The slim top bar: the app name and what the middle column is showing.
+///
+/// It leaves the platform's safe area at the top and left, so on macOS the
+/// content running under the title bar does not hide the name behind the
+/// traffic lights.
+fn header(theme: &'static dyn Theme, model: &ViewModel) -> Column {
+    let safe = model.safe_area;
+    Column::new()
+        .gap(0.0)
+        .child(
+            Row::new()
+                .align(Align::Center)
+                .gap(space::SM)
+                .padding(Edges::new(
+                    space::LG + safe.left,
+                    space::SM + safe.top,
+                    space::LG,
+                    space::SM,
+                ))
+                .min_size(0.0, 40.0 + safe.top)
+                .child(Text::subheading("Classic Game Box", theme).bold())
+                .child(Text::caption(model.section.label(), theme).tone(Tone::Muted)),
+        )
+        .child(Divider::horizontal(theme))
+}
+
+/// The left rail: one icon-over-label button per section (the VS Code
+/// activity bar, with the names always visible).
+fn rail(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
+    let mut rail = Column::new()
+        .gap(space::SM)
+        .padding(Edges::new(space::XS, space::SM, space::XS, space::SM))
+        .basis(SizeBasis::Px(RAIL_WIDTH))
+        .shrink(0.0)
+        .surface(SurfaceStyle::new(theme.palette().surface))
+        .mouse_filter(MouseFilter::Ignore);
+    for section in Section::ALL {
+        rail = rail.child(rail_item(theme, section, model.section, actions));
+    }
+    rail
+}
+
+/// One rail entry. Selected is the accent fill; hover is the only other state.
+fn rail_item(
+    theme: &'static dyn Theme,
+    section: Section,
+    active: Section,
+    actions: &Actions,
+) -> Column {
+    let actions = actions.clone();
+    let selected = section == active;
+    let ink = if selected {
+        theme.palette().on_accent
+    } else {
+        theme.palette().muted
+    };
+    let item = Column::new()
+        .gap(space::XXS)
+        .padding(Edges::new(space::XXS, space::SM, space::XXS, space::SM))
+        .align(Align::Center)
+        .dynamic_background(move |state| {
+            let fill = if selected {
+                theme.palette().accent
+            } else if state.hovered {
+                theme.palette().surface_hover
+            } else {
+                Color::TRANSPARENT
+            };
+            SurfaceStyle::new(fill).radius(radius::MD)
+        })
+        .on_click(move || actions.push(Action::Show(section)));
+    // Every section uses a vendored SVG icon, so the rail is one stroke set.
+    let icon = match section {
+        Section::Library => IconName::Library,
+        Section::Screenshots => IconName::Camera,
+        Section::Saves => IconName::Save,
+        Section::Cheats => IconName::Sparkles,
+        Section::Settings => IconName::Settings2,
+    };
+    item.child(SvgIcon::new(icon, ink, 20.0)).child(
+        Text::caption(section.label(), theme)
+            .color(ink)
+            .max_lines(1),
+    )
+}
+
+/// The middle column: a resizable panel holding the current page. Its width
+/// comes from the shared cell the resize handle drives.
+fn middle(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &Actions,
+    scroll: &mut Option<ScrollViewState>,
+    middle_width: &Rc<Cell<f32>>,
+) -> Panel {
+    let page = match model.section {
+        Section::Library => library_page(theme, model, actions, scroll),
+        Section::Screenshots => screenshots_page(theme, model, actions, scroll),
+        Section::Saves => saves_page(theme, model, actions, scroll),
+        Section::Cheats => cheats_page(theme, model, actions, scroll),
+        Section::Settings => settings_page(theme, model, actions, scroll),
+    };
+    Panel::new()
+        .color(theme.palette().surface_raised)
+        .flat()
+        .basis(SizeBasis::Px(middle_width.get()))
+        .shrink(0.0)
+        .clip(true)
+        .mouse_filter(MouseFilter::Ignore)
+        .child(page.grow(1.0))
+}
+
+/// The draggable divider between the middle column and the console.
+///
+/// [`ResizeHandle`] updates the target panel's flex basis through the shared
+/// width cell, so a drag re-lays-out without rebuilding the tree; the app
+/// reads the cell back to persist the width.
+fn resize_handle(
+    theme: &'static dyn Theme,
+    middle_width: &Rc<Cell<f32>>,
+    target: NodeRef,
+) -> ResizeHandle {
+    ResizeHandle::vertical(theme)
+        .target(target)
+        .width(middle_width.clone())
+        .min(MIDDLE_MIN_WIDTH)
+        .max(MIDDLE_MAX_WIDTH)
+        .color(theme.palette().border)
+}
+
+/// The inclusive row range the active virtualized grid mounts for the model's
+/// current scroll offset and viewport.
+///
+/// The app compares this (via [`Ui::grid_window_covers`](crate::Ui::grid_window_covers))
+/// to the range already in the tree, so scrolling inside the mounted window is a
+/// plain repaint instead of a rebuild.
+pub fn grid_window(model: &ViewModel) -> (usize, usize) {
+    match model.section {
+        Section::Library => library_grid_window(model),
+        Section::Screenshots => screenshots_grid_window(model),
+        _ => (0, 0),
+    }
+}
+
+/// The bottom status line: the last app message, plus the save hotkeys.
+fn status_bar(theme: &'static dyn Theme, model: &ViewModel) -> Column {
+    let (status, tone) = if model.status.is_empty() {
+        ("就绪", Tone::Muted)
+    } else {
+        let tone = match model.status_kind {
+            StatusKind::Info => Tone::Muted,
+            StatusKind::Success => Tone::Success,
+            StatusKind::Error => Tone::Error,
+        };
+        (model.status.as_str(), tone)
+    };
+    Column::new()
+        .gap(0.0)
+        .child(Divider::horizontal(theme))
+        .child(
+            Row::new()
+                .align(Align::Center)
+                .gap(space::SM)
+                .padding(Edges::new(space::MD, space::XXS, space::MD, space::XXS))
+                .min_size(0.0, 22.0)
+                .child(
+                    Text::caption(status, theme)
+                        .tone(tone)
+                        .grow(1.0)
+                        .max_lines(1)
+                        .ellipsis(true),
+                )
+                .child(
+                    Text::caption(
+                        "F5 存档 / F6 读档 / F12 截图 / ⇧F12 封面 / 退格 倒带",
+                        theme,
+                    )
+                    .tone(Tone::Subtle),
+                ),
+        )
+}
