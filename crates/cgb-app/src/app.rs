@@ -30,8 +30,8 @@ use winit::window::{Fullscreen, Window, WindowId};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{
-    collect_games, decode_png, encode_png, load_cores, seed_dir, DiskGame, Game, Library, Paths,
-    Settings,
+    collect_games, decode_png, encode_png, import_roms, load_cores, seed_dir, Game, ImportReport,
+    Library, Paths, Settings,
 };
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
 use cgb_ui::{
@@ -1108,38 +1108,30 @@ impl App {
 
     /// Add ROM files (dropped in, or picked in the dialog) to the library.
     ///
-    /// A dropped folder joins the scanned folders; a file is remembered
-    /// individually, so it survives a rescan without being copied.
+    /// A dropped folder joins the scanned folders; a ROM file is **copied**
+    /// into the library folder, so the library stays one self-contained
+    /// folder. This is the legacy front end's rule (`Library.add`): a game
+    /// that was only pointed at would break the moment its file moved.
     fn add_game_paths(&mut self, paths: Vec<PathBuf>) {
-        let mut added = 0;
-        let mut skipped = None;
+        let mut dirs_added = 0usize;
+        let mut files = Vec::new();
         for path in paths {
             if path.is_dir() {
                 let dir = path.to_string_lossy().into_owned();
                 if !self.settings.library_dirs.contains(&dir) {
                     self.settings.library_dirs.push(dir);
-                    added += 1;
+                    dirs_added += 1;
                 }
-                continue;
-            }
-            match DiskGame::from_path(&path) {
-                Some(game) if !self.settings.added_roms.contains(&game.path) => {
-                    self.settings.added_roms.push(game.path);
-                    added += 1;
-                }
-                Some(_) => {}
-                None => skipped = Some(path.display().to_string()),
+            } else {
+                files.push(path);
             }
         }
-        let _ = self.settings.save(&self.paths.settings_json);
+        let report = import_roms(&self.paths.roms, &files);
+        if dirs_added > 0 {
+            let _ = self.settings.save(&self.paths.settings_json);
+        }
         self.reload_library();
-        self.model.status = if added > 0 {
-            format!("已添加 {added} 个游戏")
-        } else if let Some(path) = skipped {
-            format!("跳过不认识的 ROM：{path}")
-        } else {
-            "没有新增游戏".to_string()
-        };
+        self.model.status = import_status(&report, dirs_added);
     }
 
     /// Add any files dropped since the last frame, in one batch.
@@ -2564,6 +2556,35 @@ fn key_label(key: Key) -> String {
     }
 }
 
+/// The status line after adding games: how many were copied, how many folders
+/// joined the scan, and the first reason any were skipped.
+fn import_status(report: &ImportReport, dirs_added: usize) -> String {
+    let copied = report.copied_count();
+    let skipped = report.skipped_count();
+    let mut parts = Vec::new();
+    if copied > 0 {
+        parts.push(format!("已添加 {copied} 个游戏到游戏库"));
+    }
+    if dirs_added > 0 {
+        parts.push(format!("已添加 {dirs_added} 个游戏目录"));
+    }
+    if let Some((path, error)) = report.failed.first() {
+        parts.push(format!("拷贝失败 {}（{error}）", path.display()));
+    }
+    if parts.is_empty() {
+        return match (report.unknown.first(), report.already_inside.is_empty()) {
+            (Some(path), _) => format!("跳过不认识的 ROM：{}", path.display()),
+            (None, false) => "这些游戏已经在游戏库里了".to_string(),
+            _ => "没有新增游戏".to_string(),
+        };
+    }
+    let mut message = parts.join("，");
+    if skipped > 0 {
+        message.push_str(&format!("（跳过 {skipped} 个）"));
+    }
+    message
+}
+
 /// The save-state hotkey for a key, matching the old front end's layout: `F5`
 /// quick-saves, `F6` quick-loads, `F1`–`F3` save slots 1–3, and
 /// `Shift`+`F1`–`F3` loads them.
@@ -2679,6 +2700,33 @@ mod tests {
             state_shortcut(&WinitKey::Named(NamedKey::F11), false),
             Some(Action::ToggleFullscreen)
         );
+    }
+
+    #[test]
+    fn import_status_reports_copies_and_skips() {
+        let mut report = ImportReport {
+            copied: vec![PathBuf::from("/lib/mario.nes")],
+            ..ImportReport::default()
+        };
+        assert!(import_status(&report, 0).contains("已添加 1 个游戏"));
+
+        report.unknown.push(PathBuf::from("/tmp/notes.txt"));
+        let message = import_status(&report, 0);
+        assert!(message.contains("已添加 1 个游戏"), "{message}");
+        assert!(message.contains("跳过 1 个"), "{message}");
+
+        let already = ImportReport {
+            already_inside: vec![PathBuf::from("/lib/mario.nes")],
+            ..ImportReport::default()
+        };
+        assert!(import_status(&already, 0).contains("已经在游戏库里"));
+
+        let unknown = ImportReport {
+            unknown: vec![PathBuf::from("/tmp/notes.txt")],
+            ..ImportReport::default()
+        };
+        assert!(import_status(&unknown, 0).contains("跳过不认识的 ROM"));
+        assert!(import_status(&ImportReport::default(), 2).contains("已添加 2 个游戏目录"));
     }
 
     fn temp_paths(name: &str) -> Paths {
