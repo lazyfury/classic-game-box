@@ -548,8 +548,8 @@ fn library_page(
                     .on_click(move || add_files.push(Action::AddGames)),
             )
             .child(
-                Button::ghost("添加游戏目录…", theme)
-                    .on_click(move || add_dir.push(Action::OpenRom)),
+                Button::ghost("打开游戏库…", theme)
+                    .on_click(move || add_dir.push(Action::SwitchLibrary)),
             ),
     );
     column
@@ -1810,39 +1810,25 @@ fn settings_page(
         .gap(space::MD)
         .mouse_filter(MouseFilter::Ignore);
 
-    // Library folders the scanner walks.
-    let mut dirs = Column::new().gap(space::XS);
-    if model.library_dirs.is_empty() {
-        dirs = dirs.child(Text::small("还没有扫描目录。", theme).tone(Tone::Muted));
-    } else {
-        for (index, dir) in model.library_dirs.iter().enumerate() {
-            let actions = actions.clone();
-            dirs = dirs.child(
-                Row::new()
-                    .gap(space::SM)
-                    .child(
-                        Text::small(dir.as_str(), theme)
-                            .grow(1.0)
-                            .max_lines(1)
-                            .ellipsis(true),
-                    )
-                    .child(
-                        Button::ghost("移除", theme)
-                            .on_click(move || actions.push(Action::RemoveLibraryDir(index))),
-                    ),
-            );
-        }
-    }
-    let add = actions.clone();
+    // The one game library: ROMs, database, screenshots, saves and cheats all
+    // live in this folder. There is only one; switching replaces it.
+    let current = match model.library_root.as_deref() {
+        Some(path) => Text::small(path, theme)
+            .grow(1.0)
+            .max_lines(1)
+            .ellipsis(true),
+        None => Text::small("还没有游戏库，选一个文件夹作为游戏库。", theme).tone(Tone::Muted),
+    };
+    let switch = actions.clone();
     body = body.child(
         Card::new(theme)
             .gap(space::SM)
             .padding(Edges::all(space::SM))
-            .child(Text::subheading("游戏目录", theme))
-            .child(dirs)
+            .child(Text::subheading("游戏库", theme))
+            .child(current)
             .child(
-                Button::secondary("添加游戏目录…", theme)
-                    .on_click(move || add.push(Action::OpenRom)),
+                Button::secondary("切换游戏库…", theme)
+                    .on_click(move || switch.push(Action::SwitchLibrary)),
             ),
     );
 
@@ -2849,10 +2835,10 @@ mod tests {
     }
 
     #[test]
-    fn the_settings_page_lists_dirs_and_cores() {
+    fn the_settings_page_shows_the_library_and_cores() {
         let model = ViewModel {
             section: Section::Settings,
-            library_dirs: vec!["/roms/nes".to_string()],
+            library_root: Some("/roms/nes".to_string()),
             cores: vec![
                 CoreRow {
                     key: "mesen".to_string(),
@@ -2880,7 +2866,7 @@ mod tests {
                     DrawCommand::DrawText { text, .. } if text.contains(needle))
             })
         };
-        assert!(has("/roms/nes"), "the folder is listed");
+        assert!(has("/roms/nes"), "the library folder is shown");
         assert!(has("Mesen"), "the selected core is shown in the pull-down");
         assert!(has("X / K"), "the binding is shown");
     }
@@ -3015,10 +3001,15 @@ mod tests {
     fn the_settings_page_scrolls_when_it_overflows() {
         let theme = default_theme(Mode::Dark);
         let actions = Actions::default();
-        let library_dirs: Vec<String> = (0..40).map(|index| format!("/roms/{index}")).collect();
+        let bindings: Vec<BindingRow> = (0..40)
+            .map(|index| BindingRow {
+                button: format!("按键 {index}"),
+                keys: "X / K".to_string(),
+            })
+            .collect();
         let model = ViewModel {
             section: Section::Settings,
-            library_dirs,
+            bindings,
             ..ViewModel::default()
         };
         let width = Rc::new(Cell::new(model.middle_width));

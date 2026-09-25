@@ -398,8 +398,8 @@ pub struct ViewModel {
     pub editing: Option<EditState>,
     /// Every core in the manifest, for the settings picker.
     pub cores: Vec<CoreRow>,
-    /// Folders the library scans.
-    pub library_dirs: Vec<String>,
+    /// The game library folder, shown on the settings page.
+    pub library_root: Option<String>,
     /// Keyboard bindings, for the settings page.
     pub bindings: Vec<BindingRow>,
     /// The console the bindings belong to (they are per console).
@@ -457,7 +457,7 @@ impl Default for ViewModel {
             selected_screenshots: Vec::new(),
             editing: None,
             cores: Vec::new(),
-            library_dirs: Vec::new(),
+            library_root: None,
             bindings: Vec::new(),
             bindings_system: String::new(),
             core_inputs: Vec::new(),
@@ -492,12 +492,10 @@ pub enum Action {
     LoadState(u8),
     /// Open the native file picker and add the chosen ROM files to the library.
     AddGames,
-    /// Open the native folder picker and add the chosen folder to the library.
-    OpenRom,
+    /// Open the native folder picker and switch to the chosen game library.
+    SwitchLibrary,
     /// Make the core at this `cores` index the pick for its console.
     SelectCore(usize),
-    /// Stop scanning the library folder at this `library_dirs` index.
-    RemoveLibraryDir(usize),
     /// Pin or unpin the game at this library index.
     TogglePin(usize),
     /// Ask to delete something destructive; the app opens a confirmation dialog.

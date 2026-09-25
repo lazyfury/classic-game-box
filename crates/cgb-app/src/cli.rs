@@ -20,6 +20,11 @@ pub struct Args {
     pub rom: Option<PathBuf>,
     /// Force a core instead of the console's default.
     pub core: Option<CoreOverride>,
+    /// Point the app at a game library folder (`--library-dir`). The database,
+    /// screenshots, saves and cheats then live under it, so a copied folder is
+    /// the whole library. Omitted, the remembered library (or the first
+    /// scanned folder) is used.
+    pub library_dir: Option<PathBuf>,
     /// Run the headless checks and exit, without opening a window.
     pub selfcheck: bool,
 }
@@ -39,20 +44,25 @@ pub const USAGE: &str = "\
 Classic Game Box
 
 USAGE:
-    classic-game-box [--rom <path>] [--core <key|module>] [--selfcheck]
+    classic-game-box [--rom <path>] [--core <key|module>] [--library-dir <path>]
+                     [--selfcheck]
 
 OPTIONS:
-    --rom <path>     Load a ROM at startup (also accepted positionally).
-    --core <value>   Force a core: a manifest key (mesen, mgba, nestopia, …)
-                     or a path to a .dylib / .so / .dll.
-    --selfcheck      Run the headless checks (paths, library, settings, cores,
-                     icons) and exit; opens no window.
-    -h, --help       Print this help.
+    --rom <path>          Load a ROM at startup (also accepted positionally).
+    --core <value>        Force a core: a manifest key (mesen, mgba, nestopia, …)
+                          or a path to a .dylib / .so / .dll.
+    --library-dir <path>  Use this game library folder: the database,
+                          screenshots, saves and cheats live under it. The
+                          pick is remembered for later runs.
+    --selfcheck           Run the headless checks (paths, library, settings,
+                          cores, icons) and exit; opens no window.
+    -h, --help            Print this help.
 
 EXAMPLES:
     classic-game-box mario.nes
     classic-game-box --rom mario.nes --core mesen
-    classic-game-box --rom mario.nes --core ./nestopia_libretro.dylib";
+    classic-game-box --rom mario.nes --core ./nestopia_libretro.dylib
+    classic-game-box --library-dir ~/Documents/FcGameLibrary";
 
 impl Args {
     /// Parse arguments **without** the program name.
@@ -63,6 +73,10 @@ impl Args {
             match arg.as_str() {
                 "--rom" => out.rom = Some(PathBuf::from(require_value("--rom", &mut iter)?)),
                 "--core" => out.core = Some(parse_core(&require_value("--core", &mut iter)?)?),
+                "--library-dir" | "--rom-dir" => {
+                    out.library_dir =
+                        Some(PathBuf::from(require_value("--library-dir", &mut iter)?))
+                }
                 "--selfcheck" => out.selfcheck = true,
                 other if other.starts_with('-') => return Err(format!("未知参数：{other}")),
                 other if out.rom.is_none() => out.rom = Some(PathBuf::from(other)),
@@ -131,6 +145,23 @@ mod tests {
     #[test]
     fn selfcheck_parses() {
         assert!(parse(&["--selfcheck"]).unwrap().selfcheck);
+    }
+
+    #[test]
+    fn library_dir_parses_and_its_old_name_is_kept() {
+        let path = PathBuf::from("/games/Fc Library");
+        assert_eq!(
+            parse(&["--library-dir", "/games/Fc Library"])
+                .unwrap()
+                .library_dir,
+            Some(path.clone())
+        );
+        assert_eq!(
+            parse(&["--rom-dir", "/games/Fc Library"])
+                .unwrap()
+                .library_dir,
+            Some(path)
+        );
     }
 
     #[test]

@@ -23,8 +23,17 @@ pub struct Settings {
     pub gg_core: Option<String>,
     pub sg1000_core: Option<String>,
     pub arcade_core: Option<String>,
-    /// Folders the library scans for ROMs.
-    pub library_dirs: Vec<String>,
+    /// The game library folder: the database, screenshots, saves and cheats
+    /// all live under it, so the folder is one self-contained library that can
+    /// be copied between machines. `None` means none was chosen yet.
+    pub library_root: Option<String>,
+    /// Migration input only: the folders listed before the library became a
+    /// single folder. The first one is adopted as `library_root` once, then
+    /// this is never written again (`skip_serializing`), so a settings file in
+    /// the old multi-folder shape keeps its library without keeping the
+    /// feature.
+    #[serde(rename = "library_dirs", default, skip_serializing)]
+    pub legacy_library_dirs: Vec<String>,
     /// ROM files added on their own (dragged in, or chosen in the file
     /// dialog), outside any scanned folder. Kept as long as the file exists,
     /// so they survive a rescan without being copied into the ROM folder.
@@ -91,6 +100,15 @@ impl Settings {
         };
         *slot = key.map(str::to_string);
     }
+
+    /// The library folder to open: the remembered one, or the first folder
+    /// from the old multi-folder layout, so an install that predates the
+    /// switch keeps its library.
+    pub fn library_folder(&self) -> Option<&str> {
+        self.library_root
+            .as_deref()
+            .or_else(|| self.legacy_library_dirs.first().map(String::as_str))
+    }
 }
 
 #[cfg(test)]
@@ -103,6 +121,30 @@ mod tests {
         let json = r#"{"nes_core":"mesen","library_dirs":["/roms"]}"#;
         let settings: Settings = serde_json::from_str(json).expect("old settings parse");
         assert!(settings.added_roms.is_empty());
-        assert_eq!(settings.library_dirs, ["/roms"]);
+        assert!(settings.library_root.is_none());
+        assert_eq!(settings.legacy_library_dirs, ["/roms"]);
+    }
+
+    #[test]
+    fn the_old_multi_folder_list_is_read_once_but_never_written() {
+        // An install from before the single-library switch keeps its folder…
+        let json = r#"{"library_dirs":["/games/First","/games/Second"]}"#;
+        let settings: Settings = serde_json::from_str(json).expect("parse");
+        assert_eq!(settings.library_folder(), Some("/games/First"));
+        // …and the list is gone once the settings are saved again.
+        let out = serde_json::to_string(&settings).expect("serialize");
+        assert!(!out.contains("library_dirs"));
+    }
+
+    #[test]
+    fn the_library_root_round_trips() {
+        let settings = Settings {
+            library_root: Some("/games/Fc Library".to_string()),
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&settings).expect("serialize");
+        let reloaded: Settings = serde_json::from_str(&json).expect("parse");
+        assert_eq!(reloaded.library_root.as_deref(), Some("/games/Fc Library"));
+        assert_eq!(reloaded.library_folder(), Some("/games/Fc Library"));
     }
 }

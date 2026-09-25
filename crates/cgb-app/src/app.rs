@@ -209,7 +209,13 @@ struct App {
 
 impl App {
     fn new(args: Args) -> Self {
-        let paths = Paths::platform();
+        // A `--library-dir` overrides the remembered library; app data (and so
+        // the settings that would remember it) stays in the platform folder.
+        let forced_library = args.library_dir.is_some();
+        let mut paths = Paths::platform();
+        if let Some(dir) = args.library_dir.clone() {
+            paths = Paths::new(paths.user_data.clone(), Some(dir));
+        }
         let _ = paths.ensure();
         // Arcade cores need a BIOS. Seed the writable system dir the core
         // actually reads from the bundled assets; a player-supplied file wins.
@@ -219,7 +225,25 @@ impl App {
             .filter(|dir| dir.is_dir())
             .unwrap_or_else(|| PathBuf::from(BUNDLED_ARCADE_SYSTEM));
         let _ = seed_dir(&bundled_arcade, &paths.system);
-        let settings = Settings::load(&paths.settings_json);
+        let mut settings = Settings::load(&paths.settings_json);
+        // Remember where the library is so the next run finds it. An explicit
+        // `--library-dir` sticks; so does an install that predates the single
+        // library — its first (and only) folder is adopted. With no library
+        // chosen the game data just stays in app data, unremembered, so the
+        // first folder the player picks becomes the library.
+        let root = paths.root.to_string_lossy().into_owned();
+        let adopting_legacy_folder =
+            settings.library_root.is_none() && !settings.legacy_library_dirs.is_empty();
+        let mut settings_changed = false;
+        if (forced_library || adopting_legacy_folder)
+            && settings.library_root.as_deref() != Some(root.as_str())
+        {
+            settings.library_root = Some(root);
+            settings_changed = true;
+        }
+        if settings_changed {
+            let _ = settings.save(&paths.settings_json);
+        }
         let shader = ShaderKind::from_key(&settings.shader);
         let middle_width = if settings.middle_width > 0.0 {
             settings
@@ -399,14 +423,17 @@ impl App {
     /// from the database, which is the model — the name, pin, play statistics,
     /// screenshots and cover a scan cannot know live there.
     fn refresh_library(&mut self) {
-        // Configured folders plus the built-in ROM folder.
-        let mut dirs: Vec<PathBuf> = self
-            .settings
-            .library_dirs
-            .iter()
-            .map(PathBuf::from)
-            .collect();
-        dirs.push(self.paths.roms.clone());
+        // The one game library (once chosen) plus its built-in ROM folder.
+        // Before a library is chosen the game data lives in app data, so only
+        // the built-in folder is scanned there — walking app data itself would
+        // trip over the BIOS folder.
+        let mut dirs: Vec<PathBuf> = Vec::new();
+        if self.paths.has_library() {
+            dirs.push(self.paths.root.clone());
+        }
+        if !dirs.contains(&self.paths.roms) {
+            dirs.push(self.paths.roms.clone());
+        }
 
         // Individually added files (dragged in or chosen in the dialog) merge
         // in, and are pruned from the settings once their file is gone.
@@ -1058,7 +1085,7 @@ impl App {
                 .unwrap_or(false),
             })
             .collect();
-        self.model.library_dirs = self.settings.library_dirs.clone();
+        self.model.library_root = self.settings.library_root.clone();
         self.model.bindings = self
             .bindings
             .get(&self.active_system)
@@ -1094,20 +1121,27 @@ impl App {
         self.dirty = true;
     }
 
-    /// Ask for a folder and add it to the scanned library.
-    fn add_library_dir(&mut self) {
-        let Some(dir) = rfd::FileDialog::new()
-            .set_title("选择游戏目录")
-            .pick_folder()
-        else {
+    /// Choose `dir` as the game library: remember it, point the library data
+    /// (database, screenshots, saves, cheats) at it and rescan. There is only
+    /// one library, so this replaces whatever was open.
+    fn set_library_root(&mut self, dir: PathBuf) {
+        let dir = dir.to_string_lossy().into_owned();
+        self.settings.library_root = Some(dir.clone());
+        let _ = self.settings.save(&self.paths.settings_json);
+        self.paths = Paths::new(self.paths.user_data.clone(), Some(PathBuf::from(&dir)));
+        let _ = self.paths.ensure();
+        self.library = Library::open(&self.paths.library_db).ok();
+        self.reload_library();
+        self.model
+            .set_status(format!("已切换游戏库：{dir}"), StatusKind::Info);
+    }
+
+    /// Ask for a folder and switch to it as the game library.
+    fn switch_library(&mut self) {
+        let Some(dir) = rfd::FileDialog::new().set_title("选择游戏库").pick_folder() else {
             return;
         };
-        let dir = dir.to_string_lossy().into_owned();
-        if !self.settings.library_dirs.contains(&dir) {
-            self.settings.library_dirs.push(dir);
-            let _ = self.settings.save(&self.paths.settings_json);
-        }
-        self.reload_library();
+        self.set_library_root(dir);
     }
 
     /// Ask for ROM files and add them to the library.
@@ -1128,31 +1162,42 @@ impl App {
 
     /// Add ROM files (dropped in, or picked in the dialog) to the library.
     ///
-    /// A dropped folder joins the scanned folders; a ROM file is **copied**
-    /// into the library folder, so the library stays one self-contained
-    /// folder. This is the legacy front end's rule (`Library.add`): a game
-    /// that was only pointed at would break the moment its file moved.
+    /// Every ROM — one picked, or all of them inside a dropped folder — is
+    /// **copied** into the library folder, so the library stays one
+    /// self-contained folder. This is the legacy front end's rule
+    /// (`Library.add`): a game that was only pointed at would break the moment
+    /// its file moved. With no library chosen yet, the first dropped folder
+    /// simply becomes the library.
     fn add_game_paths(&mut self, paths: Vec<PathBuf>) {
-        let mut dirs_added = 0usize;
         let mut files = Vec::new();
+        let mut switched = false;
         for path in paths {
             if path.is_dir() {
-                let dir = path.to_string_lossy().into_owned();
-                if !self.settings.library_dirs.contains(&dir) {
-                    self.settings.library_dirs.push(dir);
-                    dirs_added += 1;
+                if !self.paths.has_library() {
+                    // Nothing chosen yet: the folder becomes the library.
+                    self.set_library_root(path);
+                    switched = true;
+                    continue;
                 }
+                if inside_library(&self.paths.root, &path) {
+                    // Already part of the library; the rescan finds it.
+                    continue;
+                }
+                files.extend(
+                    cgb_library::scan_dir(&path)
+                        .into_iter()
+                        .map(|game| PathBuf::from(game.path)),
+                );
             } else {
                 files.push(path);
             }
         }
         let report = import_roms(&self.paths.roms, &files);
-        if dirs_added > 0 {
-            let _ = self.settings.save(&self.paths.settings_json);
-        }
         self.reload_library();
-        self.model
-            .set_status(import_status(&report, dirs_added), StatusKind::Info);
+        if !report.is_empty() || !switched {
+            self.model
+                .set_status(import_status(&report), StatusKind::Info);
+        }
     }
 
     /// Add any files dropped since the last frame, in one batch.
@@ -1162,16 +1207,6 @@ impl App {
         }
         let paths = std::mem::take(&mut self.pending_drops);
         self.add_game_paths(paths);
-    }
-
-    /// Stop scanning a library folder and forget its games.
-    fn remove_library_dir(&mut self, index: usize) {
-        if index >= self.settings.library_dirs.len() {
-            return;
-        }
-        self.settings.library_dirs.remove(index);
-        let _ = self.settings.save(&self.paths.settings_json);
-        self.reload_library();
     }
 
     /// Pin or unpin a game, then re-sort so it moves to (or leaves) the top.
@@ -1618,9 +1653,8 @@ impl App {
                     self.dirty = true;
                 }
                 Action::AddGames => self.add_games_dialog(),
-                Action::OpenRom => self.add_library_dir(),
+                Action::SwitchLibrary => self.switch_library(),
                 Action::SelectCore(index) => self.select_core(index),
-                Action::RemoveLibraryDir(index) => self.remove_library_dir(index),
                 Action::TogglePin(index) => self.toggle_pin(index),
                 Action::RequestDelete(confirm) => {
                     self.pending_confirm = Some(confirm);
@@ -2698,17 +2732,14 @@ fn key_label(key: Key) -> String {
     }
 }
 
-/// The status line after adding games: how many were copied, how many folders
-/// joined the scan, and the first reason any were skipped.
-fn import_status(report: &ImportReport, dirs_added: usize) -> String {
+/// The status line after adding games: how many were copied and the first
+/// reason any were skipped.
+fn import_status(report: &ImportReport) -> String {
     let copied = report.copied_count();
     let skipped = report.skipped_count();
     let mut parts = Vec::new();
     if copied > 0 {
         parts.push(format!("已添加 {copied} 个游戏到游戏库"));
-    }
-    if dirs_added > 0 {
-        parts.push(format!("已添加 {dirs_added} 个游戏目录"));
     }
     if let Some((path, error)) = report.failed.first() {
         parts.push(format!("拷贝失败 {}（{error}）", path.display()));
@@ -2725,6 +2756,14 @@ fn import_status(report: &ImportReport, dirs_added: usize) -> String {
         message.push_str(&format!("（跳过 {skipped} 个）"));
     }
     message
+}
+
+/// True when `path` is `root` itself or inside it. Both sides are canonicalized
+/// first, so a `..` segment cannot make an outside path look like it is inside.
+fn inside_library(root: &Path, path: &Path) -> bool {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    path.starts_with(&root)
 }
 
 /// The save-state hotkey for a key, matching the old front end's layout: `F5`
@@ -2850,10 +2889,10 @@ mod tests {
             copied: vec![PathBuf::from("/lib/mario.nes")],
             ..ImportReport::default()
         };
-        assert!(import_status(&report, 0).contains("已添加 1 个游戏"));
+        assert!(import_status(&report).contains("已添加 1 个游戏"));
 
         report.unknown.push(PathBuf::from("/tmp/notes.txt"));
-        let message = import_status(&report, 0);
+        let message = import_status(&report);
         assert!(message.contains("已添加 1 个游戏"), "{message}");
         assert!(message.contains("跳过 1 个"), "{message}");
 
@@ -2861,14 +2900,24 @@ mod tests {
             already_inside: vec![PathBuf::from("/lib/mario.nes")],
             ..ImportReport::default()
         };
-        assert!(import_status(&already, 0).contains("已经在游戏库里"));
+        assert!(import_status(&already).contains("已经在游戏库里"));
 
         let unknown = ImportReport {
             unknown: vec![PathBuf::from("/tmp/notes.txt")],
             ..ImportReport::default()
         };
-        assert!(import_status(&unknown, 0).contains("跳过不认识的 ROM"));
-        assert!(import_status(&ImportReport::default(), 2).contains("已添加 2 个游戏目录"));
+        assert!(import_status(&unknown).contains("跳过不认识的 ROM"));
+        assert!(import_status(&ImportReport::default()).contains("没有新增游戏"));
+    }
+
+    #[test]
+    fn inside_library_recognises_the_folder_and_its_children() {
+        let root = std::env::temp_dir().join(format!("cgb-inside-{}", std::process::id()));
+        let inside = root.join("nes");
+        let outside = root.parent().unwrap().join("somewhere-else");
+        assert!(inside_library(&root, &root));
+        assert!(inside_library(&root, &inside));
+        assert!(!inside_library(&root, &outside));
     }
 
     fn temp_paths(name: &str) -> Paths {

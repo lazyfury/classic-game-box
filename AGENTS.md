@@ -12,6 +12,11 @@
 - **Q2 进行中**：音频（cpal）+ gilrs 手柄已接线，`.srm` 电池存档与即时存档槽
   （`Session::{save,load}_state`，F5/F6 与 F1–F3/Shift+F1–F3），待人眼验收“能玩、能存读”。
 - **Q3 完成**：库模型重建——DB 是模型（`games` + `tags`/`game_tags` + `screenshots`），
+  **单库、自包含、可切换**：`--library-dir` / “打开游戏库…”选定唯一库根，
+  DB / 截图 / 存档 / 金手指都在库根下，整个文件夹拷走即备份（不合并多个目录）；
+  旧 `library_dirs` 只在迁移时读一次（取第一个）。app data 只留 `settings.json`、
+  `cores` 与 `system`（BIOS 不放库里，避免 `neogeo.zip` 被扫成街机 ROM）。未选库时
+  沿用旧布局。
   `name` 与 `file_name` 分离、可改名（`Library::rename`，UI 后置）；游玩次数/时长/最近；
   置顶；排序（名称/大小/最近/时长/加入）；标签；截图（F12 / ⇧F12 设封面）+ 真实封面；
   卡片 SVG 图标 + 截图收藏页 + 大图预览。

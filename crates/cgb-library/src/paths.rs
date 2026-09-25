@@ -1,23 +1,42 @@
-//! Where the app keeps its files: the game library database, settings, save
-//! states and battery saves, and the core/system directories handed to
-//! libretro through `GET_SYSTEM_DIRECTORY` / `GET_SAVE_DIRECTORY`.
+//! Where the app keeps its files.
 //!
-//! All under one root so a `--selfcheck` run can point at a temp directory and
-//! leave nothing behind. On macOS the root is
-//! `~/Library/Application Support/Classic Game Box`.
+//! Two roots, because two kinds of thing live different lives:
+//!
+//! - the **game library** (`root`) is one self-contained folder. The database,
+//!   screenshots, save states / battery saves and cheats all live under it, so
+//!   copying that folder to another machine brings the whole library with it.
+//! - **app data** (`user_data`) holds what belongs to the install rather than
+//!   the games: the settings pointer that names the library, the shipped
+//!   cores, and the seeded BIOS (`system`) the cores probe. The BIOS directory
+//!   stays out of the library because a `.zip` in it (`neogeo.zip`) would be
+//!   mistaken for an arcade ROM by the folder scan.
+//!
+//! Until a library has been chosen, the game data keeps the old layout under
+//! `user_data` (so an existing install keeps working and keeps scanning its
+//! built-in `roms` folder). Choosing a library folder moves the game data
+//! under it, from then on.
+//!
+//! A `--selfcheck` run points both roots at one temp directory through
+//! [`Paths::under`], so it leaves nothing behind.
 
 use std::path::{Path, PathBuf};
 
 /// The directories the app reads and writes.
 #[derive(Clone, Debug)]
 pub struct Paths {
-    /// The app data root.
+    /// The game-data root: the chosen library, or `user_data` until one is
+    /// chosen. Everything the app makes about a game lives under it.
     pub root: PathBuf,
+    /// The chosen game library folder, or `None` while the app is still using
+    /// the layout under `user_data` (no library chosen yet).
+    pub library_root: Option<PathBuf>,
+    /// App data: settings, shipped cores and the seeded BIOS. Not the library.
+    pub user_data: PathBuf,
     /// BIOS/system files the cores may probe (`disksys.rom`, `gba_bios.bin`).
     pub system: PathBuf,
     /// Save states and `.srm` battery saves.
     pub saves: PathBuf,
-    /// Screenshot PNGs (one directory per library; a sibling of the database).
+    /// Screenshot PNGs (a sibling of the database, inside the library).
     pub screenshots: PathBuf,
     /// Cheat files (`.cht`), one per game.
     pub cheats: PathBuf,
@@ -26,40 +45,68 @@ pub struct Paths {
     pub roms: PathBuf,
     /// The SQLite game library.
     pub library_db: PathBuf,
-    /// The settings JSON.
+    /// The settings JSON, in app data: the library cannot be found without it.
     pub settings_json: PathBuf,
     /// Native libretro cores shipped with the app.
     pub cores: PathBuf,
 }
 
 impl Paths {
-    /// The default layout, under the platform data directory.
+    /// The default layout: app data in the platform data directory, and the
+    /// game library wherever the settings say it is.
+    ///
+    /// The library folder is chosen, not derived from the platform directory:
+    /// it comes from `library_root` (or, on the first run after the switch, the
+    /// first folder of the old multi-folder layout). Until something is chosen
+    /// the game data stays in app data. Once chosen it is remembered in
+    /// `settings.json` — which is why settings lives in app data: the library
+    /// cannot be opened before it is located.
     pub fn platform() -> Self {
-        let root = dirs::data_dir()
+        let user_data = dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("Classic Game Box");
-        Self::under(root)
+        let settings = crate::settings::Settings::load(&user_data.join("settings.json"));
+        let library_root = settings.library_folder().map(PathBuf::from);
+        Self::new(user_data, library_root)
     }
 
-    /// The layout rooted at an explicit directory (used by tests and
-    /// `--selfcheck`).
+    /// The layout rooted at one explicit directory (used by tests and
+    /// `--selfcheck`): settings, cores and the game data all share it.
     pub fn under(root: impl Into<PathBuf>) -> Self {
-        let root = root.into();
+        Self::new(root, None)
+    }
+
+    /// The layout for a chosen game library, with app data at `user_data`.
+    ///
+    /// `library_root` is `Some` once a library has been chosen (game data
+    /// lives under it) and `None` while it has not (game data lives under
+    /// `user_data`).
+    pub fn new(user_data: impl Into<PathBuf>, library_root: Option<PathBuf>) -> Self {
+        let user_data = user_data.into();
+        let root = library_root.clone().unwrap_or_else(|| user_data.clone());
         Self {
-            system: root.join("system"),
+            system: user_data.join("system"),
             saves: root.join("saves"),
             screenshots: root.join("screenshots"),
             cheats: root.join("cheats"),
             roms: root.join("roms"),
             library_db: root.join("library.db"),
-            settings_json: root.join("settings.json"),
-            cores: root.join("cores"),
+            settings_json: user_data.join("settings.json"),
+            cores: user_data.join("cores"),
+            library_root,
+            user_data,
             root,
         }
     }
 
+    /// Whether a game library folder has been chosen.
+    pub fn has_library(&self) -> bool {
+        self.library_root.is_some()
+    }
+
     /// Create the directories that must exist before use.
     pub fn ensure(&self) -> std::io::Result<()> {
+        std::fs::create_dir_all(&self.user_data)?;
         std::fs::create_dir_all(&self.root)?;
         std::fs::create_dir_all(&self.system)?;
         std::fs::create_dir_all(&self.saves)?;
@@ -205,5 +252,53 @@ mod tests {
         let target = root.join("target");
         assert_eq!(seed_dir(&root.join("nope"), &target).unwrap(), 0);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn game_data_lives_in_the_library_and_app_data_does_not() {
+        let paths = Paths::new("/app data", Some(PathBuf::from("/games/Fc Library")));
+        // The library is self-contained: the database and everything the app
+        // makes about a game live under it, so copying the folder is enough.
+        for path in [
+            &paths.library_db,
+            &paths.screenshots,
+            &paths.saves,
+            &paths.cheats,
+            &paths.roms,
+        ] {
+            assert!(
+                path.starts_with("/games/Fc Library"),
+                "{} escaped the library",
+                path.display()
+            );
+        }
+        // What belongs to the install stays in app data.
+        for path in [&paths.settings_json, &paths.cores, &paths.system] {
+            assert!(
+                path.starts_with("/app data"),
+                "{} landed in the library",
+                path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn without_a_chosen_library_the_game_data_stays_in_app_data() {
+        // An install that never picked a folder keeps the old layout, so its
+        // built-in `roms` folder and database are not abandoned.
+        let paths = Paths::new("/app data", None);
+        assert!(!paths.has_library());
+        assert_eq!(paths.root, paths.user_data);
+        assert_eq!(paths.library_db, PathBuf::from("/app data/library.db"));
+        assert_eq!(paths.roms, PathBuf::from("/app data/roms"));
+    }
+
+    #[test]
+    fn under_keeps_app_data_and_library_together() {
+        // `--selfcheck` and tests need one folder that holds everything.
+        let paths = Paths::under("/tmp/selfcheck");
+        assert_eq!(paths.root, paths.user_data);
+        assert!(paths.library_db.starts_with("/tmp/selfcheck"));
+        assert!(paths.cores.starts_with("/tmp/selfcheck"));
     }
 }

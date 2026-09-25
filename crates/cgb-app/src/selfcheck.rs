@@ -151,13 +151,15 @@ fn check_library(paths: &Paths) -> Result<(), String> {
 }
 
 fn check_settings(paths: &Paths) -> Result<(), String> {
-    let mut settings = Settings::default();
-    settings.library_dirs.push("/roms".to_string());
+    let settings = Settings {
+        library_root: Some("/roms".to_string()),
+        ..Settings::default()
+    };
     settings
         .save(&paths.settings_json)
         .map_err(|error| error.to_string())?;
     let reloaded = Settings::load(&paths.settings_json);
-    if reloaded.library_dirs != ["/roms"] {
+    if reloaded.library_folder() != Some("/roms") {
         return Err("settings did not round-trip".to_string());
     }
     Ok(())

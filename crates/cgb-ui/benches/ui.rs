@@ -83,7 +83,7 @@ fn settings_model(n: usize) -> ViewModel {
                 selected: index == 0,
             })
             .collect(),
-        library_dirs: (0..4).map(|index| format!("/roms/dir{index}")).collect(),
+        library_root: Some("/roms/dir0".to_string()),
         ..ViewModel::default()
     }
 }
