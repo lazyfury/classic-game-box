@@ -512,7 +512,16 @@ fn library_page(
         .gap(space::SM)
         .padding(Edges::all(MD))
         .mouse_filter(MouseFilter::Ignore);
-    column = column.child(Text::heading("游戏库", theme));
+    column = column.child(
+        Row::new()
+            .justify(Justify::SpaceBetween)
+            .align(Align::Center)
+            .child(Text::heading("游戏库", theme))
+            .child(
+                Text::caption(format!("共 {} 个游戏", model.total_games), theme).tone(Tone::Muted),
+            ),
+    );
+    column = column.child(stats_bar(theme, model, actions));
     column = column.child(sort_bar(theme, model, actions));
     column = column.child(search_bar(theme, model, actions));
     if let Some(edit) = &model.editing {
@@ -522,10 +531,12 @@ fn library_page(
     }
 
     if model.games.is_empty() {
-        let empty = if model.search.is_empty() {
-            EmptyState::new("还没有游戏", theme).description("把 ROM 拖进来，或点“添加游戏文件…”。")
-        } else {
+        let empty = if !model.search.is_empty() {
             EmptyState::new("没有匹配的游戏", theme).description("换个关键词试试。")
+        } else if model.system_filter.is_some() {
+            EmptyState::new("该机种还没有游戏", theme).description("点“全部”看整个游戏库。")
+        } else {
+            EmptyState::new("还没有游戏", theme).description("把 ROM 拖进来，或点“添加游戏文件…”。")
         };
         column = column.child(empty);
     } else {
@@ -570,18 +581,54 @@ fn chip(theme: &'static dyn Theme, label: &str, selected: bool) -> Button {
     }
 }
 
+/// The width reserved for a toolbar's leading caption, so the console filter
+/// and the sort chips line up on the same column whatever the label's glyphs
+/// measure.
+const TOOLBAR_LABEL_WIDTH: f32 = 40.0;
+
+/// A toolbar row: a fixed-width leading caption, then a wrapping group of
+/// chips. The console filter and the sort controls share it, so their chips
+/// line up on the same column.
+fn toolbar_row(theme: &'static dyn Theme, label: &str, chips: Flex) -> Grid {
+    Grid::new(vec![Track::Px(TOOLBAR_LABEL_WIDTH), Track::Fr(1.0)])
+        .gap(space::SM)
+        .padding(Edges::ZERO)
+        .child(Text::caption(label, theme).tone(Tone::Muted))
+        .child(chips)
+}
+
+/// The library's console filter: one chip per console present (with its count)
+/// plus an “全部” chip. The total lives by the page title. The chips wrap, so a
+/// library with many consoles does not overflow the middle column.
+fn stats_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Grid {
+    let mut chips = Flex::row().wrap(true).gap(space::XS).align(Align::Center);
+    let all = actions.clone();
+    chips = chips.child(
+        chip(theme, "全部", model.system_filter.is_none())
+            .mini()
+            .on_click(move || all.push(Action::FilterSystem(None))),
+    );
+    for tally in &model.system_counts {
+        let filter = actions.clone();
+        let system = tally.system;
+        let label = format!("{} {}", system.short(), tally.count);
+        chips = chips.child(
+            chip(theme, &label, model.system_filter == Some(system))
+                .mini()
+                .on_click(move || filter.push(Action::FilterSystem(Some(system)))),
+        );
+    }
+    toolbar_row(theme, "机种", chips)
+}
+
 /// The library's sort controls: one chip per key, then a direction toggle.
 /// Pinned games are always on top, so the key only orders within the groups.
-fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Row {
-    let mut bar = Row::new()
-        .align(Align::Center)
-        .gap(space::XS)
-        .child(Text::caption("排序", theme).tone(Tone::Muted));
+fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Grid {
+    let mut chips = Flex::row().wrap(true).gap(space::XS).align(Align::Center);
     for key in SortKey::ALL {
         let actions = actions.clone();
-        let button = chip(theme, key.label(), model.sort == key);
-        bar = bar.child(
-            button
+        chips = chips.child(
+            chip(theme, key.label(), model.sort == key)
                 .mini()
                 .on_click(move || actions.push(Action::Sort(key))),
         );
@@ -594,13 +641,14 @@ fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> 
     };
     let dir_node = NodeRef::new();
     actions.tip(&dir_node, "切换升降序");
-    bar.child(
+    chips = chips.child(
         Button::ghost("", theme)
             .mini()
             .child(SvgIcon::new(arrow, theme.palette().foreground, CARD_ICON))
             .on_click(move || toggle.push(Action::ToggleSortOrder))
             .ref_(&dir_node),
-    )
+    );
+    toolbar_row(theme, "排序", chips)
 }
 
 /// The search row: a button that opens the field, or the field while typing,
@@ -2002,7 +2050,7 @@ fn settings_page(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{BindingRow, CoreRow, FrameHandle, GameRow};
+    use crate::model::{BindingRow, CoreRow, FrameHandle, GameRow, SystemCount};
     use cgb_systems::SystemId;
     use draw_core::{InputEvent, PointerButton, Size, Vec2};
     use draw_render::{DrawCommand, PaintContext, TextureId};
@@ -2313,6 +2361,50 @@ mod tests {
         let point = text_position(&list, "大小");
         click(&mut tree, point);
         assert_eq!(actions.drain(), vec![Action::Sort(SortKey::Size)]);
+    }
+
+    /// The stats bar shows the total and one chip per console, and a chip
+    /// filters the library to that console.
+    #[test]
+    fn the_stats_bar_counts_each_console_and_filters() {
+        let actions = Actions::default();
+        let model = ViewModel {
+            total_games: 3,
+            system_counts: vec![
+                SystemCount {
+                    system: SystemId::Nes,
+                    count: 1,
+                },
+                SystemCount {
+                    system: SystemId::Gba,
+                    count: 2,
+                },
+            ],
+            ..ViewModel::default()
+        };
+        let (mut tree, list) = laid_out(&model, &actions);
+        let has = |needle: &str| {
+            list.commands().iter().any(|command| {
+                matches!(command,
+                    DrawCommand::DrawText { text, .. } if text.contains(needle))
+            })
+        };
+        assert!(has("共 3 个游戏"), "the total is shown");
+        // The filter and sort chips share the toolbar shape, so they line up.
+        let filter_chip = text_position(&list, "全部");
+        let sort_chip = text_position(&list, "名称");
+        assert!(
+            (filter_chip.x - sort_chip.x).abs() < 1.0,
+            "filter and sort chips align: {} vs {}",
+            filter_chip.x,
+            sort_chip.x
+        );
+        let point = text_position(&list, "GBA 2");
+        click(&mut tree, point);
+        assert_eq!(
+            actions.drain(),
+            vec![Action::FilterSystem(Some(SystemId::Gba))]
+        );
     }
 
     /// Covers are a stable colour per path, so a game keeps its colour between

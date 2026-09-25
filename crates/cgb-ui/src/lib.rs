@@ -18,7 +18,7 @@ pub use icons::{clear_textures, rasterize_icon, set_texture, Icon, IconName};
 pub use model::{
     Action, BindingRow, CheatRow, Confirm, CoreOptionRow, CoreRow, EditKind, EditState,
     FrameHandle, GameRow, InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow, Section,
-    ShaderKind, SortKey, StatusKind, ViewModel,
+    ShaderKind, SortKey, StatusKind, SystemCount, ViewModel,
 };
 pub use view::{
     grid_window, library_columns, Actions, MAX_LIBRARY_COLUMNS, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,

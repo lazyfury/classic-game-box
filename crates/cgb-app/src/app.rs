@@ -37,7 +37,8 @@ use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId
 use cgb_ui::{
     library_columns, Action, Actions, BindingRow, Confirm, CoreOptionRow, CoreRow, EditKind,
     EditState, FrameHandle, GameRow, InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow,
-    Section, ShaderKind, SortKey, StatusKind, Ui, ViewModel, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
+    Section, ShaderKind, SortKey, StatusKind, SystemCount, Ui, ViewModel, MIDDLE_MAX_WIDTH,
+    MIDDLE_MIN_WIDTH,
 };
 
 use crate::cli::{Args, CoreOverride};
@@ -1044,7 +1045,25 @@ impl App {
             .selected
             .and_then(|index| self.model.games.get(index))
             .map(|game| game.path.clone());
+        // The tallies are over the whole library, so they do not move as the
+        // search or the system filter narrows the grid. A filter for a console
+        // the library no longer holds (after switching libraries) is dropped.
+        self.model.total_games = self.game_source.len();
+        self.model.system_counts = system_counts(&self.game_source);
+        if let Some(filter) = self.model.system_filter {
+            if !self
+                .model
+                .system_counts
+                .iter()
+                .any(|tally| tally.system == filter)
+            {
+                self.model.system_filter = None;
+            }
+        }
         let mut games = self.game_source.clone();
+        if let Some(system) = self.model.system_filter {
+            games.retain(|game| game.system == system);
+        }
         if !self.model.search.is_empty() {
             let needle = self.model.search.to_lowercase();
             games.retain(|game| game.name.to_lowercase().contains(&needle));
@@ -1654,6 +1673,10 @@ impl App {
                 }
                 Action::AddGames => self.add_games_dialog(),
                 Action::SwitchLibrary => self.switch_library(),
+                Action::FilterSystem(system) => {
+                    self.model.system_filter = system;
+                    self.rebuild_game_rows();
+                }
                 Action::SelectCore(index) => self.select_core(index),
                 Action::TogglePin(index) => self.toggle_pin(index),
                 Action::RequestDelete(confirm) => {
@@ -2655,6 +2678,19 @@ fn order_games(games: &mut [Game], key: SortKey, desc: bool) {
     });
 }
 
+/// How many games the library holds per console, in `SYSTEMS` order, keeping
+/// only the consoles that have games. Pure, so the tally can be tested without
+/// a window.
+fn system_counts(games: &[Game]) -> Vec<SystemCount> {
+    cgb_systems::SYSTEMS
+        .iter()
+        .filter_map(|&system| {
+            let count = games.iter().filter(|game| game.system == system).count();
+            (count > 0).then_some(SystemCount { system, count })
+        })
+        .collect()
+}
+
 /// Project a library row into the view model's row.
 fn game_row(game: Game, cover: Option<FrameHandle>) -> GameRow {
     GameRow {
@@ -2856,6 +2892,25 @@ mod tests {
 
         order_games(&mut games, SortKey::Size, false);
         assert_eq!(names(&games), ["c", "b", "a"]);
+    }
+
+    #[test]
+    fn system_counts_tally_each_console_in_systems_order() {
+        let mut a = db_game("a", 1, false);
+        let mut b = db_game("b", 1, false);
+        let mut c = db_game("c", 1, false);
+        a.system = SystemId::Gb;
+        b.system = SystemId::Nes;
+        c.system = SystemId::Nes;
+        let counts = system_counts(&[a, b, c]);
+        // NES comes before GB in `SYSTEMS`, and consoles with no games are left
+        // out.
+        assert_eq!(counts.len(), 2);
+        assert_eq!(counts[0].system, SystemId::Nes);
+        assert_eq!(counts[0].count, 2);
+        assert_eq!(counts[1].system, SystemId::Gb);
+        assert_eq!(counts[1].count, 1);
+        assert!(system_counts(&[]).is_empty());
     }
 
     #[test]

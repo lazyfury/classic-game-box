@@ -199,6 +199,14 @@ pub struct GameRow {
     pub cover: Option<FrameHandle>,
 }
 
+/// One console's tally in the library, for the filter row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SystemCount {
+    pub system: SystemId,
+    /// How many games the library holds for it.
+    pub count: usize,
+}
+
 /// One cheat in the cheats section.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheatRow {
@@ -396,6 +404,12 @@ pub struct ViewModel {
     pub selected_screenshots: Vec<i64>,
     /// An in-progress rename or tag edit, shown in a bar above the grid.
     pub editing: Option<EditState>,
+    /// How many games the library holds, before any search or system filter.
+    pub total_games: usize,
+    /// The console the library is filtered to, or `None` for all of them.
+    pub system_filter: Option<SystemId>,
+    /// Per-console tallies, in `SYSTEMS` order, for consoles that have games.
+    pub system_counts: Vec<SystemCount>,
     /// Every core in the manifest, for the settings picker.
     pub cores: Vec<CoreRow>,
     /// The game library folder, shown on the settings page.
@@ -456,6 +470,9 @@ impl Default for ViewModel {
             screenshot_select: false,
             selected_screenshots: Vec::new(),
             editing: None,
+            total_games: 0,
+            system_filter: None,
+            system_counts: Vec::new(),
             cores: Vec::new(),
             library_root: None,
             bindings: Vec::new(),
@@ -494,6 +511,8 @@ pub enum Action {
     AddGames,
     /// Open the native folder picker and switch to the chosen game library.
     SwitchLibrary,
+    /// Filter the library to one console, or `None` for all of them.
+    FilterSystem(Option<SystemId>),
     /// Make the core at this `cores` index the pick for its console.
     SelectCore(usize),
     /// Pin or unpin the game at this library index.
