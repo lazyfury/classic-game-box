@@ -12,6 +12,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 | `custom_nes_core` | NES / FC | `legacy/packages/fc-{core,libretro}` | `dist/custom_nes_core_libretro.dylib` | ✅ arm64 (clang++ direct), synthetic NROM |
 | `fbneo` | Arcade | `libretro/FBNeo` | `dist/fbneo_libretro.dylib` | ✅ arm64, loads standard Neo Geo sets (encrypted C-ROMs) |
 | `genesis_plus_gx` | MD / Genesis / SMS / GG / SG-1000 | `libretro/Genesis-Plus-GX` | `dist/genesis_plus_gx_libretro.dylib` | 🔧 build.sh added, not yet built/verified |
+| `picodrive` | MD / Genesis / SMS / GG / SG-1000 | `libretro/picodrive` | `dist/picodrive_libretro.dylib` | 🔧 build.sh added, not yet built/verified |
 
 ```bash
 ./scripts/build-cores.sh              # every cores/*/build.sh, in name order
@@ -91,6 +92,14 @@ Master System, Game Gear and SG-1000. It builds from `Makefile.libretro` at the
 (the host converts it). `cores.json` lists it once per console under the same
 key, the way mGBA appears for GBA and GB; the core picks the console from the
 loaded ROM.
+
+`picodrive` is the lightweight alternative for the same four consoles (plus 32X
+and Sega/Mega CD, which this app does not model yet). It is the first core with
+git submodules (`platform/libpicofe`, `cpu/cyclone`, `pico/cd/libchdr`,
+`pico/sound/emu2413`, `platform/common/dr_libs`), so its `build.sh` clones with
+`--recurse-submodules`. It builds from `Makefile.libretro` at the
+`libretro/picodrive` repo root with `platform=osx`, renders **RGB565**, declares
+`need_fullpath`, and lists once per console like Genesis Plus GX.
 
 `./scripts/build-cores.sh` runs every `cores/*/build.sh` in name order;
 `--skip-mgba` skips the cmake build.

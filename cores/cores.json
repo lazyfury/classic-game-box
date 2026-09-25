@@ -57,6 +57,38 @@
       "fps": 59.9227
     },
     {
+      "key": "picodrive",
+      "name": "PicoDrive",
+      "system": "genesis",
+      "dylib": "picodrive_libretro.dylib",
+      "sample_rate": 44100,
+      "fps": 59.9227
+    },
+    {
+      "key": "picodrive",
+      "name": "PicoDrive",
+      "system": "sms",
+      "dylib": "picodrive_libretro.dylib",
+      "sample_rate": 44100,
+      "fps": 59.9227
+    },
+    {
+      "key": "picodrive",
+      "name": "PicoDrive",
+      "system": "gg",
+      "dylib": "picodrive_libretro.dylib",
+      "sample_rate": 44100,
+      "fps": 59.9227
+    },
+    {
+      "key": "picodrive",
+      "name": "PicoDrive",
+      "system": "sg1000",
+      "dylib": "picodrive_libretro.dylib",
+      "sample_rate": 44100,
+      "fps": 59.9227
+    },
+    {
       "key": "nestopia",
       "name": "Nestopia",
       "system": "nes",

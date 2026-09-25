@@ -26,8 +26,11 @@
   “全屏”按钮进入，Esc 退出；只挂载画面 + 细控制条，库网格不入树）。
   后处理依赖 sibling `../quill` 新增的 `TextureEffect`。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
-  （mesen / mgba / nestopia / custom_nes_core / fbneo）；`--core` 按 key 或路径选核。
+  （mesen / mgba / nestopia / custom_nes_core / fbneo / genesis_plus_gx / picodrive）；
+  `--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
+  Sega 系（genesis / sms / gg / sg1000）有两个核心：Genesis Plus GX 与轻量的
+  PicoDrive（同一模块四个机种，PicoDrive 是首个带 git submodule 的核心）。
   街机是 `SystemId::Arcade`（`.zip` → FBNeo，按 CRC 读标准 Neo Geo 套）。
 
 ## 硬规则

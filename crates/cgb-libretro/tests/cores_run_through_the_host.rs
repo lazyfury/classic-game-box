@@ -147,6 +147,37 @@ fn cores_run_through_the_host() {
         eprintln!("skip: {} not built", fbneo.display());
     }
 
+    // PicoDrive has no synthetic ROM either: prove it opens and declares the
+    // Sega content it handles, including the consoles it shares with Genesis
+    // Plus GX. It declares `need_fullpath`, which the app already honours.
+    let picodrive = dist_core("picodrive_libretro.dylib");
+    if picodrive.is_file() {
+        let dir = std::env::temp_dir();
+        let host = CoreHost::new(&picodrive, &dir, &dir).expect("open picodrive");
+        let info = host.system_info();
+        assert!(
+            info.library_name.contains("PicoDrive"),
+            "{}",
+            info.library_name
+        );
+        assert!(info.need_fullpath, "picodrive reads the file itself");
+        for ext in ["md", "gen", "smd", "bin", "sms", "gg", "sg"] {
+            assert!(
+                info.valid_extensions.iter().any(|e| e == ext),
+                "picodrive does not declare .{ext}: {:?}",
+                info.valid_extensions
+            );
+        }
+        eprintln!(
+            "picodrive_libretro.dylib: {} ({:?})",
+            info.library_name, info.valid_extensions
+        );
+        drop(host);
+        tested += 1;
+    } else {
+        eprintln!("skip: {} not built", picodrive.display());
+    }
+
     if tested == 0 {
         eprintln!("skip: no cores built (run ./scripts/build-cores.sh)");
     }
