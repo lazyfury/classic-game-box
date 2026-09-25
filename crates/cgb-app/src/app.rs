@@ -270,7 +270,7 @@ impl App {
             input: InputState::new(),
             bindings: cgb_systems::SYSTEMS
                 .iter()
-                .map(|system| (*system, KeyboardBindings::default_bindings()))
+                .map(|system| (*system, KeyboardBindings::default_bindings_for(*system)))
                 .collect(),
             active_system: SystemId::Nes,
             rewinding: false,

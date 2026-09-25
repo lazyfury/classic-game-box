@@ -13,12 +13,29 @@ pub enum SystemId {
     Nes,
     Gba,
     Gb,
+    /// Sega Mega Drive / Genesis (the 16-bit console).
+    Genesis,
+    /// Sega Master System.
+    MasterSystem,
+    /// Sega Game Gear.
+    GameGear,
+    /// Sega SG-1000.
+    Sg1000,
     /// Arcade: a MAME-family core, one ROM set per game.
     Arcade,
 }
 
 /// The consoles, in the order the settings screen lists them.
-pub const SYSTEMS: &[SystemId] = &[SystemId::Nes, SystemId::Gba, SystemId::Gb, SystemId::Arcade];
+pub const SYSTEMS: &[SystemId] = &[
+    SystemId::Nes,
+    SystemId::Gba,
+    SystemId::Gb,
+    SystemId::Genesis,
+    SystemId::MasterSystem,
+    SystemId::GameGear,
+    SystemId::Sg1000,
+    SystemId::Arcade,
+];
 
 impl SystemId {
     /// Spelled out, for the settings screen where there is room.
@@ -27,6 +44,10 @@ impl SystemId {
             SystemId::Nes => "NES / FC",
             SystemId::Gba => "Game Boy Advance",
             SystemId::Gb => "Game Boy / Color",
+            SystemId::Genesis => "Sega Mega Drive / Genesis",
+            SystemId::MasterSystem => "Sega Master System",
+            SystemId::GameGear => "Sega Game Gear",
+            SystemId::Sg1000 => "SG-1000",
             SystemId::Arcade => "Arcade (MAME)",
         }
     }
@@ -38,6 +59,10 @@ impl SystemId {
             SystemId::Nes => "NES",
             SystemId::Gba => "GBA",
             SystemId::Gb => "GB",
+            SystemId::Genesis => "MD",
+            SystemId::MasterSystem => "SMS",
+            SystemId::GameGear => "GG",
+            SystemId::Sg1000 => "SG",
             SystemId::Arcade => "ARC",
         }
     }
@@ -48,6 +73,12 @@ impl SystemId {
             SystemId::Nes => &["nes"],
             SystemId::Gba => &["gba"],
             SystemId::Gb => &["gb", "gbc"],
+            // `.bin` is the common raw Mega Drive dump; nothing else here
+            // claims it, and the scanner only admits known extensions.
+            SystemId::Genesis => &["md", "gen", "smd", "bin"],
+            SystemId::MasterSystem => &["sms"],
+            SystemId::GameGear => &["gg"],
+            SystemId::Sg1000 => &["sg"],
             SystemId::Arcade => &["zip"],
         }
     }
@@ -58,6 +89,10 @@ impl SystemId {
             SystemId::Nes => "nes",
             SystemId::Gba => "gba",
             SystemId::Gb => "gb",
+            SystemId::Genesis => "genesis",
+            SystemId::MasterSystem => "sms",
+            SystemId::GameGear => "gg",
+            SystemId::Sg1000 => "sg1000",
             SystemId::Arcade => "arcade",
         }
     }
@@ -69,6 +104,10 @@ impl SystemId {
             "nes" => Some(SystemId::Nes),
             "gba" => Some(SystemId::Gba),
             "gb" | "gbc" => Some(SystemId::Gb),
+            "genesis" | "md" | "megadrive" => Some(SystemId::Genesis),
+            "sms" => Some(SystemId::MasterSystem),
+            "gg" => Some(SystemId::GameGear),
+            "sg1000" | "sg" => Some(SystemId::Sg1000),
             "arcade" => Some(SystemId::Arcade),
             _ => None,
         }
@@ -94,6 +133,10 @@ pub fn system_for_path(path: &str) -> SystemId {
     match extension_of(path).as_str() {
         "gba" => SystemId::Gba,
         "gb" | "gbc" => SystemId::Gb,
+        "md" | "gen" | "smd" | "bin" => SystemId::Genesis,
+        "sms" => SystemId::MasterSystem,
+        "gg" => SystemId::GameGear,
+        "sg" => SystemId::Sg1000,
         "zip" => SystemId::Arcade,
         _ => SystemId::Nes,
     }
@@ -109,6 +152,13 @@ mod tests {
         assert_eq!(system_for_path("pokemon.GBA"), SystemId::Gba);
         assert_eq!(system_for_path("tetris.gb"), SystemId::Gb);
         assert_eq!(system_for_path("tetris.gbc"), SystemId::Gb);
+        assert_eq!(system_for_path("sonic.md"), SystemId::Genesis);
+        assert_eq!(system_for_path("sonic.gen"), SystemId::Genesis);
+        assert_eq!(system_for_path("sonic.smd"), SystemId::Genesis);
+        assert_eq!(system_for_path("sonic.bin"), SystemId::Genesis);
+        assert_eq!(system_for_path("alex.sms"), SystemId::MasterSystem);
+        assert_eq!(system_for_path("columns.gg"), SystemId::GameGear);
+        assert_eq!(system_for_path("girls.sg"), SystemId::Sg1000);
         assert_eq!(system_for_path("puckman.zip"), SystemId::Arcade);
     }
 
@@ -118,6 +168,8 @@ mod tests {
             assert_eq!(SystemId::parse_key(system.key()), Some(*system));
         }
         assert_eq!(SystemId::parse_key("GBC"), Some(SystemId::Gb));
+        assert_eq!(SystemId::parse_key("MEGADRIVE"), Some(SystemId::Genesis));
+        assert_eq!(SystemId::parse_key("md"), Some(SystemId::Genesis));
         assert_eq!(SystemId::parse_key("wonderswan"), None);
     }
 

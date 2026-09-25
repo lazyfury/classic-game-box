@@ -11,6 +11,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 | `nestopia` | NES / FC | `libretro/nestopia` | `dist/nestopia_libretro.dylib` | ✅ arm64, synthetic NROM |
 | `custom_nes_core` | NES / FC | `legacy/packages/fc-{core,libretro}` | `dist/custom_nes_core_libretro.dylib` | ✅ arm64 (clang++ direct), synthetic NROM |
 | `fbneo` | Arcade | `libretro/FBNeo` | `dist/fbneo_libretro.dylib` | ✅ arm64, loads standard Neo Geo sets (encrypted C-ROMs) |
+| `genesis_plus_gx` | MD / Genesis / SMS / GG / SG-1000 | `libretro/Genesis-Plus-GX` | `dist/genesis_plus_gx_libretro.dylib` | 🔧 build.sh added, not yet built/verified |
 
 ```bash
 ./scripts/build-cores.sh              # every cores/*/build.sh, in name order
@@ -83,6 +84,13 @@ shapes, both already in the tree:
 encrypted 4 MiB C-ROMs, e.g. `201-c1.c1` = `72813676`) and reads its ROMs by
 CRC, so the BIOS file names do not matter. It is a plain Makefile build from
 `libretro/FBNeo` (`src/burner/libretro`, `platform=osx`).
+
+`genesis_plus_gx` is one module for four consoles: Mega Drive / Genesis,
+Master System, Game Gear and SG-1000. It builds from `Makefile.libretro` at the
+`libretro/Genesis-Plus-GX` repo root with `platform=osx`, and renders **RGB565**
+(the host converts it). `cores.json` lists it once per console under the same
+key, the way mGBA appears for GBA and GB; the core picks the console from the
+loaded ROM.
 
 `./scripts/build-cores.sh` runs every `cores/*/build.sh` in name order;
 `--skip-mgba` skips the cmake build.

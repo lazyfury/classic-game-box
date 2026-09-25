@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 
-use cgb_systems::JoypadButton;
+use cgb_systems::{JoypadButton, SystemId};
 use draw_core::Key;
 
 /// The pressed-button bitmask for both controller ports.
@@ -149,6 +149,26 @@ impl KeyboardBindings {
         bind(&[Key::Enter, Key::Space], Start);
         bind(&[Key::Tab], Select);
         Self { bindings }
+    }
+
+    /// The default keyboard layout for `system`.
+    ///
+    /// The base layout is the README's: arrows/WASD, `Z`/`J` = B, `X`/`K` = A,
+    /// Enter/Space = Start, Tab = Select. The Sega Mega Drive adds its third
+    /// face button (Genesis C) and the 6-button extras, so a Genesis game is
+    /// playable without rebinding.
+    pub fn default_bindings_for(system: SystemId) -> Self {
+        let mut bindings = Self::default_bindings();
+        if system == SystemId::Genesis {
+            // Genesis Plus GX's libretro ids: B = A, A = B, Y = C, X = X,
+            // L = Y, R = Z, R2 = Mode.
+            bindings.bind(Key::Character('c'), JoypadButton::Y); // Genesis C
+            bindings.bind(Key::Character('v'), JoypadButton::X); // Genesis X
+            bindings.bind(Key::Character('b'), JoypadButton::L); // Genesis Y
+            bindings.bind(Key::Character('n'), JoypadButton::R); // Genesis Z
+            bindings.bind(Key::Character('m'), JoypadButton::R2); // Mode
+        }
+        bindings
     }
 
     /// Rebind a key to a button, replacing any existing mapping for that key.
@@ -500,6 +520,28 @@ mod tests {
             bindings.button_for(Key::Character('x')),
             Some(JoypadButton::A)
         );
+    }
+
+    #[test]
+    fn only_the_genesis_layout_reaches_the_third_face_button() {
+        // Genesis Plus GX exposes Genesis C on libretro Y; `c` reaches it.
+        let mut genesis = InputState::new();
+        KeyboardBindings::default_bindings_for(SystemId::Genesis).apply(
+            Key::Character('c'),
+            true,
+            &mut genesis,
+            0,
+        );
+        assert!(genesis.is_down(0, JoypadButton::Y));
+        // Other consoles keep the plain two-face-button layout.
+        let mut nes = InputState::new();
+        KeyboardBindings::default_bindings_for(SystemId::Nes).apply(
+            Key::Character('c'),
+            true,
+            &mut nes,
+            0,
+        );
+        assert!(!nes.is_down(0, JoypadButton::Y));
     }
 
     #[test]

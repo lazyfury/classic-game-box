@@ -25,6 +25,38 @@
       "fps": 59.7275
     },
     {
+      "key": "genesis_plus_gx",
+      "name": "Genesis Plus GX",
+      "system": "genesis",
+      "dylib": "genesis_plus_gx_libretro.dylib",
+      "sample_rate": 48000,
+      "fps": 59.9227
+    },
+    {
+      "key": "genesis_plus_gx",
+      "name": "Genesis Plus GX",
+      "system": "sms",
+      "dylib": "genesis_plus_gx_libretro.dylib",
+      "sample_rate": 48000,
+      "fps": 59.9227
+    },
+    {
+      "key": "genesis_plus_gx",
+      "name": "Genesis Plus GX",
+      "system": "gg",
+      "dylib": "genesis_plus_gx_libretro.dylib",
+      "sample_rate": 48000,
+      "fps": 59.9227
+    },
+    {
+      "key": "genesis_plus_gx",
+      "name": "Genesis Plus GX",
+      "system": "sg1000",
+      "dylib": "genesis_plus_gx_libretro.dylib",
+      "sample_rate": 48000,
+      "fps": 59.9227
+    },
+    {
       "key": "nestopia",
       "name": "Nestopia",
       "system": "nes",
