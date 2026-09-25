@@ -205,6 +205,7 @@ dlopen(dylib)
 - **Q2 已接线**：`cgb-app::Session` 在 `load_game` 后回写 `.srm`，暂停/退出/换游戏时落盘；
   即时存档走 `Session::{save,load}_state(slot)`，槽位 0 为快速槽，1–3 为命名槽；
   热键 F5/F6 = 快速存/读，F1–F3 存、Shift+F1–F3 读（沿用旧前端约定）。
+  F11 / Esc 切换/退出沉浸式全屏游玩（见 §7、§8）。
 
 ---
 
@@ -292,6 +293,12 @@ Flex::column()
 
 左栏三个 section：游戏库 / 截图 / 设置；**游玩不再是 section**——右栏画面常驻，跟 legacy 一样。
 
+**沉浸式全屏游玩（`ViewModel::fullscreen`）**：有游戏在跑时可切到只挂载画面 + 一条
+细控制条（暂停/存/读/截图/退出全屏）的最小树，窗口走 `Fullscreen::Borderless`；
+header / rail / 库网格 / status 全部不挂载。入口是 play 列的“全屏”按钮，热键 F11，
+Esc 退出。这不是纯审美：库网格一屏就能给每帧加两三千条 `DrawCommand`（见 §8），
+全屏把它降到十几条。
+
 | section | 内容 | quill 组件 |
 |---|---|---|
 | 游戏库 | 扫描目录、扩展名过滤 `.nes/.gba/.gb/.gbc/.zip`、随中栏宽度 2/3/4 列的网格（真实封面或随机色块 + 机种 badge + 截图数/置顶/删除）、单击即玩；排序栏（名称/大小/最近/时长/加入 + 方向）；拖放 ROM 或“添加游戏文件…”，也可“添加游戏目录…” | `Grid` + `ScrollView` + 本地 `Icon` |
@@ -337,6 +344,12 @@ ControlFlow::WaitUntil(now + frame_budget)
   `Ui::grid_window_covers` 判断它是否仍在树里；在窗口内的滚动只是 `ScrollView` 平移已挂内容 +
   重绘（`cgb-app::feed`/`render` 据此决定是否 `dirty`），跨出去才重建。
 - 图标光栅化成纹理，每帧一条 `DrawImage`（矢量描边是 `submit` 的主要成本）。
+- **沉浸式全屏游玩**（`ViewModel::fullscreen`，F11/play 列按钮进入，Esc 退出）：游戏在跑时
+  只挂载画面 + 细控制条，shell 和库网格不入树，窗口走 borderless fullscreen。`submit` 的成本
+  正比于 DrawList 命令数，一屏库卡 ≈ 3000–4600 条，全屏树 ≈ 14 条；实测每帧
+  `update_texture + begin_frame + submit + end_frame` 从 **≈2.1ms 降到 ≈0.15ms**（离屏、M 系），
+  是“UI 不拖帧率”最大的一笔。（`GameView` 离屏靶不适用：我们的 world 是一条 libretro 纹理，
+  不是 quill `SceneTree` 世界。）
 
 ### 8.1 profiler
 

@@ -22,7 +22,9 @@
 - **Q6 定制**：输入能力对齐（16 键 + 模拟轴 + capabilities + 按机种绑定 + core descriptors）；
   存档 10 槽（按 core 隔离 + 缩略图）；金手指 `.cht`；倒带（每 2 帧 / 10s）；画面后处理
   shader（扫描线/CRT/LCD/锐化）；core options + `SET_CONTROLLER_PORT_DEVICE` + core 消息；
-  截图多选删除；中栏可拖动。后处理依赖 sibling `../quill` 新增的 `TextureEffect`。
+  截图多选删除；中栏可拖动；沉浸式全屏游玩（`ViewModel::fullscreen`，F11/play 列
+  “全屏”按钮进入，Esc 退出；只挂载画面 + 细控制条，库网格不入树）。
+  后处理依赖 sibling `../quill` 新增的 `TextureEffect`。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
   （mesen / mgba / nestopia / custom_nes_core / fbneo）；`--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。

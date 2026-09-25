@@ -337,6 +337,10 @@ pub struct ViewModel {
     pub sort_desc: bool,
     pub playing: bool,
     pub paused: bool,
+    /// Immersive play: only the game picture (plus a slim overlay bar) is
+    /// mounted, and the window is asked to go borderless-fullscreen. The rest
+    /// of the shell is hidden.
+    pub fullscreen: bool,
     pub core_name: String,
     pub frame: Option<FrameHandle>,
     pub status: String,
@@ -404,6 +408,7 @@ impl Default for ViewModel {
             sort_desc: false,
             playing: false,
             paused: false,
+            fullscreen: false,
             core_name: String::new(),
             frame: None,
             status: String::new(),
@@ -441,6 +446,8 @@ pub enum Action {
     /// Start the game at this library index.
     Play(usize),
     TogglePause,
+    /// Enter or leave the immersive fullscreen play view.
+    ToggleFullscreen,
     Reset,
     /// Step the running game back one rewind snapshot.
     Rewind,

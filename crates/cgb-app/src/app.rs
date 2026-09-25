@@ -26,7 +26,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowAttributesExtMacOS;
-use winit::window::{Window, WindowId};
+use winit::window::{Fullscreen, Window, WindowId};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{
@@ -1211,6 +1211,8 @@ impl App {
             self.model.playing = false;
             self.model.paused = false;
             self.model.frame = None;
+            // The immersive view has nothing left to show.
+            self.set_fullscreen(false);
         }
         self.settings.added_roms.retain(|rom| rom != &path);
         let _ = self.settings.save(&self.paths.settings_json);
@@ -1421,6 +1423,7 @@ impl App {
         // covers the viewport.
         let scroll_after = self.ui.scroll_offset();
         if matches!(self.model.section, Section::Library | Section::Screenshots)
+            && !self.model.fullscreen
             && scroll_after != scroll_before
         {
             self.model.grid_offset = scroll_after;
@@ -1492,6 +1495,7 @@ impl App {
                     }
                     self.dirty = true;
                 }
+                Action::ToggleFullscreen => self.toggle_fullscreen(),
                 Action::Reset => {
                     if let Some(session) = self.session.as_ref() {
                         session.reset();
@@ -1881,6 +1885,8 @@ impl App {
                     error
                 };
                 self.model.playing = false;
+                // A failed load leaves nothing to fill the immersive view.
+                self.set_fullscreen(false);
             }
         }
         self.dirty = true;
@@ -1931,6 +1937,30 @@ impl App {
             return dev;
         }
         packaged
+    }
+
+    /// Toggle the immersive fullscreen play view. Entering it needs a loaded
+    /// game (the view *is* the game); leaving it always works.
+    fn toggle_fullscreen(&mut self) {
+        self.set_fullscreen(!self.model.fullscreen);
+    }
+
+    /// Show or hide the immersive play view and ask the window to match.
+    fn set_fullscreen(&mut self, on: bool) {
+        let on = on && self.session.is_some();
+        if let Some(window) = self.window.as_ref() {
+            window.set_fullscreen(if on {
+                Some(Fullscreen::Borderless(None))
+            } else {
+                None
+            });
+        }
+        self.model.fullscreen = on;
+        self.dirty = true;
+        self.ui.request_repaint();
+        if let Some(window) = self.window.as_ref() {
+            window.request_redraw();
+        }
     }
 
     fn rebuild_ui(&mut self) {
@@ -2028,7 +2058,9 @@ impl App {
             // covers, so the resolved offset and viewport go back into the
             // model; a scroll past the mounted rows asks for one more rebuild,
             // while scrolling inside them is just a repaint.
-            if matches!(self.model.section, Section::Library | Section::Screenshots) {
+            if matches!(self.model.section, Section::Library | Section::Screenshots)
+                && !self.model.fullscreen
+            {
                 let offset = self.ui.scroll_offset();
                 let viewport_height = self.ui.scroll_viewport();
                 if offset != self.model.grid_offset || viewport_height != self.model.grid_viewport {
@@ -2254,12 +2286,18 @@ impl ApplicationHandler for App {
                 // Save-state hotkeys are app commands, not joypad bindings, and
                 // only fire on press (so a held key does not re-save).
                 if event.state == ElementState::Pressed {
-                    // Escape dismisses a pending delete confirmation.
-                    if matches!(event.logical_key, WinitKey::Named(NamedKey::Escape))
-                        && self.model.confirm.is_some()
-                    {
-                        self.model.confirm = None;
-                        self.dirty = true;
+                    // Escape dismisses a pending delete confirmation, or leaves
+                    // the immersive view. Either way it is an app command, not
+                    // a joypad key.
+                    if matches!(event.logical_key, WinitKey::Named(NamedKey::Escape)) {
+                        if self.model.confirm.is_some() {
+                            self.model.confirm = None;
+                            self.dirty = true;
+                        } else if self.model.fullscreen {
+                            self.actions.push(Action::ToggleFullscreen);
+                            self.handle_actions();
+                            return;
+                        }
                     }
                     if let Some(action) =
                         state_shortcut(&event.logical_key, self.modifiers.shift_key())
@@ -2531,6 +2569,7 @@ fn key_label(key: Key) -> String {
 /// `Shift`+`F1`–`F3` loads them.
 fn state_shortcut(key: &WinitKey, shift: bool) -> Option<Action> {
     match key {
+        WinitKey::Named(NamedKey::F11) => Some(Action::ToggleFullscreen),
         WinitKey::Named(NamedKey::F5) => Some(Action::SaveState(0)),
         WinitKey::Named(NamedKey::F6) => Some(Action::LoadState(0)),
         WinitKey::Named(NamedKey::F1) if shift => Some(Action::LoadState(1)),
@@ -2636,6 +2675,10 @@ mod tests {
             Some(Action::LoadState(1))
         );
         assert_eq!(state_shortcut(&WinitKey::Named(NamedKey::F4), false), None);
+        assert_eq!(
+            state_shortcut(&WinitKey::Named(NamedKey::F11), false),
+            Some(Action::ToggleFullscreen)
+        );
     }
 
     fn temp_paths(name: &str) -> Paths {

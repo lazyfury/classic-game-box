@@ -129,6 +129,17 @@ pub fn build(
     mounted_rows: &Cell<(usize, usize)>,
 ) -> (SceneTree, Option<ScrollViewState>) {
     mounted_rows.set(grid_window(model));
+    // Immersive play: mount only the game picture and a slim overlay bar, so
+    // the heavy library grid is not re-submitted every emulator frame. The
+    // app drives the window's fullscreen state separately.
+    if model.fullscreen {
+        mounted_rows.set((0, 0));
+        let tree = Flex::column()
+            .mouse_filter(MouseFilter::Ignore)
+            .child(fullscreen_play(theme, model, actions))
+            .into_tree();
+        return (tree, None);
+    }
     let mut middle_scroll = None;
     // The resize handle points at the middle panel, so bind a slot before the
     // panel is built and read it into the handle.
@@ -163,6 +174,89 @@ pub fn build(
         .child(inner.child(status_bar(theme, model)))
         .into_tree();
     (tree, middle_scroll)
+}
+
+/// The immersive play view: the game picture fills everything below a slim
+/// overlay bar with pause / save / load / screenshot / exit controls.
+///
+/// The rest of the shell (header, rail, library, status line) is not mounted,
+/// which is what keeps a playing frame cheap: the visible grid alone added
+/// thousands of draw commands to every frame.
+fn fullscreen_play(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
+    let mut column = Column::new()
+        .gap(0.0)
+        .padding(Edges::ZERO)
+        .mouse_filter(MouseFilter::Ignore)
+        .child(fullscreen_bar(theme, model, actions));
+    match &model.frame {
+        Some(frame) => {
+            column =
+                column.child(FrameImage::new(frame.texture, frame.width, frame.height).grow(1.0));
+        }
+        None => {
+            column = column.child(
+                Flex::row()
+                    .align(Align::Center)
+                    .justify(Justify::Center)
+                    .grow(1.0)
+                    .surface(SurfaceStyle::new(theme.palette().surface))
+                    .child(Text::small("没有画面：还没有载入游戏。", theme).tone(Tone::Muted)),
+            );
+        }
+    }
+    column
+}
+
+/// The thin bar across the top of the immersive view. It carries the game name,
+/// any status message, and the controls that matter in fullscreen; everything
+/// else is one Escape (or F11) away.
+fn fullscreen_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
+    let title = model
+        .selected
+        .and_then(|index| model.games.get(index))
+        .map(|game| game.name.clone())
+        .or_else(|| (!model.core_name.is_empty()).then(|| model.core_name.clone()))
+        .unwrap_or_else(|| "没有选中游戏".to_string());
+    let pause = if model.paused { "继续" } else { "暂停" };
+
+    let mut row = Row::new()
+        .align(Align::Center)
+        .gap(space::SM)
+        .padding(Edges::new(space::MD, space::XS, space::MD, space::XS))
+        .surface(SurfaceStyle::new(theme.palette().surface));
+    row = row.child(
+        Text::small(title, theme)
+            .grow(1.0)
+            .max_lines(1)
+            .ellipsis(true),
+    );
+    if !model.status.is_empty() {
+        row = row.child(
+            Text::caption(model.status.clone(), theme)
+                .tone(Tone::Muted)
+                .max_lines(1)
+                .ellipsis(true),
+        );
+    }
+
+    let toggle = actions.clone();
+    row = row
+        .child(Button::secondary(pause, theme).on_click(move || toggle.push(Action::TogglePause)));
+    let save = actions.clone();
+    row = row.child(Button::ghost("存档", theme).on_click(move || save.push(Action::SaveState(0))));
+    let load = actions.clone();
+    row = row.child(Button::ghost("读档", theme).on_click(move || load.push(Action::LoadState(0))));
+    let shot = actions.clone();
+    row = row.child(Button::ghost("截图", theme).on_click(move || shot.push(Action::Screenshot)));
+    let exit = actions.clone();
+    row = row.child(
+        Button::secondary("退出全屏", theme).on_click(move || exit.push(Action::ToggleFullscreen)),
+    );
+
+    Column::new()
+        .gap(0.0)
+        .child(row)
+        .child(Divider::horizontal(theme))
 }
 
 /// The confirmation bar, above the status line, for a pending destructive
@@ -395,6 +489,10 @@ fn play_column(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) 
     let cover = actions.clone();
     controls = controls.child(
         Button::ghost("设为封面", theme).on_click(move || cover.push(Action::ScreenshotCover)),
+    );
+    let full = actions.clone();
+    controls = controls.child(
+        Button::secondary("全屏", theme).on_click(move || full.push(Action::ToggleFullscreen)),
     );
     column = column.child(controls);
 
@@ -2495,6 +2593,42 @@ mod tests {
         let scale_y = destination.size.height / 240.0;
         assert!(scale_x > 0.0);
         assert!((scale_x - scale_y).abs() < 0.01, "{scale_x} vs {scale_y}");
+    }
+
+    /// Immersive play: the shell (header, rail, library grid, play column) is
+    /// not mounted, but the framebuffer is still painted and the controls that
+    /// matter in fullscreen are there.
+    #[test]
+    fn fullscreen_play_hides_the_shell_but_keeps_the_picture() {
+        let actions = Actions::default();
+        let model = ViewModel {
+            playing: true,
+            fullscreen: true,
+            games: vec![game_row("Game 0", "/roms/game0.nes")],
+            frame: Some(FrameHandle {
+                texture: TextureId::new(1),
+                width: 256,
+                height: 240,
+            }),
+            ..ViewModel::default()
+        };
+        let (mut tree, list) = laid_out(&model, &actions);
+        assert!(
+            list.commands()
+                .iter()
+                .any(|command| matches!(command, DrawCommand::DrawImage { .. })),
+            "the framebuffer is painted"
+        );
+        let hidden = ["游戏库", "Game 0"];
+        for needle in hidden {
+            assert!(
+                !list.commands().iter().any(|command| matches!(command,
+                    DrawCommand::DrawText { text, .. } if text == needle)),
+                "{needle:?} should not be mounted in fullscreen"
+            );
+        }
+        click(&mut tree, text_position(&list, "退出全屏"));
+        assert_eq!(actions.drain(), vec![Action::ToggleFullscreen]);
     }
 
     /// Save/load results arrive as `ViewModel::status`; the shared shell must
