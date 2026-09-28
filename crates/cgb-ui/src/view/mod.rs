@@ -220,6 +220,15 @@ pub fn build(
     info_ref: &NodeRef,
 ) -> (SceneTree, Option<ScrollViewState>) {
     mounted_rows.set(grid_window(model));
+    // A fullscreen transition hides the tree while the OS animates the window;
+    // the caller mounts the target UI once it settles.
+    if model.ui_hidden {
+        mounted_rows.set((0, 0));
+        return (
+            Flex::column().mouse_filter(MouseFilter::Ignore).into_tree(),
+            None,
+        );
+    }
     // Immersive play: fullscreen for now reuses the right-column play view
     // (title, live info, picture, controls, core), just without the shell.
     if model.fullscreen {

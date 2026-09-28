@@ -2191,16 +2191,21 @@ impl App {
             return;
         }
         self.fullscreen_target = on;
-        // Mount only the play view for the duration of the transition.
-        self.model.fullscreen = true;
-        self.dirty = true;
-        if let Some(window) = self.window.clone() {
-            window.set_fullscreen(if on {
-                Some(Fullscreen::Borderless(None))
-            } else {
-                None
-            });
+        if on {
+            // Hide the UI before asking the window for fullscreen, so nothing
+            // is laid out while it animates; the play view mounts on settle.
+            self.model.ui_hidden = true;
+            if let Some(window) = self.window.clone() {
+                window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+            }
+        } else {
+            // Leaving: ask the window first, keep the play view mounted while it
+            // animates, and rebuild the shell once the window settles.
+            if let Some(window) = self.window.clone() {
+                window.set_fullscreen(None);
+            }
         }
+        self.dirty = true;
         self.transition = Some(FullscreenTransition {
             target: on,
             last_activity: Instant::now(),
@@ -2228,6 +2233,7 @@ impl App {
         if let Some(transition) = self.transition {
             if transition.last_activity.elapsed() >= Duration::from_millis(200) {
                 self.transition = None;
+                self.model.ui_hidden = false;
                 self.model.fullscreen = transition.target;
                 self.dirty = true;
             }

@@ -401,6 +401,9 @@ pub struct ViewModel {
     /// The play column's live info line (FPS / resolution / core). The host
     /// updates the mounted text node in place, so it does not rebuild the tree.
     pub info: String,
+    /// During a fullscreen transition, mount nothing (a blank surface) while the
+    /// OS animates the window; the target UI is mounted once it settles.
+    pub ui_hidden: bool,
     /// Whether the screenshots page is in multi-select mode.
     pub screenshot_select: bool,
     /// The screenshots ticked for a batch delete.
@@ -474,6 +477,7 @@ impl Default for ViewModel {
             search: String::new(),
             preview: None,
             info: String::new(),
+            ui_hidden: false,
             screenshot_select: false,
             selected_screenshots: Vec::new(),
             editing: None,
