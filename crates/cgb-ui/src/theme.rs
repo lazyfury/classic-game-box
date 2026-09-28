@@ -1,7 +1,7 @@
 //! A custom [`Theme`] for Classic Game Box — the house style, applied without
 //! forking the component library.
 //!
-//! `draw_theme::Theme` derives every token from `palette()` + `mode()`, so a
+//! `igui::igui_theme::Theme` derives every token from `palette()` + `mode()`, so a
 //! custom look is one `impl Theme` that overrides only the tokens that carry
 //! the brand. This module overrides four:
 //!
@@ -12,14 +12,14 @@
 //! 3. **`font_weight`** — headings render bold.
 //! 4. **`radius`** — restrained geometry: 4–8 px, never a large rounded card.
 //!
-//! Nothing in `draw_ui` / `draw_components` changes; the view receives the same
+//! Nothing in ``igui_ui`` / ``igui_components`` changes; the view receives the same
 //! `&'static dyn Theme` it always did. [`ThemeChoice`] names the built-in and
 //! custom themes so the CLI can pick one.
 
 use std::sync::OnceLock;
 
-use draw_core::{Color, FontWeight};
-use draw_theme::{
+use igui::igui_core::{Color, FontWeight};
+use igui::igui_theme::{
     default_theme, ControlSize, Density, Mode, Palette, Radius, SurfaceLevel, TextSize, Theme,
 };
 
@@ -27,7 +27,7 @@ use draw_theme::{
 /// (the house style, the default); `Default` is the library's built-in theme.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThemeChoice {
-    /// `draw_theme::default_theme` — the reference palette.
+    /// `igui::igui_theme::default_theme` — the reference palette.
     Default,
     /// The Classic Game Box house style ([`game_theme`]).
     #[default]
@@ -77,7 +77,7 @@ impl ThemeChoice {
 /// opaque selection.
 ///
 /// It owns only the tokens that carry the brand; every other token keeps the
-/// [`Theme`](draw_theme::Theme) trait's default, so the theme stays in sync
+/// [`Theme`](igui::igui_theme::Theme) trait's default, so the theme stays in sync
 /// with the library if it adds tokens with sensible defaults.
 pub struct GameTheme {
     mode: Mode,

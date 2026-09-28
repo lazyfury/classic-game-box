@@ -7,5 +7,7 @@ license.workspace = true
 
 [dependencies]
 cgb-systems.workspace = true
-draw_core.workspace = true
+# Only `igui_core::Key`; this crate must not pull in a backend, a window or the
+# UI (dependency rule), so it uses the fine-grained crate rather than the facade.
+igui_core.workspace = true
 gilrs.workspace = true

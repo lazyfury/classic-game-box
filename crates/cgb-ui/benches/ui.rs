@@ -21,10 +21,10 @@
 
 use cgb_systems::SystemId;
 use cgb_ui::{Actions, CoreRow, GameRow, Section, Ui, ViewModel};
-use draw_bench::{black_box, finish, BenchRunner, RunConfig};
-use draw_core::{Size, ViewportSize};
-use draw_render::PaintContext;
-use draw_theme::{default_theme, Mode};
+use igui::igui_bench::{black_box, finish, BenchRunner, RunConfig};
+use igui::igui_core::{Size, ViewportSize};
+use igui::igui_render::PaintContext;
+use igui::igui_theme::{default_theme, Mode};
 
 /// A fixed window size, matching `cgb-app`'s default.
 const VIEWPORT: (f32, f32) = (1100.0, 760.0);
@@ -88,7 +88,10 @@ fn settings_model(n: usize) -> ViewModel {
     }
 }
 
-fn push(results: &mut Vec<draw_bench::BenchResult>, result: Option<draw_bench::BenchResult>) {
+fn push(
+    results: &mut Vec<igui::igui_bench::BenchResult>,
+    result: Option<igui::igui_bench::BenchResult>,
+) {
     if let Some(result) = result {
         results.push(result);
     }
@@ -158,7 +161,7 @@ fn main() {
                 || model.clone(),
                 |model| {
                     let mut ui = Ui::new(theme, model, &actions);
-                    draw_ui::layout(ui.tree_mut(), viewport);
+                    igui::igui_ui::layout(ui.tree_mut(), viewport);
                     black_box(ui.tree());
                 },
             ),

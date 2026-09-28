@@ -1,6 +1,6 @@
 //! Vector icons for the card controls, drawn from vendored Lucide SVGs.
 //!
-//! Rendering goes through `draw_svg`: the SVG is flattened into `draw_render`
+//! Rendering goes through ``igui_svg``: the SVG is flattened into ``igui_render``
 //! lines and stroked, so an icon needs no texture and no extra backend. Each
 //! source is embedded with `include_str!` (no runtime asset path), parsed once
 //! per thread and cached.
@@ -13,11 +13,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use draw_components::{Component, Spec};
-use draw_core::{Color, Rect, Size, Vec2};
-use draw_render::{DrawCommand, Paint, PaintContext};
-use draw_svg::SvgDocument;
-use draw_ui::{InteractState, MouseFilter, Widget};
+use igui::igui_components::{Component, Spec};
+use igui::igui_core::{Color, Rect, Size, Vec2};
+use igui::igui_render::{DrawCommand, Paint, PaintContext};
+use igui::igui_ui::{InteractState, MouseFilter};
+use igui_svg::SvgDocument;
 
 use crate::model::FrameHandle;
 
@@ -269,13 +269,6 @@ impl Component for Icon {
         "Icon"
     }
 
-    fn widget(&self) -> Widget {
-        Widget::Panel {
-            color: Color::TRANSPARENT,
-            border: None,
-        }
-    }
-
     fn prepare(&mut self) {
         self.spec.data.min_size = Size::splat(self.size);
         self.spec.data.mouse_filter = MouseFilter::Ignore;
@@ -306,13 +299,13 @@ impl Component for Icon {
     }
 }
 
-draw_components::impl_scene_child!(Icon);
+igui::igui_components::impl_scene_child!(Icon);
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use draw_core::{Rect, Vec2};
-    use draw_render::PaintContext;
+    use igui::igui_core::{Rect, Vec2};
+    use igui::igui_render::PaintContext;
 
     #[test]
     fn rasterizing_an_icon_fills_some_pixels() {

@@ -30,12 +30,12 @@ pub use view::{
 use std::cell::Cell;
 use std::rc::Rc;
 
-use draw_components::{Menu, MenuItem, NodeRef, OverlayId, Overlays, ScrollViewState};
-use draw_core::{InputEvent, NodeId, Vec2, ViewportSize};
-use draw_render::PaintContext;
-use draw_scene::SceneTree;
-use draw_theme::Theme;
-use draw_ui::{Control, DragPhase, TextMeasurer};
+use igui::igui_components::{Menu, MenuItem, NodeRef, OverlayId, Overlays, ScrollViewState};
+use igui::igui_core::{InputEvent, NodeId, Vec2, ViewportSize};
+use igui::igui_render::PaintContext;
+use igui::igui_scene::SceneTree;
+use igui::igui_theme::Theme;
+use igui::igui_ui::{Control, DragPhase, TextMeasurer};
 
 use cgb_systems::SystemId;
 
@@ -124,8 +124,8 @@ impl Ui {
         let previous = (self.middle_section == model.section)
             .then(|| self.middle_scroll.as_ref().map(ScrollViewState::offset))
             .flatten();
-        let dragging = draw_ui::gui_state_of(&self.tree).and_then(|state| state.dragging);
-        let drag_last = draw_ui::gui_state_of(&self.tree).map(|state| state.drag_last);
+        let dragging = igui::igui_ui::gui_state_of(&self.tree).and_then(|state| state.dragging);
+        let drag_last = igui::igui_ui::gui_state_of(&self.tree).map(|state| state.drag_last);
         let was_resizing = dragging.is_some() && dragging == self.resize_handle.get();
 
         let (tree, middle_scroll) = view::build(
@@ -176,7 +176,7 @@ impl Ui {
         {
             (callback.borrow_mut())(&mut self.tree, DragPhase::Start, Vec2::ZERO);
         }
-        let state = draw_ui::gui_state_mut(&mut self.tree);
+        let state = igui::igui_ui::gui_state_mut(&mut self.tree);
         state.dragging = Some(id);
         state.pressed = Some(id);
         state.focused = Some(id);
@@ -206,7 +206,7 @@ impl Ui {
     ///
     /// The grid mounts only the rows around the viewport (see [`grid_window`]).
     /// While a scroll stays inside that window the tree can be left as is — the
-    /// [`ScrollView`](draw_components::ScrollView) just moves the mounted
+    /// [`ScrollView`](igui::igui_components::ScrollView) just moves the mounted
     /// content — so the host should only rebuild when this returns `false`.
     pub fn grid_window_covers(&self, model: &ViewModel) -> bool {
         grid_window(model) == self.mounted_rows.get()
@@ -242,19 +242,19 @@ impl Ui {
     /// Install the backend's real font metrics so layout measures what is
     /// painted. Call after [`Ui::new`] and after every [`Ui::rebuild`].
     pub fn install_measurer(&mut self, measurer: Rc<dyn TextMeasurer>) {
-        draw_ui::set_text_measurer(&mut self.tree, measurer.clone());
+        igui::igui_ui::set_text_measurer(&mut self.tree, measurer.clone());
         self.overlays.set_text_measurer(measurer);
     }
 
     /// Resolve geometry and flush deferred tree work.
     ///
-    /// A [`ScrollView`](draw_components::ScrollView) resolves its viewport and
+    /// A [`ScrollView`](igui::igui_components::ScrollView) resolves its viewport and
     /// content only after layout, so `sync` runs here and, when the offset
     /// moved the content, layout runs once more before paint. A pending
     /// [`Ui::rebuild`] scroll target is applied between the two syncs, because
     /// it can only be clamped once the content height is known.
     pub fn layout(&mut self, viewport: ViewportSize) {
-        draw_ui::layout(&mut self.tree, viewport);
+        igui::igui_ui::layout(&mut self.tree, viewport);
         self.tree.update();
         if let Some(scroll) = self.middle_scroll.as_mut() {
             let mut changed = scroll.sync(&mut self.tree);
@@ -263,7 +263,7 @@ impl Ui {
                 changed |= scroll.sync(&mut self.tree);
             }
             if changed {
-                draw_ui::layout(&mut self.tree, viewport);
+                igui::igui_ui::layout(&mut self.tree, viewport);
                 self.tree.update();
             }
         }
@@ -275,7 +275,7 @@ impl Ui {
 
     /// Emit this frame's draw list into `ctx`.
     pub fn paint(&self, ctx: &mut PaintContext) {
-        draw_ui::paint(&self.tree, ctx);
+        igui::igui_ui::paint(&self.tree, ctx);
         self.paint_focus_ring(ctx);
         self.overlays.paint(ctx);
     }
@@ -284,10 +284,10 @@ impl Ui {
     /// visible. Components do not draw one themselves (their backgrounds only
     /// read hover / press), so the host paints it once from the resolved rect.
     fn paint_focus_ring(&self, ctx: &mut PaintContext) {
-        let Some(id) = draw_ui::focused(&self.tree) else {
+        let Some(id) = igui::igui_ui::focused(&self.tree) else {
             return;
         };
-        let Some(control) = draw_ui::control(&self.tree, id) else {
+        let Some(control) = igui::igui_ui::control(&self.tree, id) else {
             return;
         };
         if control.disabled || matches!(control.clip_rect, Some(rect) if rect.is_empty()) {
@@ -410,7 +410,7 @@ impl Ui {
     /// Open the tooltip the hovered control registered, or close the current
     /// one when the pointer left it.
     fn sync_tip(&mut self) {
-        let wanted = draw_ui::hovered(&self.tree).and_then(|node| self.tip_for(node));
+        let wanted = igui::igui_ui::hovered(&self.tree).and_then(|node| self.tip_for(node));
         let unchanged = match (&self.open_tip, &wanted) {
             (Some((node, _)), Some((wanted, _))) => node == wanted,
             (None, None) => true,
@@ -453,7 +453,7 @@ impl Ui {
     /// whether a control handled it.
     pub fn route_ui_input(&mut self, event: &InputEvent) -> bool {
         self.repaint = true;
-        let handled = draw_ui::route_input(&mut self.tree, event).is_handled();
+        let handled = igui::igui_ui::route_input(&mut self.tree, event).is_handled();
         self.normalize_focus();
         handled
     }
@@ -474,7 +474,7 @@ impl Ui {
         if order.is_empty() {
             return false;
         }
-        let current = draw_ui::focused(&self.tree);
+        let current = igui::igui_ui::focused(&self.tree);
         let index = current.and_then(|id| order.iter().position(|node| *node == id));
         let next = match index {
             Some(index) if backward => (index + order.len() - 1) % order.len(),
@@ -482,7 +482,7 @@ impl Ui {
             None if backward => order.len() - 1,
             None => 0,
         };
-        draw_ui::gui_state_mut(&mut self.tree).focused = Some(order[next]);
+        igui::igui_ui::gui_state_mut(&mut self.tree).focused = Some(order[next]);
         self.repaint = true;
         true
     }
@@ -492,7 +492,7 @@ impl Ui {
     /// low-level `Widget::Button`, which the themed components and this app's
     /// custom targets do not use, so the host drives it here.
     pub fn activate_focus(&mut self) -> bool {
-        let Some(id) = draw_ui::focused(&self.tree) else {
+        let Some(id) = igui::igui_ui::focused(&self.tree) else {
             return false;
         };
         // A disabled control (or one under a disabled ancestor) never fires.
@@ -530,12 +530,12 @@ impl Ui {
     /// or clear it when there is none, so the ring and Tab agree with what Tab
     /// would pick.
     fn normalize_focus(&mut self) {
-        let Some(id) = draw_ui::focused(&self.tree) else {
+        let Some(id) = igui::igui_ui::focused(&self.tree) else {
             return;
         };
         let target = interactive_ancestor(&self.tree, id);
         if target != Some(id) {
-            draw_ui::gui_state_mut(&mut self.tree).focused = target;
+            igui::igui_ui::gui_state_mut(&mut self.tree).focused = target;
         }
     }
 }
@@ -591,8 +591,8 @@ fn resolve_tips(raw: Vec<(NodeRef, String)>) -> Vec<(NodeId, String)> {
 mod tests {
     use super::*;
     use cgb_systems::SystemId;
-    use draw_core::{InputEvent, PointerButton, Size, Vec2};
-    use draw_theme::{default_theme, Mode};
+    use igui::igui_core::{InputEvent, PointerButton, Size, Vec2};
+    use igui::igui_theme::{default_theme, Mode};
 
     fn game(index: usize) -> GameRow {
         GameRow {
@@ -803,18 +803,18 @@ mod tests {
         let mut ui = Ui::new(theme, &model, &actions);
         ui.layout(viewport);
         assert!(
-            draw_ui::focused(ui.tree()).is_none(),
+            igui::igui_ui::focused(ui.tree()).is_none(),
             "nothing is focused until the keyboard is used"
         );
 
         assert!(ui.move_focus(false), "a control takes focus");
-        let first = draw_ui::focused(ui.tree()).expect("focused");
+        let first = igui::igui_ui::focused(ui.tree()).expect("focused");
         assert!(ui.move_focus(false), "focus advances");
-        let second = draw_ui::focused(ui.tree()).expect("focused");
+        let second = igui::igui_ui::focused(ui.tree()).expect("focused");
         assert_ne!(first, second, "Tab moved the focus to another control");
 
         assert!(ui.move_focus(true), "focus goes back");
-        assert_eq!(draw_ui::focused(ui.tree()), Some(first));
+        assert_eq!(igui::igui_ui::focused(ui.tree()), Some(first));
     }
 
     /// Enter / Space on the focused control runs its click callback.
@@ -851,13 +851,14 @@ mod tests {
         ui.layout(viewport);
         ui.move_focus(false);
 
-        let mut ctx = draw_render::PaintContext::new();
+        let mut ctx = igui::igui_render::PaintContext::new();
         ui.paint(&mut ctx);
         let list = ctx.into_draw_list();
         assert!(
-            list.commands()
-                .iter()
-                .any(|command| matches!(command, draw_render::DrawCommand::StrokeRect { .. })),
+            list.commands().iter().any(|command| matches!(
+                command,
+                igui::igui_render::DrawCommand::StrokeRect { .. }
+            )),
             "the focus ring is stroked"
         );
     }
@@ -875,14 +876,16 @@ mod tests {
         let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
         let mut ui = Ui::new(theme, &model, &actions);
         ui.layout(viewport);
-        let mut ctx = draw_render::PaintContext::new();
+        let mut ctx = igui::igui_render::PaintContext::new();
         ui.paint(&mut ctx);
         let list = ctx.into_draw_list();
         let point = list
             .commands()
             .iter()
             .find_map(|command| match command {
-                draw_render::DrawCommand::DrawText { text, position, .. } if text == "Game 0" => {
+                igui::igui_render::DrawCommand::DrawText { text, position, .. }
+                    if text == "Game 0" =>
+                {
                     Some(*position)
                 }
                 _ => None,
@@ -902,7 +905,7 @@ mod tests {
             ui.route_input(&event);
         }
 
-        let focused = draw_ui::focused(ui.tree()).expect("something is focused");
+        let focused = igui::igui_ui::focused(ui.tree()).expect("something is focused");
         let control = ui.tree().data::<Control>(focused).expect("a control");
         assert!(
             control.callback.is_some(),
@@ -911,6 +914,6 @@ mod tests {
 
         // Tab continues from that control instead of restarting.
         assert!(ui.move_focus(false));
-        assert_ne!(draw_ui::focused(ui.tree()), Some(focused));
+        assert_ne!(igui::igui_ui::focused(ui.tree()), Some(focused));
     }
 }

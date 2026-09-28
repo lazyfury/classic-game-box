@@ -2,8 +2,8 @@
 //! needs to know, so the view builder can be tested headlessly.
 
 use cgb_systems::SystemId;
-use draw_core::{NodeId, Vec2};
-use draw_render::TextureId;
+use igui::igui_core::{NodeId, Vec2};
+use igui::igui_render::TextureId;
 
 use crate::theme::ThemeChoice;
 

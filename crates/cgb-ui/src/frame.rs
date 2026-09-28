@@ -1,25 +1,25 @@
 //! The framebuffer → screen path.
 //!
-//! `draw_render` already has `DrawCommand::DrawImage`, and the wgpu backend can
+//! ``igui_render`` already has `DrawCommand::DrawImage`, and the wgpu backend can
 //! stream a texture with `update_texture` + `TextureFilter::Nearest`. What the
-//! UI stack lacks is an *image widget*: `draw_ui::Widget` is a closed enum with
-//! no image variant and `draw_components` ships no `Image`.
+//! UI stack lacks is an *image widget*: `igui::igui_ui::Widget` is a closed enum with
+//! no image variant and ``igui_components`` ships no `Image`.
 //!
 //! Rather than fork quill's widget enum, this module builds a leaf component on
-//! quill's public extension points — `draw_components::Component` plus the
+//! quill's public extension points — `igui::igui_components::Component` plus the
 //! `foreground` decorator (the same hook `Divider` uses). The component carries
 //! the texture handle, reserves the available area, and paints the frame scaled
 //! to fill the area's limiting dimension, centred, from the rectangle layout
 //! hands it. Nothing here knows about libretro: it is handed a `TextureId`.
 //!
 //! Git history: the clean long-term home for this is a `Widget::Image` +
-//! `draw_components::Image` pair in quill; the app-local component unblocks Q1
+//! `igui::igui_components::Image` pair in quill; the app-local component unblocks Q1
 //! without touching a sibling repo's public API.
 
-use draw_components::base::{Component, Spec};
-use draw_core::{Color, Rect, Size, Vec2};
-use draw_render::{Paint, TextureId};
-use draw_ui::{MouseFilter, Widget};
+use igui::igui_components::base::{Component, Spec};
+use igui::igui_core::{Rect, Size, Vec2};
+use igui::igui_render::{Paint, TextureId};
+use igui::igui_ui::MouseFilter;
 
 /// The size `frame` takes when scaled to fit `available`, keeping its aspect
 /// ratio: the limiting dimension is filled exactly and the other is left short.
@@ -96,14 +96,6 @@ impl Component for FrameImage {
 
     fn name(&self) -> &'static str {
         "FrameImage"
-    }
-
-    fn widget(&self) -> Widget {
-        // A transparent, borderless panel: the visual is the foreground image.
-        Widget::Panel {
-            color: Color::TRANSPARENT,
-            border: None,
-        }
     }
 
     fn prepare(&mut self) {

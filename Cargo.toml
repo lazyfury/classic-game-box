@@ -20,21 +20,20 @@ repository = "https://github.com/lazyfury/classic-game-box"
 
 [workspace.dependencies]
 # ---------------------------------------------------------------------------
-# quill — the UI stack. Consumed from the sibling checkout `../quill` (the
-# same relative-path pattern quill's own `examples/image_editor` uses). Swap
-# to a pinned git revision when the two repos need to move independently.
+# igui — the UI stack, a GitHub dependency (`lazyfury/igui`, formerly `quill`),
+# pinned to the `v0.2.0` commit. The facade carries opt-in features; three
+# crates are not in the facade and are declared directly from the same source:
+#   * `igui_svg`   — icon vector fallback (no `svg` facade feature exists);
+#   * `igui_winit` — the window / input / IME / clipboard platform plugins;
+#   * `igui_core`  — for `cgb-input`, which must stay UI-free (dependency rule).
+# Bump the pin with e.g.
+#   `cargo update -p igui -p igui_svg -p igui_winit -p igui_core`.
 # ---------------------------------------------------------------------------
-draw_core = { path = "../quill/crates/draw_core" }
-draw_scene = { path = "../quill/crates/draw_scene" }
-draw_ui = { path = "../quill/crates/draw_ui" }
-draw_render = { path = "../quill/crates/draw_render" }
-draw_theme = { path = "../quill/crates/draw_theme" }
-draw_components = { path = "../quill/crates/draw_components" }
-draw_svg = { path = "../quill/crates/draw_svg" }
-draw_backend_wgpu = { path = "../quill/crates/draw_backend_wgpu" }
-draw_backend_recording = { path = "../quill/crates/draw_backend_recording" }
-draw_profile = { path = "../quill/crates/draw_profile" }
-draw_bench = { path = "../quill/crates/draw_bench" }
+igui = { git = "https://github.com/lazyfury/igui", rev = "ea24069148e36073f814453c98c85377ec952c9a", default-features = false }
+igui_svg = { git = "https://github.com/lazyfury/igui", rev = "ea24069148e36073f814453c98c85377ec952c9a" }
+igui_winit = { git = "https://github.com/lazyfury/igui", rev = "ea24069148e36073f814453c98c85377ec952c9a" }
+igui_core = { git = "https://github.com/lazyfury/igui", rev = "ea24069148e36073f814453c98c85377ec952c9a" }
+igui_scene = { git = "https://github.com/lazyfury/igui", rev = "ea24069148e36073f814453c98c85377ec952c9a" }
 
 # ---------------------------------------------------------------------------
 # Internal crates. One concern each; see docs/architecture/quill-native-migration.md.

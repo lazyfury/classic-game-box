@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 
 use cgb_systems::{JoypadButton, SystemId};
-use draw_core::Key;
+use igui_core::Key;
 
 /// The pressed-button bitmask for both controller ports.
 ///

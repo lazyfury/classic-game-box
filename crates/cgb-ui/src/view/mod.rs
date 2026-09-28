@@ -17,7 +17,7 @@
 //!        └─ status bar
 //! ```
 //!
-//! This still uses only public `draw_components` APIs. Callbacks push
+//! This still uses only public ``igui_components`` APIs. Callbacks push
 //! [`Action`]s into an [`Actions`] queue; the app drains them after routing
 //! input.
 //!
@@ -46,13 +46,13 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use draw_components::{
+use igui::igui_components::{
     Column, Component, Divider, Flex, NodeRef, Panel, ResizeHandle, Row, ScrollViewState, Text,
 };
-use draw_core::{Color, Edges};
-use draw_scene::{SceneChild, SceneTree};
-use draw_theme::{radius, space, Theme, Tone};
-use draw_ui::{Align, MouseFilter, SizeBasis, SurfaceStyle};
+use igui::igui_core::{Color, Edges};
+use igui::igui_scene::{SceneChild, SceneTree};
+use igui::igui_theme::{radius, space, Theme, Tone};
+use igui::igui_ui::{Align, MouseFilter, SizeBasis, SurfaceStyle};
 
 use crate::icons::{Icon as SvgIcon, IconName};
 use crate::model::{Action, Section, StatusKind, ViewModel};
@@ -121,7 +121,7 @@ const CARD_ICON_BUTTON: f32 = 16.0;
 /// and the labels light so they stay legible against arbitrary imagery.
 /// Centralised so the badge and the controls cannot drift apart.
 mod media {
-    use draw_core::Color;
+    use igui::igui_core::Color;
 
     /// A translucent dark scrim behind labels on artwork.
     pub const SCRIM: Color = Color::new(0.0, 0.0, 0.0, 0.4);

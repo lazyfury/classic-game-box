@@ -1,15 +1,15 @@
 //! The screenshots section: the current game's screenshots, newest first, in a
 //! virtualized grid, with preview / cover / delete controls.
 
-use draw_components::{
+use igui::igui_components::{
     Badge, Button, Column, Component, EmptyState, Flex, Grid, NodeRef, Row, ScrollView,
     ScrollViewState, Text,
 };
-use draw_core::{Color, Edges};
-use draw_render::Paint;
-use draw_theme::radius::MD;
-use draw_theme::{radius, space, Theme, Tone};
-use draw_ui::{Align, Justify, MouseFilter, SurfaceStyle, Track};
+use igui::igui_core::{Color, Edges};
+use igui::igui_render::Paint;
+use igui::igui_theme::radius::MD;
+use igui::igui_theme::{radius, space, Theme, Tone};
+use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle, Track};
 
 use crate::frame::cover_fit;
 use crate::icons::{Icon as SvgIcon, IconName};

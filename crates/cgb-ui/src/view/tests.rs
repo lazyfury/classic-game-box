@@ -14,14 +14,14 @@ use crate::model::{
 };
 use crate::theme::ThemeChoice;
 use cgb_systems::SystemId;
-use draw_components::{Component, Flex};
-use draw_core::{InputEvent, PointerButton, Size, Vec2};
-use draw_render::{DrawCommand, PaintContext, TextureId};
-use draw_theme::{default_theme, Mode};
+use igui::igui_components::{Component, Flex};
+use igui::igui_core::{InputEvent, PointerButton, Size, Vec2};
+use igui::igui_render::{DrawCommand, PaintContext, TextureId};
+use igui::igui_theme::{default_theme, Mode};
 
 /// Build, lay out (running the scroll sync) and paint the shell. Returns the
 /// mounted tree so a test can also route input at it.
-fn laid_out(model: &ViewModel, actions: &Actions) -> (SceneTree, draw_render::DrawList) {
+fn laid_out(model: &ViewModel, actions: &Actions) -> (SceneTree, igui::igui_render::DrawList) {
     let theme = default_theme(Mode::Dark);
     let width = Rc::new(Cell::new(model.middle_width));
     let (mut tree, mut scroll) = build(
@@ -32,21 +32,21 @@ fn laid_out(model: &ViewModel, actions: &Actions) -> (SceneTree, draw_render::Dr
         &NodeRef::new(),
         &Cell::new((0, 0)),
     );
-    let viewport = draw_core::ViewportSize::new(Size::new(1100.0, 760.0));
-    draw_ui::layout(&mut tree, viewport);
+    let viewport = igui::igui_core::ViewportSize::new(Size::new(1100.0, 760.0));
+    igui::igui_ui::layout(&mut tree, viewport);
     tree.update();
     if let Some(scroll) = scroll.as_mut() {
         if scroll.sync(&mut tree) {
-            draw_ui::layout(&mut tree, viewport);
+            igui::igui_ui::layout(&mut tree, viewport);
             tree.update();
         }
     }
     let mut ctx = PaintContext::new();
-    draw_ui::paint(&tree, &mut ctx);
+    igui::igui_ui::paint(&tree, &mut ctx);
     (tree, ctx.into_draw_list())
 }
 
-fn text_position(list: &draw_render::DrawList, needle: &str) -> Vec2 {
+fn text_position(list: &igui::igui_render::DrawList, needle: &str) -> Vec2 {
     list.commands()
         .iter()
         .find_map(|command| match command {
@@ -86,19 +86,19 @@ fn clicking_a_card_plays_it() {
     let (mut tree, list) = laid_out(&model, &actions);
     let point = text_position(&list, "Game 0");
 
-    let hit = draw_ui::hit_test(&tree, point).expect("something is under the card");
+    let hit = igui::igui_ui::hit_test(&tree, point).expect("something is under the card");
     assert!(
-        draw_ui::is_interactive(&tree, hit),
+        igui::igui_ui::is_interactive(&tree, hit),
         "the card is interactive"
     );
-    draw_ui::handle_input(
+    igui::igui_ui::handle_input(
         &mut tree,
         &InputEvent::PointerDown {
             position: point,
             button: PointerButton::Left,
         },
     );
-    draw_ui::handle_input(
+    igui::igui_ui::handle_input(
         &mut tree,
         &InputEvent::PointerUp {
             position: point,
@@ -125,7 +125,7 @@ fn right_clicking_a_card_opens_its_context_menu() {
             button: PointerButton::Right,
         },
     ] {
-        draw_ui::handle_input(&mut tree, &event);
+        igui::igui_ui::handle_input(&mut tree, &event);
     }
     match actions.drain().as_slice() {
         [Action::GameContextMenu { index, .. }] => assert_eq!(*index, 0),
@@ -197,7 +197,7 @@ fn click(tree: &mut SceneTree, point: Vec2) {
             button: PointerButton::Left,
         },
     ] {
-        draw_ui::handle_input(tree, &event);
+        igui::igui_ui::handle_input(tree, &event);
     }
 }
 
@@ -210,7 +210,7 @@ fn one_game() -> ViewModel {
 
 /// Lay out a single card cover (no shell chrome around it), so its two
 /// icon buttons can be located by the lines their SVGs draw.
-fn isolated_cover(game: &GameRow, actions: &Actions) -> (SceneTree, draw_render::DrawList) {
+fn isolated_cover(game: &GameRow, actions: &Actions) -> (SceneTree, igui::igui_render::DrawList) {
     let theme = default_theme(Mode::Dark);
     let mut tree = SceneTree::new();
     let root = tree.root();
@@ -222,13 +222,13 @@ fn isolated_cover(game: &GameRow, actions: &Actions) -> (SceneTree, draw_render:
             .mouse_filter(MouseFilter::Ignore)
             .child(cover(theme, game, 0, actions)),
     );
-    draw_ui::layout(
+    igui::igui_ui::layout(
         &mut tree,
-        draw_core::ViewportSize::new(Size::new(320.0, 240.0)),
+        igui::igui_core::ViewportSize::new(Size::new(320.0, 240.0)),
     );
     tree.update();
     let mut ctx = PaintContext::new();
-    draw_ui::paint(&tree, &mut ctx);
+    igui::igui_ui::paint(&tree, &mut ctx);
     (tree, ctx.into_draw_list())
 }
 
@@ -237,7 +237,7 @@ fn isolated_cover(game: &GameRow, actions: &Actions) -> (SceneTree, draw_render:
 /// Cluster the icon line endpoints into `n` groups by the widest x gaps
 /// and return each group's centre, left to right. The card's controls are
 /// pencil, tag, pin, delete in that order.
-fn icon_centres(list: &draw_render::DrawList, n: usize) -> Vec<Vec2> {
+fn icon_centres(list: &igui::igui_render::DrawList, n: usize) -> Vec<Vec2> {
     let mut points: Vec<Vec2> = Vec::new();
     for command in list.commands() {
         if let DrawCommand::Line { from, to, .. } = command {
@@ -724,14 +724,14 @@ fn clicking_the_rail_switches_section() {
     let model = ViewModel::default();
     let (mut tree, list) = laid_out(&model, &actions);
     let point = text_position(&list, "设置");
-    draw_ui::handle_input(
+    igui::igui_ui::handle_input(
         &mut tree,
         &InputEvent::PointerDown {
             position: point,
             button: PointerButton::Left,
         },
     );
-    draw_ui::handle_input(
+    igui::igui_ui::handle_input(
         &mut tree,
         &InputEvent::PointerUp {
             position: point,
@@ -741,7 +741,7 @@ fn clicking_the_rail_switches_section() {
     assert!(actions.drain().contains(&Action::Show(Section::Settings)));
 }
 
-fn paint(model: &ViewModel) -> draw_render::DrawList {
+fn paint(model: &ViewModel) -> igui::igui_render::DrawList {
     let actions = Actions::default();
     laid_out(model, &actions).1
 }
@@ -772,14 +772,14 @@ fn the_play_column_emits_a_draw_image() {
         &NodeRef::new(),
         &Cell::new((0, 0)),
     );
-    draw_ui::layout(
+    igui::igui_ui::layout(
         &mut tree,
-        draw_core::ViewportSize::new(Size::new(1100.0, 760.0)),
+        igui::igui_core::ViewportSize::new(Size::new(1100.0, 760.0)),
     );
     tree.update();
 
     let mut ctx = PaintContext::new();
-    draw_ui::paint(&tree, &mut ctx);
+    igui::igui_ui::paint(&tree, &mut ctx);
     let list = ctx.into_draw_list();
 
     let destination = list.commands().iter().find_map(|command| match command {
@@ -1089,8 +1089,8 @@ fn the_settings_page_scrolls_when_it_overflows() {
         &NodeRef::new(),
         &Cell::new((0, 0)),
     );
-    let viewport = draw_core::ViewportSize::new(Size::new(1100.0, 760.0));
-    draw_ui::layout(&mut tree, viewport);
+    let viewport = igui::igui_core::ViewportSize::new(Size::new(1100.0, 760.0));
+    igui::igui_ui::layout(&mut tree, viewport);
     tree.update();
     let scroll = scroll.as_mut().expect("the settings page has a ScrollView");
     scroll.sync(&mut tree);

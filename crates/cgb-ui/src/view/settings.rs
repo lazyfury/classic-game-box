@@ -1,12 +1,12 @@
 //! The settings page: the game library, the per-console core pick, the picture
 //! effect, the running core's options and inputs, and the keyboard bindings.
 
-use draw_components::{
+use igui::igui_components::{
     Button, Card, Column, Component, NodeRef, Row, ScrollView, ScrollViewState, Select, Text,
 };
-use draw_core::Edges;
-use draw_theme::{space, Theme, Tone};
-use draw_ui::{Align, MouseFilter};
+use igui::igui_core::Edges;
+use igui::igui_theme::{space, Theme, Tone};
+use igui::igui_ui::{Align, MouseFilter};
 
 use crate::model::{Action, ShaderKind, ViewModel};
 use crate::theme::ThemeChoice;

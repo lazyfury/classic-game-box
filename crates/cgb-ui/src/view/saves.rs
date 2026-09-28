@@ -1,13 +1,13 @@
 //! The saves section: the running game's save-state slots for its core.
 
-use draw_components::{
+use igui::igui_components::{
     Button, Column, Component, EmptyState, Flex, Row, ScrollView, ScrollViewState, Text,
 };
-use draw_core::Edges;
-use draw_render::Paint;
-use draw_theme::radius::MD;
-use draw_theme::{radius, space, Theme, Tone};
-use draw_ui::{Align, Justify, MouseFilter, SurfaceStyle};
+use igui::igui_core::Edges;
+use igui::igui_render::Paint;
+use igui::igui_theme::radius::MD;
+use igui::igui_theme::{radius, space, Theme, Tone};
+use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle};
 
 use crate::frame::cover_fit;
 use crate::model::{Action, SaveSlotRow, ViewModel};

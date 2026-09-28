@@ -2,10 +2,10 @@
 //! cover icon buttons, the minimal text field, and the grid virtualization
 //! helpers.
 
-use draw_components::{Button, Component, Flex, NodeRef, Text};
-use draw_core::{Color, Edges};
-use draw_theme::{radius, space, Theme, Tone};
-use draw_ui::{Align, Justify, SurfaceStyle};
+use igui::igui_components::{Button, Component, Flex, NodeRef, Text};
+use igui::igui_core::{Color, Edges};
+use igui::igui_theme::{radius, space, Theme, Tone};
+use igui::igui_ui::{Align, Justify, SurfaceStyle};
 
 use crate::icons::{Icon as SvgIcon, IconName};
 use crate::model::ViewModel;

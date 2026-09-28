@@ -17,8 +17,8 @@ use cgb_library::{
 use cgb_libretro::CoreHost;
 use cgb_systems::{CoreSpec, RETRO_DEVICE_JOYPAD};
 use cgb_ui::FrameHandle;
-use draw_backend_wgpu::{TextureEffect, TextureFilter, WgpuBackend};
-use draw_render::TextureId;
+use igui::igui_backend_wgpu::{TextureEffect, TextureFilter, WgpuBackend};
+use igui::igui_render::TextureId;
 
 /// The single framebuffer texture slot. One game is live at a time, so one id
 /// is enough; `update_texture` reuses the GPU texture across frames.

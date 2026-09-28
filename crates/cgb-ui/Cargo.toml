@@ -7,16 +7,19 @@ license.workspace = true
 
 [dependencies]
 cgb-systems.workspace = true
-draw_core.workspace = true
-draw_render.workspace = true
-draw_scene.workspace = true
-draw_theme.workspace = true
-draw_ui.workspace = true
-draw_components.workspace = true
-draw_svg.workspace = true
+# The `igui` facade's `ui` feature: core / render / scene / theme / ui / components.
+igui = { workspace = true, features = ["ui"] }
+# Icon vector fallback; not covered by any facade feature.
+igui_svg.workspace = true
+# Direct deps required by igui's `impl_scene_child!` macro, which expands to
+# bare `igui_scene::` / `igui_core::` paths (no `$crate`), so the facade alone
+# cannot satisfy it.
+igui_core.workspace = true
+igui_scene.workspace = true
 
 [dev-dependencies]
-draw_bench.workspace = true
+# Benchmarks use `igui_bench`.
+igui = { workspace = true, features = ["bench"] }
 
 [[bench]]
 name = "ui"

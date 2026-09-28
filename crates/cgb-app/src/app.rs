@@ -13,12 +13,14 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use draw_backend_wgpu::{wgpu, FontConfig, FontMetrics, FontMode, TextureEffect, WgpuBackend};
-use draw_core::{FontWeight, InputEvent, Key, PointerButton, Size, Vec2, ViewportSize};
-use draw_profile::{inspect, FrameCounters, FrameStats, Profiler, StageTimes};
-use draw_render::{DrawList, PaintContext, RenderBackend, TextureId};
-use draw_theme::{Mode, Theme};
-use draw_ui::TextMeasurer;
+use igui::igui_backend_wgpu::{
+    wgpu, FontConfig, FontMetrics, FontMode, TextureEffect, WgpuBackend,
+};
+use igui::igui_core::{FontWeight, InputEvent, Key, PointerButton, Size, Vec2, ViewportSize};
+use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, StageTimes};
+use igui::igui_render::{DrawList, PaintContext, RenderBackend, TextureId};
+use igui::igui_theme::{Mode, Theme};
+use igui::igui_ui::TextMeasurer;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};

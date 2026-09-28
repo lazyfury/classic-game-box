@@ -1,11 +1,11 @@
 //! The console column on the right: the live picture and its controls, the
 //! immersive fullscreen view, and the screenshot preview it swaps in.
 
-use draw_components::{Badge, Button, Column, Component, Divider, Flex, NodeRef, Row, Text};
-use draw_core::Edges;
-use draw_theme::radius::MD;
-use draw_theme::{radius, space, Theme, Tone};
-use draw_ui::{Align, Justify, MouseFilter, SurfaceStyle};
+use igui::igui_components::{Badge, Button, Column, Component, Divider, Flex, NodeRef, Row, Text};
+use igui::igui_core::Edges;
+use igui::igui_theme::radius::MD;
+use igui::igui_theme::{radius, space, Theme, Tone};
+use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle};
 
 use crate::frame::FrameImage;
 use crate::icons::{Icon as SvgIcon, IconName};

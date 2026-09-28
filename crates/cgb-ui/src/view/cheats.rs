@@ -1,13 +1,13 @@
 //! The cheats section: the running game's cheat list, with toggles and a `.cht`
 //! import.
 
-use draw_components::{
+use igui::igui_components::{
     Button, Column, Component, EmptyState, Row, ScrollView, ScrollViewState, Text,
 };
-use draw_core::Edges;
-use draw_theme::radius::MD;
-use draw_theme::{space, Theme, Tone};
-use draw_ui::{Align, MouseFilter};
+use igui::igui_core::Edges;
+use igui::igui_theme::radius::MD;
+use igui::igui_theme::{space, Theme, Tone};
+use igui::igui_ui::{Align, MouseFilter};
 
 use crate::model::{Action, CheatRow, ViewModel};
 

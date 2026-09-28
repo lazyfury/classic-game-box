@@ -17,13 +17,12 @@ cgb-input.workspace = true
 cgb-library.workspace = true
 cgb-ui.workspace = true
 
-draw_core.workspace = true
-draw_render.workspace = true
-draw_scene.workspace = true
-draw_theme.workspace = true
-draw_ui.workspace = true
-draw_backend_wgpu.workspace = true
-draw_profile.workspace = true
+# The `igui` facade: `ui` (drawing / components), `app` (the plugin runtime),
+# `wgpu` (the native backend), `profile` (frame inspection), `recording` and
+# `headless` (the `--selfcheck` presenter).
+igui = { workspace = true, features = ["ui", "app", "wgpu", "profile", "recording", "headless"] }
+# Window / input / IME / text-metrics / clipboard platform plugins.
+igui_winit.workspace = true
 
 winit.workspace = true
 rfd.workspace = true
