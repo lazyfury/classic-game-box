@@ -886,6 +886,30 @@ fn a_paused_game_shows_a_centered_pause_label() {
     assert!(has_pause(&list), "fullscreen shows the same label");
 }
 
+/// While a fullscreen transition settles, the UI is hidden behind a black
+/// "loading" surface (and the shell is not mounted).
+#[test]
+fn a_hidden_ui_paints_a_black_surface() {
+    let actions = Actions::default();
+    let model = ViewModel {
+        ui_hidden: true,
+        ..ViewModel::default()
+    };
+    let (_, list) = laid_out(&model, &actions);
+    let black = list.commands().iter().any(|command| match command {
+        DrawCommand::FillRect { paint, .. } | DrawCommand::FillRoundedRect { paint, .. } => {
+            paint.color == igui::igui_core::Color::BLACK
+        }
+        _ => false,
+    });
+    assert!(black, "the hidden UI paints a black surface");
+    assert!(
+        !list.commands().iter().any(|command| matches!(command,
+                DrawCommand::DrawText { text, .. } if text == "游戏库")),
+        "the shell is not mounted while hidden"
+    );
+}
+
 /// Fullscreen reuses the right-column play view: the shell (header, rail,
 /// library) is not mounted, but the title, live info, picture and controls are.
 #[test]

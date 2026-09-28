@@ -199,6 +199,17 @@ struct FullscreenTransition {
     last_activity: Instant,
 }
 
+/// A fullscreen toggle waiting for the black screen to show before the OS
+/// animation starts.
+#[derive(Clone, Copy)]
+struct PendingFullscreen {
+    /// The fullscreen state to ask the window for.
+    target: bool,
+    /// The window request is issued at this time (the black screen shows until
+    /// then).
+    at: Instant,
+}
+
 /// The application state, driven as an [`AppLogic`] by the `igui_app` runtime.
 struct App {
     /// The wgpu backend, published by `WgpuPlugin`; `None` until the first
@@ -295,9 +306,9 @@ struct App {
     /// A fullscreen transition in flight: the play view stays mounted until the
     /// window stops resizing, then the target state is applied.
     transition: Option<FullscreenTransition>,
-    /// A fullscreen request waiting for the hidden tree to be presented first,
-    /// so the OS animates from a settled surface rather than the old UI.
-    pending_fullscreen: Option<bool>,
+    /// A fullscreen request waiting for the hidden tree to be presented, then a
+    /// short black-screen delay, before the OS animates.
+    pending_fullscreen: Option<PendingFullscreen>,
     /// Whether the current frame painted, letting the pending request fire on
     /// the next frame.
     hidden_painted: bool,
@@ -2210,7 +2221,10 @@ impl App {
             self.model.ui_hidden = true;
         }
         self.dirty = true;
-        self.pending_fullscreen = Some(on);
+        self.pending_fullscreen = Some(PendingFullscreen {
+            target: on,
+            at: Instant::now() + Duration::from_millis(100),
+        });
         self.hidden_painted = false;
         self.ui.request_repaint();
     }
@@ -2231,11 +2245,13 @@ impl App {
 
     fn advance_frame(&mut self, dt: f32) {
         // Issue a pending window request only after the (hidden) tree was
-        // presented, so the OS animates from a settled surface.
-        if let Some(on) = self.pending_fullscreen {
-            if self.hidden_painted {
+        // presented and the black screen has shown for a moment, so the OS
+        // animates from a settled surface.
+        if let Some(pending) = self.pending_fullscreen {
+            if self.hidden_painted && Instant::now() >= pending.at {
                 self.pending_fullscreen = None;
                 self.hidden_painted = false;
+                let on = pending.target;
                 if let Some(window) = self.window.clone() {
                     window.set_fullscreen(if on {
                         Some(Fullscreen::Borderless(None))
