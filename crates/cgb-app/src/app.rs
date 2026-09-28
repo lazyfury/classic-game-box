@@ -295,6 +295,12 @@ struct App {
     /// A fullscreen transition in flight: the play view stays mounted until the
     /// window stops resizing, then the target state is applied.
     transition: Option<FullscreenTransition>,
+    /// A fullscreen request waiting for the hidden tree to be presented first,
+    /// so the OS animates from a settled surface rather than the old UI.
+    pending_fullscreen: Option<bool>,
+    /// Whether the current frame painted, letting the pending request fire on
+    /// the next frame.
+    hidden_painted: bool,
 
     /// When the running game's play time was last flushed to the database.
     last_play_flush: Instant,
@@ -441,6 +447,8 @@ impl App {
             last_viewport: None,
             fullscreen_target: false,
             transition: None,
+            pending_fullscreen: None,
+            hidden_painted: false,
             last_play_flush: Instant::now(),
             fps: 0.0,
             fps_frames: 0,
@@ -2187,29 +2195,23 @@ impl App {
     /// the OS animation settles (the heavy shell is rebuilt afterwards).
     fn set_fullscreen(&mut self, on: bool) {
         let on = on && self.session.is_some();
-        if self.fullscreen_target == on && self.transition.is_none() {
+        if self.fullscreen_target == on
+            && self.pending_fullscreen.is_none()
+            && self.transition.is_none()
+        {
             return;
         }
         self.fullscreen_target = on;
+        // Entering hides the UI now; the window request is issued on the next
+        // frame, once this tree has been built and presented, so the OS
+        // animates from a blank surface. Leaving keeps the play view and only
+        // rebuilds the shell after the window settles.
         if on {
-            // Hide the UI before asking the window for fullscreen, so nothing
-            // is laid out while it animates; the play view mounts on settle.
             self.model.ui_hidden = true;
-            if let Some(window) = self.window.clone() {
-                window.set_fullscreen(Some(Fullscreen::Borderless(None)));
-            }
-        } else {
-            // Leaving: ask the window first, keep the play view mounted while it
-            // animates, and rebuild the shell once the window settles.
-            if let Some(window) = self.window.clone() {
-                window.set_fullscreen(None);
-            }
         }
         self.dirty = true;
-        self.transition = Some(FullscreenTransition {
-            target: on,
-            last_activity: Instant::now(),
-        });
+        self.pending_fullscreen = Some(on);
+        self.hidden_painted = false;
         self.ui.request_repaint();
     }
 
@@ -2228,6 +2230,25 @@ impl App {
     }
 
     fn advance_frame(&mut self, dt: f32) {
+        // Issue a pending window request only after the (hidden) tree was
+        // presented, so the OS animates from a settled surface.
+        if let Some(on) = self.pending_fullscreen {
+            if self.hidden_painted {
+                self.pending_fullscreen = None;
+                self.hidden_painted = false;
+                if let Some(window) = self.window.clone() {
+                    window.set_fullscreen(if on {
+                        Some(Fullscreen::Borderless(None))
+                    } else {
+                        None
+                    });
+                }
+                self.transition = Some(FullscreenTransition {
+                    target: on,
+                    last_activity: Instant::now(),
+                });
+            }
+        }
         // A fullscreen transition settles once the window stops resizing; only
         // then apply the target (rebuilding the heavy shell on exit).
         if let Some(transition) = self.transition {
@@ -2385,6 +2406,7 @@ impl App {
         } else if let Some(list) = self.draw_list.as_ref() {
             paint.extend(list);
         }
+        self.hidden_painted = true;
     }
 
     /// Record one frame into the `CGB_PERF` profiler. It prints the per-frame
@@ -2546,6 +2568,7 @@ impl AppLogic for App {
         // rewind key needs frames too. Otherwise the loop waits for an event.
         self.rewinding
             || self.transition.is_some()
+            || self.pending_fullscreen.is_some()
             || self.ui.overlays_animating()
             || self
                 .session
