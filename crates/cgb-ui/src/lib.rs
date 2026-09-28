@@ -529,10 +529,21 @@ impl Ui {
     /// nearest ancestor that has one (the card / button the label belongs to),
     /// or clear it when there is none, so the ring and Tab agree with what Tab
     /// would pick.
+    /// Keep keyboard focus on a control that is focusable in its own right (a
+    /// text field). The old heuristic walked every focused node up to the
+    /// nearest click handler, which cleared a field's focus as soon as any
+    /// input was routed.
     fn normalize_focus(&mut self) {
         let Some(id) = igui::igui_ui::focused(&self.tree) else {
             return;
         };
+        if self
+            .tree
+            .data::<Control>(id)
+            .is_some_and(|control| control.focusable)
+        {
+            return;
+        }
         let target = interactive_ancestor(&self.tree, id);
         if target != Some(id) {
             igui::igui_ui::gui_state_mut(&mut self.tree).focused = target;
@@ -610,6 +621,40 @@ mod tests {
             screenshots: 0,
             cover: None,
         }
+    }
+
+    /// A `TextInput` keeps keyboard focus while the UI routes other input; the
+    /// app funnels every event through [`Ui::route_ui_input`].
+    #[test]
+    fn a_text_field_keeps_focus_and_accepts_text() {
+        let theme = game_theme(Mode::Dark);
+        let actions = Actions::default();
+        actions.set_edit(Rc::new(std::cell::RefCell::new(
+            igui::igui_ui::TextEdit::new("ab"),
+        )));
+        let model = ViewModel {
+            editing: Some(EditState {
+                game_id: 0,
+                kind: EditKind::Name,
+            }),
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+        let mut ui = Ui::new(theme, &model, &actions);
+        ui.layout(viewport);
+        let focused = igui::igui_ui::focused(ui.tree()).expect("the field autofocuses");
+
+        ui.route_ui_input(&InputEvent::PointerMove {
+            position: Vec2::new(10.0, 10.0),
+        });
+        assert_eq!(
+            igui::igui_ui::focused(ui.tree()),
+            Some(focused),
+            "focus stays on the field after routing input"
+        );
+
+        ui.route_ui_input(&InputEvent::TextInput { text: "c".into() });
+        assert_eq!(actions.edit_text(), "abc");
     }
 
     /// A rebuild (a card click rebuilds the tree) must not jump the grid back

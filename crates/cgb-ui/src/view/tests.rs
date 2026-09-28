@@ -597,6 +597,47 @@ fn the_edit_bar_shows_the_field_and_commits() {
     assert_eq!(actions.drain(), vec![Action::CancelEdit]);
 }
 
+/// The field takes focus when it mounts (autofocus): it paints a caret and
+/// routes committed text into the shared edit state, and the caret follows.
+#[test]
+fn the_edit_field_focuses_and_accepts_text() {
+    fn caret(list: &igui::igui_render::DrawList) -> Option<igui::igui_core::Rect> {
+        list.commands().iter().find_map(|command| match command {
+            DrawCommand::FillRect { rect, .. } if (rect.size.width - 1.5).abs() < 0.01 => {
+                Some(*rect)
+            }
+            _ => None,
+        })
+    }
+
+    let actions = Actions::default();
+    actions.set_edit(Rc::new(RefCell::new(TextEdit::new("ab"))));
+    let model = ViewModel {
+        editing: Some(EditState {
+            game_id: 0,
+            kind: EditKind::Name,
+        }),
+        ..ViewModel::default()
+    };
+    let (mut tree, list) = laid_out(&model, &actions);
+    let before = caret(&list).expect("the focused field paints a caret");
+
+    igui::igui_ui::handle_input(&mut tree, &InputEvent::TextInput { text: "c".into() });
+    assert_eq!(
+        actions.edit_text(),
+        "abc",
+        "committed text reaches the edit"
+    );
+
+    let mut ctx = PaintContext::new();
+    igui::igui_ui::paint(&tree, &mut ctx);
+    let after = caret(&ctx.into_draw_list()).expect("the caret is still painted");
+    assert!(
+        after.origin.x > before.origin.x,
+        "the caret follows the inserted text"
+    );
+}
+
 /// The search bar opens the field, and shows the current query.
 #[test]
 fn the_search_bar_starts_and_reflects_the_query() {
