@@ -39,9 +39,9 @@ use cgb_library::{
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
 use cgb_ui::{
     library_columns, Action, Actions, BindingRow, Confirm, CoreOptionRow, CoreRow, EditKind,
-    EditState, FrameHandle, GameRow, InputDescriptorRow, SafeArea, SaveSlotRow, ScreenshotRow,
-    Section, ShaderKind, SortKey, StatusKind, SystemCount, ThemeChoice, Ui, ViewModel,
-    MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
+    EditState, FrameHandle, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
+    ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, ThemeChoice, Ui,
+    ViewModel, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
 };
 
 use crate::cli::{Args, CoreOverride};
@@ -270,6 +270,8 @@ struct App {
     rewinding: bool,
     /// The game-picture post-process preset.
     shader: ShaderKind,
+    /// Geometry anti-aliasing (MSAA) mode.
+    msaa: MsaaKind,
     gamepads: Option<Gamepads>,
     session: Option<Session>,
     /// `--rom` path to start once the window exists.
@@ -370,6 +372,7 @@ impl App {
             .unwrap_or_default();
         let light = settings.light;
         let shader = ShaderKind::from_key(&settings.shader);
+        let msaa = MsaaKind::from_key(&settings.msaa);
         let middle_width = if settings.middle_width > 0.0 {
             settings
                 .middle_width
@@ -431,6 +434,7 @@ impl App {
             active_system: SystemId::Nes,
             rewinding: false,
             shader,
+            msaa,
             gamepads: match Gamepads::new() {
                 Ok(gamepads) => Some(gamepads),
                 Err(error) => {
@@ -531,11 +535,25 @@ impl App {
             return;
         };
         let live: HashSet<i64> = self.game_source.iter().map(|game| game.id).collect();
-        self.cover_textures.retain(|id, _| live.contains(id));
+        // Games that vanished (or whose cover was cleared) no longer have an
+        // image; free their GPU texture instead of leaving it resident until the
+        // process exits. The backend keeps uploaded textures until told.
+        let removed: Vec<i64> = self
+            .cover_textures
+            .keys()
+            .copied()
+            .filter(|id| !live.contains(id))
+            .collect();
+        for id in removed {
+            backend.remove_texture(TextureId::new(COVER_TEXTURE_BASE + id as u32));
+            self.cover_textures.remove(&id);
+        }
 
         for game in &self.game_source {
             let Some(cover_id) = game.cover else {
-                self.cover_textures.remove(&game.id);
+                if self.cover_textures.remove(&game.id).is_some() {
+                    backend.remove_texture(TextureId::new(COVER_TEXTURE_BASE + game.id as u32));
+                }
                 continue;
             };
             if self
@@ -615,7 +633,16 @@ impl App {
         };
         let shots = library.screenshots().unwrap_or_default();
         let live: HashSet<i64> = shots.iter().map(|shot| shot.id).collect();
-        self.screenshot_textures.retain(|id, _| live.contains(id));
+        let removed: Vec<i64> = self
+            .screenshot_textures
+            .keys()
+            .copied()
+            .filter(|id| !live.contains(id))
+            .collect();
+        for id in removed {
+            backend.remove_texture(TextureId::new(SCREENSHOT_TEXTURE_BASE + id as u32));
+            self.screenshot_textures.remove(&id);
+        }
 
         for shot in &shots {
             if self
@@ -1011,6 +1038,17 @@ impl App {
             .set_status(format!("画面效果：{}", kind.label()), StatusKind::Info);
     }
 
+    /// Pick the anti-aliasing mode, persist it and apply it.
+    fn set_msaa(&mut self, mode: MsaaKind) {
+        self.msaa = mode;
+        self.settings.msaa = mode.key().to_string();
+        let _ = self.settings.save(&self.paths.settings_json);
+        self.sync_msaa();
+        self.rebuild_settings_view();
+        self.model
+            .set_status(format!("抗锯齿：{}", mode.label()), StatusKind::Info);
+    }
+
     /// Switch the UI theme / appearance, persist it and rebuild so the change
     /// shows immediately (a theme switch also rebuilds the overlays).
     fn set_theme(&mut self, choice: ThemeChoice, light: bool) {
@@ -1183,6 +1221,7 @@ impl App {
             .unwrap_or_default();
         self.model.bindings_system = self.active_system.name().to_string();
         self.model.shader = self.shader;
+        self.model.msaa = self.msaa;
         self.model.theme_choice = self.theme_choice;
         self.model.light = self.light;
         self.model.core_options = self
@@ -1738,6 +1777,7 @@ impl App {
                     self.dirty = true;
                 }
                 Action::SetShader(kind) => self.set_shader(kind),
+                Action::SetMsaa(mode) => self.set_msaa(mode),
                 Action::SetThemeChoice(choice) => self.set_theme(choice, self.light),
                 Action::SetLight(light) => self.set_theme(self.theme_choice, light),
                 Action::CycleCoreOption(index, delta) => self.cycle_core_option(index, delta),
@@ -2267,6 +2307,7 @@ impl App {
             self.ui.request_repaint();
         }
         self.step_gamepad();
+        self.sync_msaa();
 
         if self.rewinding {
             // Holding the rewind key steps back a couple of snapshots a frame.
@@ -2315,6 +2356,41 @@ impl App {
         // updates its texture in place, so its frames re-submit the previous
         // list instead of laying out and painting the whole UI again.
         self.repaint = self.ui.take_repaint() || self.draw_list.is_none();
+    }
+
+    /// Drop geometry MSAA while a game is running.
+    ///
+    /// The core image dominates the frame and is nearest-scaled, so 4x MSAA on
+    /// the static chrome is wasted GPU fill; it is restored when the game pauses
+    /// or exits. The backend setter is a no-op when the count is unchanged, so
+    /// this is safe to call every frame.
+    fn sync_msaa(&mut self) {
+        let samples = self.target_msaa_samples();
+        if let Some(backend) = self.backend.clone() {
+            backend.borrow_mut().set_msaa_samples(samples);
+        }
+    }
+
+    /// The sample count the current anti-aliasing mode wants on this frame.
+    fn target_msaa_samples(&self) -> u32 {
+        match self.msaa {
+            MsaaKind::Off => 1,
+            MsaaKind::Two => 2,
+            MsaaKind::Four => 4,
+            // Auto: 4x while idle, single-sample while a game runs (its live
+            // image dominates the frame, so 4x fill is wasted).
+            MsaaKind::Auto => {
+                if self
+                    .session
+                    .as_ref()
+                    .is_some_and(|session| !session.paused())
+                {
+                    1
+                } else {
+                    4
+                }
+            }
+        }
     }
 
     /// Recompute the play column's live info (FPS / resolution / core) and push

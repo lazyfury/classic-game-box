@@ -46,6 +46,9 @@ pub struct Settings {
     /// The game-picture post-process preset key (`"scanlines"`, `"crt"`, …);
     /// an unknown key means no effect.
     pub shader: String,
+    /// The geometry anti-aliasing (MSAA) mode key (`"auto"` / `"off"` /
+    /// `"2x"` / `"4x"`); an unknown or missing key means auto.
+    pub msaa: String,
     /// The UI theme key (`"game"` / `"default"`); an unknown or missing key
     /// means the app picks its own default.
     pub theme: Option<String>,
@@ -151,5 +154,20 @@ mod tests {
         let reloaded: Settings = serde_json::from_str(&json).expect("parse");
         assert_eq!(reloaded.library_root.as_deref(), Some("/games/Fc Library"));
         assert_eq!(reloaded.library_folder(), Some("/games/Fc Library"));
+    }
+
+    #[test]
+    fn the_msaa_mode_round_trips_and_defaults_to_empty() {
+        let settings = Settings {
+            msaa: "2x".to_string(),
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&settings).expect("serialize");
+        let reloaded: Settings = serde_json::from_str(&json).expect("parse");
+        assert_eq!(reloaded.msaa, "2x");
+
+        // A file written before the setting existed has no key at all.
+        let old: Settings = serde_json::from_str("{\"shader\":\"crt\"}").expect("parse");
+        assert!(old.msaa.is_empty());
     }
 }

@@ -9,8 +9,8 @@ use super::components::*;
 use super::library::*;
 
 use crate::model::{
-    BindingRow, CheatRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow, SaveSlotRow,
-    ScreenshotRow, ShaderKind, SortKey, SystemCount,
+    BindingRow, CheatRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow, MsaaKind,
+    SaveSlotRow, ScreenshotRow, ShaderKind, SortKey, SystemCount,
 };
 use crate::theme::ThemeChoice;
 use cgb_systems::SystemId;
@@ -955,6 +955,19 @@ fn the_settings_shader_presets_emit_actions() {
     let (mut tree, list) = laid_out(&model, &actions);
     click(&mut tree, text_position(&list, "CRT"));
     assert_eq!(actions.drain(), vec![Action::SetShader(ShaderKind::Crt)]);
+}
+
+#[test]
+fn the_settings_msaa_presets_emit_actions() {
+    let actions = Actions::default();
+    let model = ViewModel {
+        section: Section::Settings,
+        msaa: MsaaKind::Auto,
+        ..ViewModel::default()
+    };
+    let (mut tree, list) = laid_out(&model, &actions);
+    click(&mut tree, text_position(&list, "4×"));
+    assert_eq!(actions.drain(), vec![Action::SetMsaa(MsaaKind::Four)]);
 }
 
 #[test]

@@ -8,7 +8,7 @@ use igui::igui_core::Edges;
 use igui::igui_theme::{space, Theme, Tone};
 use igui::igui_ui::{Align, MouseFilter};
 
-use crate::model::{Action, ShaderKind, ViewModel};
+use crate::model::{Action, MsaaKind, ShaderKind, ViewModel};
 use crate::theme::ThemeChoice;
 
 use super::components::{chip, chip_group};
@@ -182,6 +182,31 @@ pub(super) fn settings_page(
                 .child(options),
         );
     }
+
+    // Geometry anti-aliasing. Off / 2x / 4x force a sample count; Auto uses
+    // 4x while idle and drops it while a game runs (the live image dominates).
+    let mut msaa_chips = Row::new().gap(space::XS);
+    for mode in MsaaKind::ALL {
+        let actions = actions.clone();
+        msaa_chips = msaa_chips.child(
+            chip(theme, mode.label(), model.msaa == mode)
+                .on_click(move || actions.push(Action::SetMsaa(mode))),
+        );
+    }
+    body = body.child(
+        Card::new(theme)
+            .gap(space::SM)
+            .padding(Edges::all(space::SM))
+            .child(Text::subheading("抗锯齿", theme))
+            .child(msaa_chips)
+            .child(
+                Text::caption(
+                    "几何边缘的多重采样；「自动」在游戏运行时关闭以省 GPU。",
+                    theme,
+                )
+                .tone(Tone::Subtle),
+            ),
+    );
 
     // Keyboard bindings, read-only for now.
     let mut bindings = Column::new().gap(space::XS);

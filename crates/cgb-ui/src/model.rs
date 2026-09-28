@@ -131,6 +131,54 @@ impl ShaderKind {
     }
 }
 
+/// How much geometry anti-aliasing (MSAA) the renderer uses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MsaaKind {
+    /// 4x while idle, dropped while a game runs (the live image dominates).
+    Auto,
+    /// No anti-aliasing; a single-sample pass.
+    Off,
+    /// 2x MSAA.
+    Two,
+    /// 4x MSAA.
+    Four,
+}
+
+impl MsaaKind {
+    /// Every mode, in the order the settings page lists them.
+    pub const ALL: [MsaaKind; 4] = [MsaaKind::Auto, MsaaKind::Off, MsaaKind::Two, MsaaKind::Four];
+
+    /// What the button says.
+    pub fn label(self) -> &'static str {
+        match self {
+            MsaaKind::Auto => "自动",
+            MsaaKind::Off => "关闭",
+            MsaaKind::Two => "2×",
+            MsaaKind::Four => "4×",
+        }
+    }
+
+    /// The stable key stored in settings.
+    pub fn key(self) -> &'static str {
+        match self {
+            MsaaKind::Auto => "auto",
+            MsaaKind::Off => "off",
+            MsaaKind::Two => "2x",
+            MsaaKind::Four => "4x",
+        }
+    }
+
+    /// Parse a stored key; anything unknown means [`Auto`](MsaaKind::Auto).
+    pub fn from_key(key: &str) -> Self {
+        match key {
+            "off" => MsaaKind::Off,
+            "2x" => MsaaKind::Two,
+            "4x" => MsaaKind::Four,
+            _ => MsaaKind::Auto,
+        }
+    }
+}
+
 /// A destructive action waiting for the player to confirm it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Confirm {
@@ -428,6 +476,8 @@ pub struct ViewModel {
     pub core_inputs: Vec<InputDescriptorRow>,
     /// The post-process preset for the game picture.
     pub shader: ShaderKind,
+    /// Geometry anti-aliasing (MSAA) mode.
+    pub msaa: MsaaKind,
     /// The UI theme family, and whether the light appearance is used.
     pub theme_choice: ThemeChoice,
     pub light: bool,
@@ -490,6 +540,7 @@ impl Default for ViewModel {
             bindings_system: String::new(),
             core_inputs: Vec::new(),
             shader: ShaderKind::Off,
+            msaa: MsaaKind::Auto,
             theme_choice: ThemeChoice::default(),
             light: false,
             core_options: Vec::new(),
@@ -514,6 +565,8 @@ pub enum Action {
     Rewind,
     /// Pick the post-process preset for the game picture.
     SetShader(ShaderKind),
+    /// Pick the geometry anti-aliasing (MSAA) mode.
+    SetMsaa(MsaaKind),
     /// Pick the UI theme family.
     SetThemeChoice(ThemeChoice),
     /// Switch the light / dark appearance.
@@ -610,5 +663,14 @@ mod tests {
         model.set_status("boom", StatusKind::Error);
         assert_eq!(model.status, "boom");
         assert_eq!(model.status_kind, StatusKind::Error);
+    }
+
+    #[test]
+    fn msaa_kind_keys_round_trip() {
+        for mode in MsaaKind::ALL {
+            assert_eq!(MsaaKind::from_key(mode.key()), mode);
+        }
+        // A removed or unknown key falls back to auto, not to a fixed count.
+        assert_eq!(MsaaKind::from_key("nonsense"), MsaaKind::Auto);
     }
 }
