@@ -29,11 +29,7 @@ use igui_winit::{
     SharedWindow, TextMeasurePlugin, TitlebarMode, WgpuPlugin, WindowConfig,
 };
 use winit::event::WindowEvent;
-#[cfg(target_os = "macos")]
-use winit::platform::macos::WindowExtMacOS;
-#[cfg(not(target_os = "macos"))]
-use winit::window::Fullscreen;
-use winit::window::Window;
+use winit::window::{Fullscreen, Window};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{
@@ -100,27 +96,6 @@ fn safe_area() -> SafeArea {
     {
         SafeArea::ZERO
     }
-}
-
-/// Ask the window for fullscreen (or back).
-///
-/// macOS `Fullscreen::Borderless` puts the window on a separate Space and plays
-/// the native animation, which is what sometimes janks/centres. The platform's
-/// "simple fullscreen" covers the screen instantly on the same Space; pair it
-/// with `set_borderless_game` to hide the menu bar and Dock.
-#[cfg(target_os = "macos")]
-fn apply_window_fullscreen(window: &Window, on: bool) {
-    window.set_borderless_game(on);
-    let _ = window.set_simple_fullscreen(on);
-}
-
-#[cfg(not(target_os = "macos"))]
-fn apply_window_fullscreen(window: &Window, on: bool) {
-    window.set_fullscreen(if on {
-        Some(Fullscreen::Borderless(None))
-    } else {
-        None
-    });
 }
 
 /// A registered cover texture and the screenshot row it came from.
@@ -2278,7 +2253,11 @@ impl App {
                 self.hidden_painted = false;
                 let on = pending.target;
                 if let Some(window) = self.window.clone() {
-                    apply_window_fullscreen(&window, on);
+                    window.set_fullscreen(if on {
+                        Some(Fullscreen::Borderless(None))
+                    } else {
+                        None
+                    });
                 }
                 self.transition = Some(FullscreenTransition {
                     target: on,
