@@ -856,6 +856,36 @@ fn the_play_column_emits_a_draw_image() {
     assert!((scale_x - scale_y).abs() < 0.01, "{scale_x} vs {scale_y}");
 }
 
+/// A paused game shows a large centered "暂停" label over the picture, in the
+/// windowed play column and in fullscreen alike.
+#[test]
+fn a_paused_game_shows_a_centered_pause_label() {
+    let actions = Actions::default();
+    let model = ViewModel {
+        playing: true,
+        paused: true,
+        frame: Some(FrameHandle {
+            texture: TextureId::new(1),
+            width: 256,
+            height: 240,
+        }),
+        ..ViewModel::default()
+    };
+    let has_pause = |list: &igui::igui_render::DrawList| {
+        list.commands().iter().any(|command| {
+            matches!(command,
+                DrawCommand::DrawText { text, .. } if text == "暂停")
+        })
+    };
+    let (_, list) = laid_out(&model, &actions);
+    assert!(has_pause(&list), "the paused play column shows the label");
+
+    let mut fullscreen = model.clone();
+    fullscreen.fullscreen = true;
+    let (_, list) = laid_out(&fullscreen, &actions);
+    assert!(has_pause(&list), "fullscreen shows the same label");
+}
+
 /// Immersive play: the shell (header, rail, library grid, play column) is
 /// not mounted, but the framebuffer is still painted and the controls that
 /// matter in fullscreen are there.

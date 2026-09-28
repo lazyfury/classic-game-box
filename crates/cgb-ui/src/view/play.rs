@@ -2,7 +2,7 @@
 //! immersive fullscreen view, and the screenshot preview it swaps in.
 
 use igui::igui_components::{Badge, Button, Column, Component, Divider, Flex, NodeRef, Row, Text};
-use igui::igui_core::Edges;
+use igui::igui_core::{Color, Edges};
 use igui::igui_theme::radius::MD;
 use igui::igui_theme::{radius, space, Theme, Tone};
 use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle};
@@ -33,8 +33,11 @@ pub(super) fn fullscreen_play(
         .child(fullscreen_bar(theme, model, actions, info_ref));
     match &model.frame {
         Some(frame) => {
-            column =
-                column.child(FrameImage::new(frame.texture, frame.width, frame.height).grow(1.0));
+            let mut image = FrameImage::new(frame.texture, frame.width, frame.height).grow(1.0);
+            if model.paused {
+                image = image.child(paused_overlay(theme));
+            }
+            column = column.child(image);
         }
         None => {
             column = column.child(
@@ -163,8 +166,11 @@ pub(super) fn play_column(
     // letterboxed picture inside whatever rectangle it gets.
     match &model.frame {
         Some(frame) => {
-            column =
-                column.child(FrameImage::new(frame.texture, frame.width, frame.height).grow(1.0));
+            let mut image = FrameImage::new(frame.texture, frame.width, frame.height).grow(1.0);
+            if model.paused {
+                image = image.child(paused_overlay(theme));
+            }
+            column = column.child(image);
         }
         None => {
             column = column.child(
@@ -331,4 +337,26 @@ pub(super) fn preview_column(
     controls = controls
         .child(Button::secondary("关闭", theme).on_click(move || close.push(Action::ClosePreview)));
     column.child(controls)
+}
+
+/// A large centered "暂停" badge. It is mounted as a child of the frame image,
+/// whose leaf container resolves the fill anchors over the picture rectangle
+/// (no separate overlay layer needed).
+fn paused_overlay(theme: &'static dyn Theme) -> Flex {
+    Flex::row()
+        .align(Align::Center)
+        .justify(Justify::Center)
+        // Fill the frame's rectangle, then centre the badge inside it.
+        .anchors(Edges::new(0.0, 0.0, 1.0, 1.0))
+        .offsets(Edges::ZERO)
+        .mouse_filter(MouseFilter::Ignore)
+        .child(
+            Flex::row()
+                .align(Align::Center)
+                .justify(Justify::Center)
+                .padding(Edges::new(space::MD, space::SM, space::MD, space::SM))
+                .surface(SurfaceStyle::new(Color::new(0.0, 0.0, 0.0, 0.55)).radius(radius::MD))
+                .mouse_filter(MouseFilter::Ignore)
+                .child(Text::heading("暂停", theme).color(Color::WHITE)),
+        )
 }
