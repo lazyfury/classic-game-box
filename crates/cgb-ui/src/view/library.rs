@@ -2,7 +2,8 @@
 //! controls, and the virtualized grid of cover cards.
 
 use igui::igui_components::{
-    Button, Column, Component, Divider, EmptyState, Flex, Grid, NodeRef, Row, ScrollView, ScrollViewState, Text,
+    Button, Column, Component, Divider, EmptyState, Flex, Grid, NodeRef, Row, ScrollView,
+    ScrollViewState, Text,
 };
 use igui::igui_core::{Color, Edges};
 use igui::igui_render::Paint;
@@ -166,7 +167,14 @@ pub(super) fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: 
     };
     row = row.child(
         Button::new("", theme)
-            .child(Row::new().grow(1.0).shrink(1.0).align(Align::Start).justify(Justify::Start).child(Text::caption(label, theme)))
+            .child(
+                Row::new()
+                    .grow(1.0)
+                    .shrink(1.0)
+                    .align(Align::Start)
+                    .justify(Justify::Start)
+                    .child(Text::caption(label, theme)),
+            )
             .grow(1.0)
             .on_click(move || start.push(Action::StartSearch)),
     );
@@ -286,11 +294,11 @@ pub(super) fn game_card(
     let click = actions.clone();
     let menu = actions.clone();
     let playing = model.selected == Some(index);
-    Column::new()
+    let mut card = Column::new()
         .gap(space::XXS)
         .padding(Edges::all(space::XXS))
-        // A fixed height keeps the rows uniform for the virtualized grid; the
-        // tags line is always present so a card with no tags is not shorter.
+        // A fixed height keeps the rows uniform for the virtualized grid, so
+        // the tags line below can be omitted when empty.
         .min_size(0.0, CARD_HEIGHT)
         .dynamic_background(move |state| {
             let fill = if playing {
@@ -315,13 +323,18 @@ pub(super) fn game_card(
                 .tone(Tone::Subtle)
                 .max_lines(1)
                 .ellipsis(true),
-        )
-        .child(
+        );
+    // Only draw the tags line when there are tags: an empty `Text` is a
+    // zero-glyph draw command (and the card height is fixed above anyway).
+    if !game.tags.is_empty() {
+        card = card.child(
             Text::caption(tags_label(game), theme)
                 .tone(Tone::Muted)
                 .max_lines(1)
                 .ellipsis(true),
-        )
+        );
+    }
+    card
 }
 
 /// A card's tags as one line: the first few `#words`, then a `+N` count. A

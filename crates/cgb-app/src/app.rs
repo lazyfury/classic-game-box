@@ -20,7 +20,7 @@ use igui::igui_app::{
 };
 use igui::igui_backend_wgpu::{FontConfig, FontMode, TextureEffect};
 use igui::igui_core::{InputEvent, Key, Modifiers, Rect, ViewportSize};
-use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, StageTimes};
+use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, Severity, StageTimes};
 use igui::igui_render::{DrawList, PaintContext, TextureId};
 use igui::igui_theme::{Mode, Theme};
 use igui::igui_ui::{focused_caret, TextEdit, TextMeasurer};
@@ -2223,10 +2223,13 @@ impl App {
             self.model.frame = session.frame();
             self.model.paused = session.paused();
             self.model.playing = true;
-            // A core message (SET_MESSAGE) goes to the status line.
+            // A core message (SET_MESSAGE) goes to the status line, but only
+            // when it changed (a core may repeat the same message each frame).
             if let Some(message) = session.take_message() {
-                self.model.set_status(message, StatusKind::Info);
-                self.dirty = true;
+                if self.model.status != message {
+                    self.model.set_status(message, StatusKind::Info);
+                    self.dirty = true;
+                }
             }
         }
 
@@ -2318,6 +2321,11 @@ impl App {
         if let Some(list) = self.draw_list.as_ref() {
             let report = inspect(list, &stats);
             for finding in report.findings() {
+                // `Info` findings (e.g. a zero-glyph text command) are not
+                // actionable per frame; keep the log to warnings and errors.
+                if finding.severity == Severity::Info {
+                    continue;
+                }
                 eprintln!(
                     "cgb perf [{}] {}",
                     finding.severity.label(),
