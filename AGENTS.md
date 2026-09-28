@@ -32,8 +32,8 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 - **Q6 定制**：输入能力对齐（16 键 + 模拟轴 + capabilities + 按机种绑定 + core descriptors）；
   存档 10 槽（按 core 隔离 + 缩略图）；金手指 `.cht`；倒带（每 2 帧 / 10s）；画面后处理
   shader（扫描线/CRT/LCD/锐化）；core options + `SET_CONTROLLER_PORT_DEVICE` + core 消息；
-  截图多选删除；中栏可拖动；沉浸式全屏游玩（`ViewModel::fullscreen`，F11/play 列
-  “全屏”按钮进入，Esc 退出；只挂载画面 + 细控制条，库网格不入树）。
+  截图多选删除；中栏可拖动；全屏游玩（`ViewModel::fullscreen`，F11/play 列
+  “全屏”按钮进入，Esc 退出；只挂载右栏游戏视图，库网格与侧栏不入树）。
   后处理用 `igui_backend_wgpu::TextureEffect`（`igui` 自 `v0.2.0` 提供）。
 - **运行时**：`cgb-app` 跑在 igui 的 `igui_app` 插件运行时上（`WinitPlugin` /
   `WgpuPlugin` / `PointerPlugin` / `KeyboardPlugin` / `ImePlugin` / `TextMeasurePlugin` /

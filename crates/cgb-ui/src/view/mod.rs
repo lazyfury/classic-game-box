@@ -67,7 +67,7 @@ mod settings;
 
 use cheats::cheats_page;
 use library::{library_grid_window, library_page};
-use play::{fullscreen_play, play_column};
+use play::play_column;
 use saves::saves_page;
 use screenshots::{screenshots_grid_window, screenshots_page};
 use settings::settings_page;
@@ -220,14 +220,13 @@ pub fn build(
     info_ref: &NodeRef,
 ) -> (SceneTree, Option<ScrollViewState>) {
     mounted_rows.set(grid_window(model));
-    // Immersive play: mount only the game picture and a slim overlay bar, so
-    // the heavy library grid is not re-submitted every emulator frame. The
-    // app drives the window's fullscreen state separately.
+    // Immersive play: fullscreen for now reuses the right-column play view
+    // (title, live info, picture, controls, core), just without the shell.
     if model.fullscreen {
         mounted_rows.set((0, 0));
         let tree = Flex::column()
             .mouse_filter(MouseFilter::Ignore)
-            .child(fullscreen_play(theme, model, actions, info_ref))
+            .child(play_column(theme, model, actions, info_ref))
             .into_tree();
         return (tree, None);
     }

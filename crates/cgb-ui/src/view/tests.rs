@@ -886,15 +886,15 @@ fn a_paused_game_shows_a_centered_pause_label() {
     assert!(has_pause(&list), "fullscreen shows the same label");
 }
 
-/// Immersive play: the shell (header, rail, library grid, play column) is
-/// not mounted, but the framebuffer is still painted and the controls that
-/// matter in fullscreen are there.
+/// Fullscreen reuses the right-column play view: the shell (header, rail,
+/// library) is not mounted, but the title, live info, picture and controls are.
 #[test]
 fn fullscreen_play_hides_the_shell_but_keeps_the_picture() {
     let actions = Actions::default();
     let model = ViewModel {
         playing: true,
         fullscreen: true,
+        selected: Some(0),
         games: vec![game_row("Game 0", "/roms/game0.nes")],
         frame: Some(FrameHandle {
             texture: TextureId::new(1),
@@ -910,7 +910,9 @@ fn fullscreen_play_hides_the_shell_but_keeps_the_picture() {
             .any(|command| matches!(command, DrawCommand::DrawImage { .. })),
         "the framebuffer is painted"
     );
-    let hidden = ["游戏库", "Game 0"];
+    // The library / rail is not mounted, but the play view (title + controls)
+    // is, because fullscreen reuses it.
+    let hidden = ["游戏库", "设置", "金手指"];
     for needle in hidden {
         assert!(
             !list.commands().iter().any(|command| matches!(command,
@@ -918,6 +920,11 @@ fn fullscreen_play_hides_the_shell_but_keeps_the_picture() {
             "{needle:?} should not be mounted in fullscreen"
         );
     }
+    assert!(
+        list.commands().iter().any(|command| matches!(command,
+                DrawCommand::DrawText { text, .. } if text == "复位")),
+        "the play controls are mounted in fullscreen"
+    );
     click(&mut tree, text_position(&list, "退出全屏"));
     assert_eq!(actions.drain(), vec![Action::ToggleFullscreen]);
 }

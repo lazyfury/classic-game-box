@@ -1,7 +1,7 @@
 //! The console column on the right: the live picture and its controls, the
 //! immersive fullscreen view, and the screenshot preview it swaps in.
 
-use igui::igui_components::{Badge, Button, Column, Component, Divider, Flex, NodeRef, Row, Text};
+use igui::igui_components::{Badge, Button, Column, Component, Flex, NodeRef, Row, Text};
 use igui::igui_core::{Color, Edges};
 use igui::igui_theme::radius::MD;
 use igui::igui_theme::{radius, space, Theme, Tone};
@@ -13,110 +13,6 @@ use crate::model::{Action, Confirm, ScreenshotRow, ViewModel};
 
 use super::components::format_when;
 use super::Actions;
-
-/// The immersive play view: the game picture fills everything below a slim
-/// overlay bar with pause / save / load / screenshot / exit controls.
-///
-/// The rest of the shell (header, rail, library, status line) is not mounted,
-/// which is what keeps a playing frame cheap: the visible grid alone added
-/// thousands of draw commands to every frame.
-pub(super) fn fullscreen_play(
-    theme: &'static dyn Theme,
-    model: &ViewModel,
-    actions: &Actions,
-    info_ref: &NodeRef,
-) -> Column {
-    let mut column = Column::new()
-        .gap(0.0)
-        .padding(Edges::ZERO)
-        .mouse_filter(MouseFilter::Ignore)
-        .child(fullscreen_bar(theme, model, actions, info_ref));
-    match &model.frame {
-        Some(frame) => {
-            let mut image = FrameImage::new(frame.texture, frame.width, frame.height).grow(1.0);
-            if model.paused {
-                image = image.child(paused_overlay(theme));
-            }
-            column = column.child(image);
-        }
-        None => {
-            column = column.child(
-                Flex::row()
-                    .align(Align::Center)
-                    .justify(Justify::Center)
-                    .grow(1.0)
-                    .surface(SurfaceStyle::new(theme.palette().surface))
-                    .child(Text::small("没有画面：还没有载入游戏。", theme).tone(Tone::Muted)),
-            );
-        }
-    }
-    column
-}
-
-/// The thin bar across the top of the immersive view. It carries the game name,
-/// any status message, and the controls that matter in fullscreen; everything
-/// else is one Escape (or F11) away.
-pub(super) fn fullscreen_bar(
-    theme: &'static dyn Theme,
-    model: &ViewModel,
-    actions: &Actions,
-    info_ref: &NodeRef,
-) -> Column {
-    let title = model
-        .selected
-        .and_then(|index| model.games.get(index))
-        .map(|game| game.name.clone())
-        .or_else(|| (!model.core_name.is_empty()).then(|| model.core_name.clone()))
-        .unwrap_or_else(|| "没有选中游戏".to_string());
-    let pause = if model.paused { "继续" } else { "暂停" };
-
-    let mut row = Row::new()
-        .align(Align::Center)
-        .gap(space::SM)
-        .padding(Edges::new(space::MD, space::XS, space::MD, space::XS))
-        .surface(SurfaceStyle::new(theme.palette().surface));
-    row = row.child(
-        Text::small(title, theme)
-            .grow(1.0)
-            .max_lines(1)
-            .ellipsis(true),
-    );
-    if !model.info.is_empty() {
-        row = row.child(
-            Text::caption(model.info.clone(), theme)
-                .tone(Tone::Muted)
-                .max_lines(1)
-                .ref_(info_ref),
-        );
-    }
-    if !model.status.is_empty() {
-        row = row.child(
-            Text::caption(model.status.clone(), theme)
-                .tone(Tone::Muted)
-                .max_lines(1)
-                .ellipsis(true),
-        );
-    }
-
-    let toggle = actions.clone();
-    row = row
-        .child(Button::secondary(pause, theme).on_click(move || toggle.push(Action::TogglePause)));
-    let save = actions.clone();
-    row = row.child(Button::ghost("存档", theme).on_click(move || save.push(Action::SaveState(0))));
-    let load = actions.clone();
-    row = row.child(Button::ghost("读档", theme).on_click(move || load.push(Action::LoadState(0))));
-    let shot = actions.clone();
-    row = row.child(Button::ghost("截图", theme).on_click(move || shot.push(Action::Screenshot)));
-    let exit = actions.clone();
-    row = row.child(
-        Button::secondary("退出全屏", theme).on_click(move || exit.push(Action::ToggleFullscreen)),
-    );
-
-    Column::new()
-        .gap(0.0)
-        .child(row)
-        .child(Divider::horizontal(theme))
-}
 
 /// The console column, on the right and always mounted. While a screenshot is
 /// being previewed it shows the picture instead of the console.
@@ -211,8 +107,13 @@ pub(super) fn play_column(
         Button::ghost("设为封面", theme).on_click(move || cover.push(Action::ScreenshotCover)),
     );
     let full = actions.clone();
+    let full_label = if model.fullscreen {
+        "退出全屏"
+    } else {
+        "全屏"
+    };
     controls = controls.child(
-        Button::secondary("全屏", theme).on_click(move || full.push(Action::ToggleFullscreen)),
+        Button::secondary(full_label, theme).on_click(move || full.push(Action::ToggleFullscreen)),
     );
     column = column.child(controls);
 
