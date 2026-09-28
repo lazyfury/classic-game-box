@@ -186,6 +186,19 @@ impl PlatformObserver for HostObserver {
     }
 }
 
+/// A fullscreen toggle waiting for the OS window animation to settle.
+///
+/// Entering: switch to the lightweight play view first, then ask the window for
+/// fullscreen. Leaving: ask the window to leave, keep the play view while it
+/// animates, and only rebuild the heavy shell once the size stops changing.
+#[derive(Clone, Copy)]
+struct FullscreenTransition {
+    /// The fullscreen state to apply once the window settles.
+    target: bool,
+    /// When the window last changed size (or the transition started).
+    last_activity: Instant,
+}
+
 /// The application state, driven as an [`AppLogic`] by the `igui_app` runtime.
 struct App {
     /// The wgpu backend, published by `WgpuPlugin`; `None` until the first
@@ -276,6 +289,12 @@ struct App {
     /// forces a re-layout when this actually changes (a fullscreen transition
     /// fires many repeats).
     last_viewport: Option<ViewportSize>,
+    /// The settled fullscreen target the window was last asked for (as opposed
+    /// to [`ViewModel::fullscreen`], which is what is mounted right now).
+    fullscreen_target: bool,
+    /// A fullscreen transition in flight: the play view stays mounted until the
+    /// window stops resizing, then the target state is applied.
+    transition: Option<FullscreenTransition>,
 
     /// When the running game's play time was last flushed to the database.
     last_play_flush: Instant,
@@ -420,6 +439,8 @@ impl App {
             modifiers: Modifiers::NONE,
             pending_drops: Rc::new(RefCell::new(Vec::new())),
             last_viewport: None,
+            fullscreen_target: false,
+            transition: None,
             last_play_flush: Instant::now(),
             fps: 0.0,
             fps_frames: 0,
@@ -2159,25 +2180,32 @@ impl App {
     /// Toggle the immersive fullscreen play view. Entering it needs a loaded
     /// game (the view *is* the game); leaving it always works.
     fn toggle_fullscreen(&mut self) {
-        self.set_fullscreen(!self.model.fullscreen);
+        self.set_fullscreen(!self.fullscreen_target);
     }
 
-    /// Show or hide the immersive play view and ask the window to match.
+    /// Ask the window for `on`, keeping the lightweight play view mounted until
+    /// the OS animation settles (the heavy shell is rebuilt afterwards).
     fn set_fullscreen(&mut self, on: bool) {
         let on = on && self.session.is_some();
-        if let Some(window) = self.window.as_ref() {
+        if self.fullscreen_target == on && self.transition.is_none() {
+            return;
+        }
+        self.fullscreen_target = on;
+        // Mount only the play view for the duration of the transition.
+        self.model.fullscreen = true;
+        self.dirty = true;
+        if let Some(window) = self.window.clone() {
             window.set_fullscreen(if on {
                 Some(Fullscreen::Borderless(None))
             } else {
                 None
             });
         }
-        self.model.fullscreen = on;
-        self.dirty = true;
+        self.transition = Some(FullscreenTransition {
+            target: on,
+            last_activity: Instant::now(),
+        });
         self.ui.request_repaint();
-        if let Some(window) = self.window.as_ref() {
-            window.request_redraw();
-        }
     }
 
     fn rebuild_ui(&mut self) {
@@ -2195,6 +2223,15 @@ impl App {
     }
 
     fn advance_frame(&mut self, dt: f32) {
+        // A fullscreen transition settles once the window stops resizing; only
+        // then apply the target (rebuilding the heavy shell on exit).
+        if let Some(transition) = self.transition {
+            if transition.last_activity.elapsed() >= Duration::from_millis(200) {
+                self.transition = None;
+                self.model.fullscreen = transition.target;
+                self.dirty = true;
+            }
+        }
         self.flush_drops();
         // Overlay timers (a message counting down) advance with the clock.
         self.ui.update(dt);
@@ -2487,6 +2524,9 @@ impl AppLogic for App {
         if self.last_viewport != Some(viewport) {
             self.last_viewport = Some(viewport);
             self.repaint = true;
+            if let Some(transition) = self.transition.as_mut() {
+                transition.last_activity = Instant::now();
+            }
         }
         self.layout_ui(viewport);
     }
@@ -2499,6 +2539,7 @@ impl AppLogic for App {
         // A running game drives its own clock; an overlay timer or a held
         // rewind key needs frames too. Otherwise the loop waits for an event.
         self.rewinding
+            || self.transition.is_some()
             || self.ui.overlays_animating()
             || self
                 .session
