@@ -653,6 +653,27 @@ fn the_search_bar_starts_and_reflects_the_query() {
     let list = paint(&model);
     assert!(list.commands().iter().any(|command| matches!(command,
             DrawCommand::DrawText { text, .. } if text.contains("mario"))));
+
+    // While the search edit is open, the row mounts the text field (with its
+    // 完成 / 清除 buttons) instead of the plain button.
+    let actions = Actions::default();
+    actions.set_edit(Rc::new(RefCell::new(TextEdit::new("mario"))));
+    let model = ViewModel {
+        editing: Some(EditState {
+            game_id: -1,
+            kind: EditKind::Search,
+        }),
+        ..ViewModel::default()
+    };
+    let (_, list) = laid_out(&model, &actions);
+    let has = |needle: &str| {
+        list.commands()
+            .iter()
+            .any(|command| matches!(command, DrawCommand::DrawText { text, .. } if text == needle))
+    };
+    assert!(has("完成"), "the search field's confirm button is shown");
+    assert!(has("清除"), "the search field's clear button is shown");
+    assert!(has("mario"), "the field renders the current query");
 }
 
 /// The saves section lists the slots and its buttons emit the slot actions.

@@ -1848,13 +1848,18 @@ impl App {
     /// Begin editing a game's name or tags; the app seeds the shared edit state
     /// the view mounts a `TextInput` from.
     fn start_edit(&mut self, game_id: i64, kind: EditKind) {
-        let Some(game) = self.game_source.iter().find(|game| game.id == game_id) else {
-            return;
-        };
-        let text = match kind {
-            EditKind::Name => game.name.clone(),
-            EditKind::Tags => game.tags.join(", "),
-            EditKind::Search => self.model.search.clone(),
+        // A search is not tied to a game; rename / tag edits are.
+        let text = if kind == EditKind::Search {
+            self.model.search.clone()
+        } else {
+            let Some(game) = self.game_source.iter().find(|game| game.id == game_id) else {
+                return;
+            };
+            match kind {
+                EditKind::Name => game.name.clone(),
+                EditKind::Tags => game.tags.join(", "),
+                EditKind::Search => unreachable!("handled above"),
+            }
         };
         self.actions
             .set_edit(Rc::new(RefCell::new(TextEdit::new(text))));
