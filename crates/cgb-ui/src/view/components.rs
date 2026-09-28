@@ -2,7 +2,7 @@
 //! cover icon buttons, the minimal text field, and the grid virtualization
 //! helpers.
 
-use igui::igui_components::{Button, Component, Flex, NodeRef, Text};
+use igui::igui_components::{Button, Component, Flex, NodeRef, Text, TextInput};
 use igui::igui_core::{Color, Edges};
 use igui::igui_theme::{radius, space, Theme, Tone};
 use igui::igui_ui::{Align, Justify, SurfaceStyle};
@@ -47,25 +47,26 @@ pub(super) fn chip_bar(theme: &'static dyn Theme, caption: &str, chips: Flex) ->
         .child(chips)
 }
 
-/// A minimal text field: the text with a caret bar drawn between the two
-/// halves. quill has no `TextInput`, so the app owns the keyboard and this only
-/// renders the current state.
-pub(super) fn edit_field(theme: &'static dyn Theme, text: &str, caret: usize) -> Flex {
-    let caret = caret.min(text.len());
-    let (before, after) = text.split_at(caret);
-    Flex::row()
-        .align(Align::Center)
-        .gap(0.0)
-        .padding(Edges::new(space::SM, space::XS, space::SM, space::XS))
-        .min_size(0.0, 26.0)
-        .surface(
-            SurfaceStyle::new(theme.palette().surface_raised)
-                .border(theme.palette().accent)
-                .radius(radius::SM),
-        )
-        .child(Text::small(before, theme).max_lines(1))
-        .child(Text::small("|", theme).color(theme.palette().accent))
-        .child(Text::small(after, theme).max_lines(1).ellipsis(true))
+/// The editable text field the library uses for rename / tags / search. It is
+/// the standard `igui` [`TextInput`]: it owns the text, caret, selection and
+/// IME preedit, takes the keyboard on mount, and shares its state through
+/// [`Actions`] so a rebuild (e.g. search-as-you-type) keeps the caret.
+pub(super) fn text_field(
+    theme: &'static dyn Theme,
+    actions: &Actions,
+    placeholder: &str,
+) -> TextInput {
+    let input = TextInput::new(theme)
+        .placeholder(placeholder)
+        .autofocus(true)
+        .min_width(0.0);
+    // A rebuild makes a fresh field; carry the previous edit state over so the
+    // caret / selection / preedit survive.
+    if let Some(previous) = actions.edit().borrow().clone() {
+        *input.shared().borrow_mut() = previous.borrow().clone();
+    }
+    actions.set_edit(input.shared());
+    input
 }
 
 /// A small, transparent-until-hovered icon button on a coloured cover. No

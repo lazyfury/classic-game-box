@@ -1,8 +1,12 @@
 # Classic Game Box — 工作约定（Rust 版）
 
-本仓库正在从 **Electron + WebAssembly + 自研核心** 迁移到 **原生 Rust + quill + libretro**。
+本仓库正在从 **Electron + WebAssembly + 自研核心** 迁移到 **原生 Rust + igui + libretro**。
 旧栈整体在 `legacy/`，只作参考，不参与构建。权威设计见
 [`docs/architecture/quill-native-migration.md`](docs/architecture/quill-native-migration.md)。
+
+UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上游），以 git 依赖固定到
+`v0.2.0` 的 commit；见 `Cargo.toml` 的 `igui` / `igui_svg` / `igui_winit` / `igui_core`。
+不再需要相邻的 `../quill` checkout。
 
 ## 现状
 
@@ -30,7 +34,12 @@
   shader（扫描线/CRT/LCD/锐化）；core options + `SET_CONTROLLER_PORT_DEVICE` + core 消息；
   截图多选删除；中栏可拖动；沉浸式全屏游玩（`ViewModel::fullscreen`，F11/play 列
   “全屏”按钮进入，Esc 退出；只挂载画面 + 细控制条，库网格不入树）。
-  后处理依赖 sibling `../quill` 新增的 `TextureEffect`。
+  后处理用 `igui_backend_wgpu::TextureEffect`（`igui` 自 `v0.2.0` 提供）。
+- **运行时**：`cgb-app` 跑在 igui 的 `igui_app` 插件运行时上（`WinitPlugin` /
+  `WgpuPlugin` / `PointerPlugin` / `KeyboardPlugin` / `ImePlugin` / `TextMeasurePlugin` /
+  `ClipboardPlugin`），`App` 实现 `AppLogic`（`update/layout/paint`）。帧由
+  `Session::advance(dt)` 的时间累积驱动，`needs_frame` 在跑游戏/带动画 overlay/倒带时为真。
+  改名 / 搜索 / 标签编辑用上游 `igui_components::TextInput`（自带 caret/选区/IME 预编辑）。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
   （mesen / mgba / nestopia / custom_nes_core / fbneo / genesis_plus_gx / picodrive）；
   `--core` 按 key 或路径选核。
@@ -52,10 +61,10 @@
 4. **依赖方向单向**：`cgb-app → {cgb-ui, cgb-libretro, cgb-audio, cgb-input,
    cgb-library, cgb-systems}`；`cgb-ui` 不认识 libretro；`cgb-libretro` 不认识 UI
    与音频设备（只暴露 `Frame` / `Vec<i16>`）。`cgb-systems` 无依赖。
-5. **quill 的边界**：`draw_core/draw_scene/draw_ui/draw_render` 不得依赖
-   `web_sys`/`wgpu`/DOM。`cgb-ui` 只用 `draw_*` 的公开 API。
-6. **不写截图 / 录屏测试。** 用 `draw_backend_recording` 录 `DrawList` +
-   `draw_profile::inspect`，或 core 侧假 frontend 单测。UI 好不好看由人看。
+5. **igui 的边界**：`igui_core` / `igui_scene` / `igui_ui` / `igui_components`
+   不得依赖 `web_sys`/`wgpu`/DOM。`cgb-ui` 只用 `igui_*` 的公开 API。
+6. **不写截图 / 录屏测试。** 用 `igui_backend_recording` 录 `DrawList` +
+   `igui_profile::inspect`，或 core 侧假 frontend 单测。UI 好不好看由人看。
 7. **不改 `legacy/`**，除非明确要求；它是历史存档。
 8. **不确定就问，不要猜。** 需求模糊、要动公共 API 或路线图时，先停下来问。
 9. **不擅自开工。** 只实现已确认的任务；顺手发现的问题只汇报，不动手。
@@ -79,7 +88,7 @@ cargo run -p cgb-app -- --rom mario.nes --core mesen           # 强制核心
 cargo run -p cgb-app -- --rom mario.nes --core ./mycore_libretro.dylib  # 任意模块
 ./scripts/package-macos.sh  # → dist/Classic Game Box.app（含 cores + assets）
 ./scripts/release.sh        # gate + selfcheck + 版本戳 + 打包 + zip（dist/…-<版本>.zip）
-cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/cores/icons）
+cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/icons/render/cores）
 ```
 
 ## 目录地图
@@ -91,18 +100,20 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/cor
 | crate 职责与依赖 | `crates/README.md` |
 | libretro frontend（dlopen / 回调 / 视频音频输入存档） | `crates/cgb-libretro/src/host.rs` |
 | 机种 / CoreSpec 选核、joypad id | `crates/cgb-systems/src/` |
-| UI 视图与帧循环 | `crates/cgb-ui/src/`、`crates/cgb-app/src/app.rs` |
+| UI 视图与帧循环 | `crates/cgb-ui/src/`、`crates/cgb-app/src/app.rs`（`AppLogic` + `run` 的插件组装） |
 | 原生 core 构建 / 加核心流程 | `cores/README.md`、`cores/build.sh.example`、`cores/*/build.sh` |
 | 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
 | 旧 Electron/C++/wasm 栈 | `legacy/`（只读） |
 
 ## 已知缺口（先记录，不擅自补）
 
-- quill 没有 **Image 组件**：`draw_ui::Widget` 无 image 变体。Q1 先用
-  `cgb-ui/src/frame.rs` 的 `FrameImage`（`draw_components::Component` +
-  `foreground` 装饰器）把画面画上去；上游补 `Widget::Image` 后应撤掉这个本地组件。
-- quill 没有 **TextInput / IME**：改名 / 搜索 / 标签编辑已用自建最小输入层
-  （`ViewModel.editing` + `edit_field`，应用层处理字符键），**但只有拉丁字符**。
-  中文输入法（IME）需要 quill 上游支持或加一层输入法桥接（macOS `NSTextInputClient`），
-  计划中、未做（数据层已就绪：`Library::rename`、`set_tags`）。
-- quill 的 **连续帧循环（Phase 7）** 未落地，`cgb-app` 用 `WaitUntil` 自建。
+- igui 仍没有**标准 Image 内容类型**（上游 Stage 33 删了 `Widget`，改用
+  `ControlContent`）：`cgb-ui/src/frame.rs` 的 `FrameImage` 仍用 `Component` +
+  `Spec::foreground` 自绘 `DrawImage`。上游若有 image 内容类型，可考虑替换本地组件。
+- **中文输入法（IME）** 已接：改名 / 搜索 / 标签用 `igui_components::TextInput`
+  （自带 caret / 选区 / IME 预编辑），窗口由 `igui_winit::ImePlugin` 驱动，候选窗按
+  `AppLogic::caret`（`focused_caret`）定位；但还未经人眼验证 CJK 组合。
+- **帧循环**改由 `igui_app` 运行时驱动。`AppLogic::needs_frame` 在跑游戏 / 带动画的
+  overlay / 倒带时为真；帧速由 wgpu `PresentMode::Fifo`(vsync) 限速，`Session::advance(dt)`
+  的时间累积保证模拟速度。若要精确按核心帧率 `WaitUntil` 节流，参考 `../archiver` 的
+  本地 `EventLoop<UserEvent>` runner（`src/host/runner.rs`）。

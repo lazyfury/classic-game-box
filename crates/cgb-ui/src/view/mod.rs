@@ -52,7 +52,7 @@ use igui::igui_components::{
 use igui::igui_core::{Color, Edges};
 use igui::igui_scene::{SceneChild, SceneTree};
 use igui::igui_theme::{radius, space, Theme, Tone};
-use igui::igui_ui::{Align, MouseFilter, SizeBasis, SurfaceStyle};
+use igui::igui_ui::{Align, MouseFilter, SizeBasis, SurfaceStyle, TextEdit};
 
 use crate::icons::{Icon as SvgIcon, IconName};
 use crate::model::{Action, Section, StatusKind, ViewModel};
@@ -147,6 +147,10 @@ mod media {
 pub struct Actions {
     queue: Rc<RefCell<Vec<Action>>>,
     tips: Rc<RefCell<Vec<(NodeRef, String)>>>,
+    /// The live state of the in-progress text edit. The app seeds it when an
+    /// edit starts; the view mounts a `TextInput` from it and writes the new
+    /// handle back, so a rebuild keeps the caret / selection.
+    edit: Rc<RefCell<Option<Rc<RefCell<TextEdit>>>>>,
 }
 
 impl Actions {
@@ -158,6 +162,30 @@ impl Actions {
     /// Take everything recorded since the last drain.
     pub fn drain(&self) -> Vec<Action> {
         std::mem::take(&mut *self.queue.borrow_mut())
+    }
+
+    /// The current in-progress text edit, if any.
+    pub fn edit(&self) -> Rc<RefCell<Option<Rc<RefCell<TextEdit>>>>> {
+        self.edit.clone()
+    }
+
+    /// The text of the in-progress edit (empty when there is none).
+    pub fn edit_text(&self) -> String {
+        self.edit
+            .borrow()
+            .as_ref()
+            .map(|edit| edit.borrow().text().to_string())
+            .unwrap_or_default()
+    }
+
+    /// Replace the in-progress edit state (creating it, or after a rebuild).
+    pub fn set_edit(&self, edit: Rc<RefCell<TextEdit>>) {
+        *self.edit.borrow_mut() = Some(edit);
+    }
+
+    /// Drop the in-progress edit state.
+    pub fn clear_edit(&self) {
+        *self.edit.borrow_mut() = None;
     }
 
     /// Register a tooltip for the control mounted into `node`.

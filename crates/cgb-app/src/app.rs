@@ -7,28 +7,29 @@
 //! `Wait` and does no work. See `docs/architecture/quill-native-migration.md`
 //! §8.
 
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use igui::igui_backend_wgpu::{
-    wgpu, FontConfig, FontMetrics, FontMode, TextureEffect, WgpuBackend,
+use igui::igui_app::{
+    App as IguiApp, AppBuilder, AppConfig, AppLogic, EventContext, EventResult, FrameContext,
+    InitContext, PlatformEvent, PlatformObserver, Plugin,
 };
-use igui::igui_core::{FontWeight, InputEvent, Key, PointerButton, Size, Vec2, ViewportSize};
+use igui::igui_backend_wgpu::{FontConfig, FontMode, TextureEffect};
+use igui::igui_core::{InputEvent, Key, Modifiers, Rect, ViewportSize};
 use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, StageTimes};
-use igui::igui_render::{DrawList, PaintContext, RenderBackend, TextureId};
+use igui::igui_render::{DrawList, PaintContext, TextureId};
 use igui::igui_theme::{Mode, Theme};
-use igui::igui_ui::TextMeasurer;
-use winit::application::ApplicationHandler;
-use winit::dpi::{LogicalSize, PhysicalPosition};
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
-#[cfg(target_os = "macos")]
-use winit::platform::macos::WindowAttributesExtMacOS;
-use winit::window::{Fullscreen, Window, WindowId};
+use igui::igui_ui::{focused_caret, TextEdit, TextMeasurer};
+use igui_winit::{
+    ClipboardPlugin, GpuConfig, ImePlugin, KeyboardPlugin, PointerPlugin, SharedBackend,
+    SharedWindow, TextMeasurePlugin, TitlebarMode, WgpuPlugin, WindowConfig,
+};
+use winit::event::WindowEvent;
+use winit::window::{Fullscreen, Window};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{
@@ -45,9 +46,6 @@ use cgb_ui::{
 
 use crate::cli::{Args, CoreOverride};
 use crate::session::Session;
-
-/// One wheel notch scrolls about three text lines.
-const WHEEL_LINE_HEIGHT: f32 = 48.0;
 
 /// The shortest gap between grid column-count recomputations while the middle
 /// divider is dragged. A column change rebuilds the tree; throttling keeps a
@@ -118,23 +116,100 @@ struct ScreenshotTexture {
 /// directory, like the dev `cores/cores.json` fallback.
 const BUNDLED_ARCADE_SYSTEM: &str = "assets/roms/arcade/system";
 
-/// Runs the app until the window closes.
+/// Runs the app on the `igui_app` plugin runtime (winit + wgpu + input).
 pub fn run(args: Args) {
-    let event_loop = EventLoop::new().expect("create event loop");
-    event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App::new(args);
-    event_loop.run_app(&mut app).expect("run event loop");
+    let app = App::new(args);
+    let drops: Rc<RefCell<Vec<PathBuf>>> = app.pending_drops.clone();
+    let resized: Rc<Cell<bool>> = app.resized.clone();
+    let title = "Classic Game Box".to_string();
+    let size = (1100.0, 760.0);
+    IguiApp::new(AppConfig {
+        title: title.clone(),
+        size,
+        ..Default::default()
+    })
+    // The window: a transparent, title-less macOS title bar, with the platform
+    // IME enabled so the text fields can compose CJK.
+    .plugin(igui_winit::WinitPlugin::new(WindowConfig {
+        title,
+        size,
+        titlebar: TitlebarMode::Transparent,
+        ime: true,
+    }))
+    // The surface and backend, published as the `SharedBackend` service.
+    .plugin(WgpuPlugin::new(GpuConfig {
+        font: FontConfig {
+            mode: FontMode::System,
+            device_pixel_rasterization: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    }))
+    .plugin(PointerPlugin)
+    .plugin(KeyboardPlugin)
+    .plugin(ImePlugin)
+    .plugin(TextMeasurePlugin)
+    .plugin(ClipboardPlugin)
+    .plugin(HostPlugin { drops, resized })
+    .logic(app)
+    .build()
+    .run();
 }
 
-/// Owns everything, one frame at a time.
+/// Bridges host platform events the app cares about into shared flags: files
+/// dropped on the window, and window resizes (which force a re-layout).
+struct HostPlugin {
+    drops: Rc<RefCell<Vec<PathBuf>>>,
+    resized: Rc<Cell<bool>>,
+}
+
+impl Plugin for HostPlugin {
+    fn name(&self) -> &'static str {
+        "cgb-host"
+    }
+
+    fn build(&self, app: &mut AppBuilder) {
+        app.add_platform_observer(HostObserver {
+            drops: self.drops.clone(),
+            resized: self.resized.clone(),
+        });
+    }
+}
+
+struct HostObserver {
+    drops: Rc<RefCell<Vec<PathBuf>>>,
+    resized: Rc<Cell<bool>>,
+}
+
+impl PlatformObserver for HostObserver {
+    fn on_platform(&mut self, event: PlatformEvent<'_>, _out: &mut Vec<InputEvent>) {
+        let Some(event) = event.downcast_ref::<WindowEvent>() else {
+            return;
+        };
+        match event {
+            WindowEvent::DroppedFile(path) => self.drops.borrow_mut().push(path.clone()),
+            WindowEvent::Resized(_) => self.resized.set(true),
+            _ => {}
+        }
+    }
+}
+
+/// The application state, driven as an [`AppLogic`] by the `igui_app` runtime.
 struct App {
-    instance: wgpu::Instance,
+    /// The wgpu backend, published by `WgpuPlugin`; `None` until the first
+    /// resume creates the window and the surface.
+    backend: Option<SharedBackend>,
+    /// The window, read from the `SharedWindow` service (fullscreen toggling).
     window: Option<Arc<Window>>,
-    surface: Option<wgpu::Surface<'static>>,
-    backend: Option<WgpuBackend>,
-    config: Option<wgpu::SurfaceConfiguration>,
-    scale_factor: f64,
-    cursor: Vec2,
+    /// The backend's real font metrics, published by `TextMeasurePlugin`.
+    measurer: Option<Rc<dyn TextMeasurer>>,
+    /// Whether this frame must lay out and paint; otherwise the previous draw
+    /// list is replayed (a running game only changes its texture).
+    repaint: bool,
+    /// The current frame's layout time, for `CGB_PERF`.
+    last_layout: Duration,
+    /// The current frame's paint time, for `CGB_PERF`.
+    last_paint: Duration,
 
     theme: &'static dyn Theme,
     /// The theme family and light/dark appearance in use, so the settings page
@@ -200,12 +275,15 @@ struct App {
     /// Every core declared in `cores.json`, in manifest order.
     cores: Vec<CoreSpec>,
     /// Keyboard modifiers, so save-state hotkeys can tell save from load.
-    modifiers: ModifiersState,
-    /// Files dropped onto the window since the last frame. winit delivers one
-    /// `DroppedFile` event per file, so they are buffered and added in one batch.
-    pending_drops: Vec<PathBuf>,
+    modifiers: Modifiers,
+    /// Files dropped onto the window since the last frame. The winit runner
+    /// delivers one `DroppedFile` event per file (through the host's observer),
+    /// so they are buffered and added in one batch.
+    pending_drops: Rc<RefCell<Vec<PathBuf>>>,
+    /// Set by the host when the window was resized, so the next frame lays out
+    /// for the new viewport.
+    resized: Rc<Cell<bool>>,
 
-    last_frame: Instant,
     /// When the running game's play time was last flushed to the database.
     last_play_flush: Instant,
     /// When the grid's column count was last recomputed from the middle width.
@@ -292,13 +370,12 @@ impl App {
         let ui = Ui::new(theme, &model, &actions);
 
         let mut app = Self {
-            instance: wgpu::Instance::default(),
-            window: None,
-            surface: None,
             backend: None,
-            config: None,
-            scale_factor: 1.0,
-            cursor: Vec2::ZERO,
+            window: None,
+            measurer: None,
+            repaint: true,
+            last_layout: Duration::ZERO,
+            last_paint: Duration::ZERO,
             theme,
             theme_choice,
             light,
@@ -341,106 +418,15 @@ impl App {
             pending_rom: args.rom,
             core_override: args.core,
             cores,
-            modifiers: ModifiersState::empty(),
-            pending_drops: Vec::new(),
-            last_frame: Instant::now(),
+            modifiers: Modifiers::NONE,
+            pending_drops: Rc::new(RefCell::new(Vec::new())),
+            resized: Rc::new(Cell::new(false)),
             last_play_flush: Instant::now(),
             last_columns_check: Instant::now(),
         };
         app.refresh_library();
         app.rebuild_settings_view();
         app
-    }
-
-    /// Create the window, surface, backend and swap chain on first resume.
-    fn init(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
-            return;
-        }
-        let mut attributes = Window::default_attributes()
-            .with_title("Classic Game Box")
-            .with_inner_size(LogicalSize::new(1100.0, 760.0));
-        // The content runs under a transparent, title-less macOS title bar; the
-        // header reserves the safe area so nothing hides behind the traffic
-        // lights.
-        #[cfg(target_os = "macos")]
-        {
-            attributes = attributes
-                .with_titlebar_transparent(true)
-                .with_title_hidden(true)
-                .with_fullsize_content_view(true);
-        }
-        let window = Arc::new(event_loop.create_window(attributes).expect("create window"));
-
-        let surface = self
-            .instance
-            .create_surface(window.clone())
-            .expect("create surface");
-        let mut backend = WgpuBackend::from_instance(
-            &self.instance,
-            Some(&surface),
-            wgpu::PowerPreference::HighPerformance,
-        )
-        .expect("create wgpu backend");
-
-        let capabilities = surface.get_capabilities(backend.adapter());
-        let format = capabilities
-            .formats
-            .iter()
-            .copied()
-            .find(|format| !format.is_srgb())
-            .unwrap_or(capabilities.formats[0]);
-
-        let size = window.inner_size();
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width: size.width.max(1),
-            height: size.height.max(1),
-            present_mode: wgpu::PresentMode::Fifo,
-            desired_maximum_frame_latency: 2,
-            alpha_mode: capabilities.alpha_modes[0],
-            view_formats: Vec::new(),
-        };
-        surface.configure(backend.device(), &config);
-
-        self.scale_factor = window.scale_factor();
-        backend.set_scale_factor(self.scale_factor as f32);
-        backend.set_clear_color(self.theme.background());
-        if let Err(error) = backend.set_font_config(FontConfig {
-            mode: FontMode::System,
-            device_pixel_rasterization: true,
-            ..Default::default()
-        }) {
-            eprintln!("font setup failed, using fallback: {error}");
-        }
-
-        self.window = Some(window);
-        self.surface = Some(surface);
-        self.backend = Some(backend);
-        self.config = Some(config);
-        self.last_frame = Instant::now();
-        // The window exists now, so its platform chrome (the macOS title bar)
-        // can be reserved in the header.
-        self.model.safe_area = safe_area();
-
-        // The real font metrics can only be installed once the backend exists.
-        self.dirty = true;
-
-        // Covers could not be uploaded before the backend existed; do it now.
-        self.install_icon_textures();
-        self.refresh_cover_textures();
-        self.refresh_screenshot_textures();
-        self.rebuild_game_rows();
-        self.rebuild_screenshot_rows();
-
-        // A `--rom` on the command line starts eagerly, before the first frame.
-        if let Some(pending) = self.pending_rom.take() {
-            self.start_path(&pending);
-        }
-        if let Some(window) = self.window.as_ref() {
-            window.request_redraw();
-        }
     }
 
     /// Re-read the library folders and rebuild the game rows.
@@ -506,9 +492,10 @@ impl App {
     /// dropped from the cache (their texture stays on the GPU — the backend
     /// has no remove).
     fn refresh_cover_textures(&mut self) {
-        let Some(backend) = self.backend.as_mut() else {
+        let Some(backend) = self.backend.clone() else {
             return;
         };
+        let mut backend = backend.borrow_mut();
         let Some(library) = &self.library else {
             return;
         };
@@ -559,9 +546,10 @@ impl App {
     /// Decode and upload a texture for every icon, so the UI draws each one as
     /// a single image instead of re-stroking its SVG every frame.
     fn install_icon_textures(&mut self) {
-        let Some(backend) = self.backend.as_mut() else {
+        let Some(backend) = self.backend.clone() else {
             return;
         };
+        let mut backend = backend.borrow_mut();
         for (index, name) in cgb_ui::IconName::ALL.into_iter().enumerate() {
             let Some((width, height, rgba)) = cgb_ui::rasterize_icon(name, ICON_TEXTURE_PX) else {
                 continue;
@@ -587,9 +575,10 @@ impl App {
     /// whose file is unchanged. The backend has no `remove_texture`, so
     /// deleted screenshots leave their texture behind.
     fn refresh_screenshot_textures(&mut self) {
-        let Some(backend) = self.backend.as_mut() else {
+        let Some(backend) = self.backend.clone() else {
             return;
         };
+        let mut backend = backend.borrow_mut();
         let Some(library) = &self.library else {
             return;
         };
@@ -865,7 +854,8 @@ impl App {
                     .map(|(modified, _)| *modified)
                     != Some(slot.modified_ms);
                 if stale {
-                    if let Some(backend) = self.backend.as_mut() {
+                    if let Some(backend) = self.backend.clone() {
+                        let mut backend = backend.borrow_mut();
                         if let Ok(bytes) = std::fs::read(session.save_thumbnail_path(slot.slot)) {
                             if let Ok((width, height, rgba)) = decode_png(&bytes) {
                                 let texture = TextureId::new(SAVE_TEXTURE_BASE + slot.slot as u32);
@@ -999,8 +989,10 @@ impl App {
         self.settings.light = light;
         let _ = self.settings.save(&self.paths.settings_json);
         self.theme = choice.theme(if light { Mode::Light } else { Mode::Dark });
-        if let Some(backend) = self.backend.as_mut() {
-            backend.set_clear_color(self.theme.background());
+        if let Some(backend) = self.backend.clone() {
+            backend
+                .borrow_mut()
+                .set_clear_color(self.theme.background());
         }
         self.rebuild_settings_view();
         self.dirty = true;
@@ -1016,10 +1008,11 @@ impl App {
         let Some(session) = self.session.as_ref() else {
             return;
         };
-        let Some(backend) = self.backend.as_mut() else {
+        let Some(backend) = self.backend.clone() else {
             return;
         };
-        session.set_effect(backend, texture_effect(self.shader));
+        let mut backend = backend.borrow_mut();
+        session.set_effect(&mut backend, texture_effect(self.shader));
     }
 
     /// Read the running core's options, apply any remembered values, and
@@ -1271,10 +1264,10 @@ impl App {
 
     /// Add any files dropped since the last frame, in one batch.
     fn flush_drops(&mut self) {
-        if self.pending_drops.is_empty() {
+        if self.pending_drops.borrow().is_empty() {
             return;
         }
-        let paths = std::mem::take(&mut self.pending_drops);
+        let paths = std::mem::take(&mut *self.pending_drops.borrow_mut());
         self.add_game_paths(paths);
     }
 
@@ -1497,27 +1490,39 @@ impl App {
         }
     }
 
-    fn resize(&mut self, width: u32, height: u32) {
-        let (Some(surface), Some(backend), Some(config)) = (
-            self.surface.as_ref(),
-            self.backend.as_ref(),
-            self.config.as_mut(),
-        ) else {
-            return;
+    /// App-level keyboard commands, handled before the UI or the emulator sees
+    /// the key. While a text field is open it owns the keyboard, except that
+    /// Enter commits and Escape cancels.
+    fn handle_hotkey(&mut self, event: &InputEvent) {
+        let (key, pressed) = match event {
+            InputEvent::KeyDown { key } => (*key, true),
+            InputEvent::KeyUp { key } => (*key, false),
+            _ => return,
         };
-        if width == 0 || height == 0 {
+        if self.model.editing.is_some() {
+            if pressed {
+                match key {
+                    Key::Enter => self.commit_edit(),
+                    Key::Escape => self.cancel_edit(),
+                    _ => {}
+                }
+            }
             return;
         }
-        // A resize event often repeats the same size; reconfiguring the surface
-        // for each one is the expensive part, so skip it when nothing changed.
-        if config.width == width && config.height == height {
-            return;
+        match key {
+            // Backspace is the rewind key: hold it to step the game back.
+            Key::Backspace => self.rewinding = pressed,
+            // F12 is the screenshot key; Shift+F12 also sets the cover.
+            Key::F12 if pressed => self.capture_screenshot(self.modifiers.shift),
+            // Save-state / fullscreen hotkeys fire once, on press.
+            _ if pressed => {
+                if let Some(action) = state_shortcut(key, self.modifiers.shift) {
+                    self.actions.push(action);
+                    self.handle_actions();
+                }
+            }
+            _ => {}
         }
-        config.width = width;
-        config.height = height;
-        surface.configure(backend.device(), config);
-        // The viewport changed, so the layout and the draw list must be redone.
-        self.ui.request_repaint();
     }
 
     /// Route one input event: the UI first, then the emulator bindings.
@@ -1528,10 +1533,15 @@ impl App {
             .as_ref()
             .is_some_and(|session| !session.paused());
         let keyboard = matches!(event, InputEvent::KeyDown { .. } | InputEvent::KeyUp { .. });
+        let editing = self.model.editing.is_some();
         // An open overlay owns the event first, even while a game captures the
         // keyboard: a menu opened from the UI must close on Escape.
         if !self.ui.route_overlay_input(event) {
-            if captured && keyboard {
+            if editing {
+                // An open text field owns the keyboard (text, arrows, IME);
+                // Enter / Escape were already handled as app commands.
+                self.ui.route_ui_input(event);
+            } else if captured && keyboard {
                 // The running game owns the keyboard; Escape is the one way
                 // back to the UI.
                 if matches!(event, InputEvent::KeyDown { key: Key::Escape }) {
@@ -1554,7 +1564,7 @@ impl App {
                     if let InputEvent::KeyDown { key } = event {
                         match key {
                             Key::Tab => {
-                                self.ui.move_focus(self.modifiers.shift_key());
+                                self.ui.move_focus(self.modifiers.shift);
                             }
                             Key::Enter | Key::Space => {
                                 self.ui.activate_focus();
@@ -1835,7 +1845,8 @@ impl App {
         self.ui.request_repaint();
     }
 
-    /// Begin editing a game's name or tags; the app takes the keyboard.
+    /// Begin editing a game's name or tags; the app seeds the shared edit state
+    /// the view mounts a `TextInput` from.
     fn start_edit(&mut self, game_id: i64, kind: EditKind) {
         let Some(game) = self.game_source.iter().find(|game| game.id == game_id) else {
             return;
@@ -1845,13 +1856,9 @@ impl App {
             EditKind::Tags => game.tags.join(", "),
             EditKind::Search => self.model.search.clone(),
         };
-        let caret = text.len();
-        self.model.editing = Some(EditState {
-            game_id,
-            kind,
-            text,
-            caret,
-        });
+        self.actions
+            .set_edit(Rc::new(RefCell::new(TextEdit::new(text))));
+        self.model.editing = Some(EditState { game_id, kind });
         self.dirty = true;
     }
 
@@ -1864,6 +1871,7 @@ impl App {
     fn clear_search(&mut self) {
         self.model.search.clear();
         self.model.editing = None;
+        self.actions.clear_edit();
         self.rebuild_game_rows();
         self.dirty = true;
     }
@@ -1876,6 +1884,7 @@ impl App {
             .as_ref()
             .is_some_and(|edit| edit.kind == EditKind::Search);
         self.model.editing = None;
+        self.actions.clear_edit();
         if was_search {
             self.model.search.clear();
             self.rebuild_game_rows();
@@ -1888,6 +1897,8 @@ impl App {
         let Some(edit) = self.model.editing.take() else {
             return;
         };
+        let text = self.actions.edit_text();
+        self.actions.clear_edit();
         // A search is applied as it is typed; committing just closes it.
         if edit.kind == EditKind::Search {
             let message = if self.model.search.is_empty() {
@@ -1909,7 +1920,7 @@ impl App {
         };
         match edit.kind {
             EditKind::Name => {
-                let name = edit.text.trim().to_string();
+                let name = text.trim().to_string();
                 if name.is_empty() {
                     self.model
                         .set_status("名字不能为空".to_string(), StatusKind::Error);
@@ -1930,8 +1941,7 @@ impl App {
                     .set_status(format!("已改名为：{name}"), StatusKind::Success);
             }
             EditKind::Tags => {
-                let tags: Vec<String> = edit
-                    .text
+                let tags: Vec<String> = text
                     .split([',', '，', ' '])
                     .map(str::trim)
                     .filter(|tag| !tag.is_empty())
@@ -1955,63 +1965,6 @@ impl App {
             EditKind::Search => {}
         }
         self.rebuild_game_rows();
-        self.dirty = true;
-    }
-
-    /// One key press while editing. Enter commits, Escape cancels, the arrows
-    /// move the caret, Backspace deletes, and any typed text is inserted.
-    fn edit_key(&mut self, event: &winit::event::KeyEvent) {
-        match &event.logical_key {
-            WinitKey::Named(NamedKey::Enter) => {
-                self.commit_edit();
-                return;
-            }
-            WinitKey::Named(NamedKey::Escape) => {
-                self.cancel_edit();
-                return;
-            }
-            _ => {}
-        }
-        let searching = self
-            .model
-            .editing
-            .as_ref()
-            .is_some_and(|edit| edit.kind == EditKind::Search);
-        let Some(edit) = self.model.editing.as_mut() else {
-            return;
-        };
-        match &event.logical_key {
-            WinitKey::Named(NamedKey::Backspace) => {
-                let previous = prev_boundary(&edit.text, edit.caret);
-                edit.text.replace_range(previous..edit.caret, "");
-                edit.caret = previous;
-            }
-            WinitKey::Named(NamedKey::ArrowLeft) => {
-                edit.caret = prev_boundary(&edit.text, edit.caret);
-            }
-            WinitKey::Named(NamedKey::ArrowRight) => {
-                edit.caret = next_boundary(&edit.text, edit.caret);
-            }
-            _ => {
-                if let Some(text) = &event.text {
-                    for ch in text.chars().filter(|ch| !ch.is_control()) {
-                        edit.text.insert(edit.caret, ch);
-                        edit.caret += ch.len_utf8();
-                    }
-                }
-            }
-        }
-        // A search filters as it is typed.
-        if searching {
-            let text = self
-                .model
-                .editing
-                .as_ref()
-                .map(|edit| edit.text.clone())
-                .unwrap_or_default();
-            self.model.search = text;
-            self.rebuild_game_rows();
-        }
         self.dirty = true;
     }
 
@@ -2071,18 +2024,20 @@ impl App {
         self.model.preview = None;
         self.preview_paused = false;
 
-        let backend = match self.backend.as_mut() {
-            Some(backend) => backend,
-            None => return,
+        let started = {
+            let Some(shared) = self.backend.clone() else {
+                return;
+            };
+            let mut backend = shared.borrow_mut();
+            Session::start(
+                &spec,
+                &self.paths.system,
+                &self.paths.saves,
+                rom_path,
+                &data,
+                &mut backend,
+            )
         };
-        let started = Session::start(
-            &spec,
-            &self.paths.system,
-            &self.paths.saves,
-            rom_path,
-            &data,
-            backend,
-        );
 
         match started {
             Ok(session) => {
@@ -2208,10 +2163,8 @@ impl App {
 
     fn rebuild_ui(&mut self) {
         self.ui.rebuild(self.theme, &self.model, &self.actions);
-        if let Some(backend) = self.backend.as_ref() {
-            self.ui.install_measurer(Rc::new(BackendTextMeasurer {
-                metrics: backend.text_metrics(),
-            }));
+        if let Some(measurer) = self.measurer.clone() {
+            self.ui.install_measurer(measurer);
         }
         self.dirty = false;
     }
@@ -2222,14 +2175,19 @@ impl App {
         }
     }
 
-    fn render(&mut self) {
+    fn advance_frame(&mut self, dt: f32) {
+        if self.resized.replace(false) {
+            // The surface follows the window; the UI must lay out for the new
+            // viewport.
+            self.ui.request_repaint();
+        }
         self.flush_drops();
-        let now = Instant::now();
-        let dt = now.duration_since(self.last_frame).as_secs_f64().min(0.25);
-        self.last_frame = now;
         // Overlay timers (a message counting down) advance with the clock.
-        self.ui.update(dt as f32);
-
+        self.ui.update(dt);
+        // A running overlay needs a fresh paint each frame, not a replay.
+        if self.ui.overlays_animating() {
+            self.ui.request_repaint();
+        }
         self.step_gamepad();
 
         if self.rewinding {
@@ -2242,14 +2200,11 @@ impl App {
                 }
             }
             self.ui.request_repaint();
-            if let Some(window) = self.window.as_ref() {
-                window.request_redraw();
-            }
-        } else if let (Some(session), Some(backend)) =
-            (self.session.as_mut(), self.backend.as_mut())
-        {
+        } else if let Some(session) = self.session.as_mut() {
             if !session.paused() {
-                session.advance(dt, backend, &self.input);
+                if let Some(backend) = self.backend.clone() {
+                    session.advance(dt as f64, &mut backend.borrow_mut(), &self.input);
+                }
             }
         }
 
@@ -2274,86 +2229,55 @@ impl App {
         if self.dirty {
             self.rebuild_ui();
         }
-
-        let (Some(surface), Some(backend), Some(config)) = (
-            self.surface.as_ref(),
-            self.backend.as_mut(),
-            self.config.as_ref(),
-        ) else {
-            return;
-        };
-
-        let logical = Size::new(
-            config.width as f32 / self.scale_factor as f32,
-            config.height as f32 / self.scale_factor as f32,
-        );
-        let viewport = ViewportSize::new(logical);
-
         // Rebuild the draw list only when something changed. A running game
         // updates its texture in place, so its frames re-submit the previous
         // list instead of laying out and painting the whole UI again.
-        let repaint = self.ui.take_repaint() || self.draw_list.is_none();
-        let mut layout_time = Duration::ZERO;
-        let mut paint_time = Duration::ZERO;
-        if repaint {
-            let started = Instant::now();
-            self.ui.layout(viewport);
-            layout_time = started.elapsed();
-            // The library / screenshots grids mount only the rows the viewport
-            // covers, so the resolved offset and viewport go back into the
-            // model; a scroll past the mounted rows asks for one more rebuild,
-            // while scrolling inside them is just a repaint.
-            if matches!(self.model.section, Section::Library | Section::Screenshots)
-                && !self.model.fullscreen
-            {
-                let offset = self.ui.scroll_offset();
-                let viewport_height = self.ui.scroll_viewport();
-                if offset != self.model.grid_offset || viewport_height != self.model.grid_viewport {
-                    self.model.grid_offset = offset;
-                    self.model.grid_viewport = viewport_height;
-                    if !self.ui.grid_window_covers(&self.model) {
-                        self.dirty = true;
-                        if let Some(window) = self.window.as_ref() {
-                            window.request_redraw();
-                        }
-                    }
+        self.repaint = self.ui.take_repaint() || self.draw_list.is_none();
+    }
+
+    /// Resolve layout when the tree changed. The library / screenshots grids
+    /// mount only the rows the viewport covers, so the resolved offset and
+    /// viewport go back into the model; a scroll past the mounted rows asks for
+    /// one more rebuild, while scrolling inside them is just a repaint.
+    fn layout_ui(&mut self, viewport: ViewportSize) {
+        if !self.repaint {
+            return;
+        }
+        let started = Instant::now();
+        self.ui.layout(viewport);
+        if matches!(self.model.section, Section::Library | Section::Screenshots)
+            && !self.model.fullscreen
+        {
+            let offset = self.ui.scroll_offset();
+            let viewport_height = self.ui.scroll_viewport();
+            if offset != self.model.grid_offset || viewport_height != self.model.grid_viewport {
+                self.model.grid_offset = offset;
+                self.model.grid_viewport = viewport_height;
+                if !self.ui.grid_window_covers(&self.model) {
+                    self.dirty = true;
                 }
             }
-            let started = Instant::now();
-            let mut ctx = PaintContext::new();
-            self.ui.paint(&mut ctx);
-            self.draw_list = Some(ctx.into_draw_list());
-            paint_time = started.elapsed();
         }
+        self.last_layout = started.elapsed();
+    }
 
-        let surface_texture = match surface.get_current_texture() {
-            Ok(texture) => texture,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                surface.configure(backend.device(), config);
-                return;
-            }
-            Err(wgpu::SurfaceError::Timeout) => return,
-            Err(error) => {
-                eprintln!("surface error: {error}");
-                return;
-            }
-        };
-
-        let view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        if backend
-            .begin_frame_with_view(view, config.width, config.height, config.format, viewport)
-            .is_ok()
-        {
+    /// Emit this frame's commands. An unchanged UI replays the previous draw
+    /// list instead of laying out and painting the tree again.
+    fn paint_ui(&mut self, paint: &mut PaintContext) {
+        if self.repaint {
             let started = Instant::now();
-            if let Some(list) = self.draw_list.as_ref() {
-                let _ = backend.submit(list);
-            }
-            let _ = backend.end_frame();
-            self.profile_frame(repaint, layout_time, paint_time, started.elapsed());
+            self.ui.paint(paint);
+            self.draw_list = Some(DrawList::from(paint.draw_list().to_vec()));
+            self.last_paint = started.elapsed();
+            self.profile_frame(
+                self.repaint,
+                self.last_layout,
+                self.last_paint,
+                Duration::ZERO,
+            );
+        } else if let Some(list) = self.draw_list.as_ref() {
+            paint.extend(list);
         }
-        surface_texture.present();
     }
 
     /// Record one frame into the `CGB_PERF` profiler. It prints the per-frame
@@ -2425,211 +2349,97 @@ impl App {
             }
         }
     }
-
-    /// The next time the event loop should wake, if a game is running.
-    fn next_deadline(&self) -> Option<Instant> {
-        let session = self.session.as_ref()?;
-        if session.paused() {
-            return None;
-        }
-        Some(Instant::now() + Duration::from_secs_f64(session.frame_seconds()))
-    }
 }
 
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.init(event_loop);
-    }
-
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // An overlay with a timer (a message) or a fade needs frames even when
-        // no game is running.
-        if self.ui.overlays_animating() {
-            event_loop.set_control_flow(ControlFlow::WaitUntil(
-                Instant::now() + Duration::from_millis(16),
-            ));
-            if let Some(window) = self.window.as_ref() {
-                window.request_redraw();
-            }
-            return;
+impl AppLogic for App {
+    fn init(&mut self, ctx: &InitContext<'_>) {
+        if let Some(backend) = ctx.service::<SharedBackend>() {
+            self.backend = Some(backend.clone());
+            backend
+                .borrow_mut()
+                .set_clear_color(self.theme.background());
         }
-        // A running game drives its own clock: wake at the next frame and draw.
-        // Otherwise wait for an event and do nothing.
-        match self.next_deadline() {
-            Some(deadline) => {
-                event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
-                if let Some(window) = self.window.as_ref() {
-                    window.request_redraw();
-                }
-            }
-            None => event_loop.set_control_flow(ControlFlow::Wait),
+        if let Some(window) = ctx.service::<SharedWindow>() {
+            self.window = window.borrow().clone();
+        }
+        if let Some(measurer) = ctx.service::<Rc<dyn TextMeasurer>>() {
+            self.measurer = Some(measurer.clone());
+        }
+        // The window exists now, so its platform chrome (the macOS title bar)
+        // can be reserved in the header.
+        self.model.safe_area = safe_area();
+        self.dirty = true;
+        // Covers and icons could not be uploaded before the backend existed.
+        self.install_icon_textures();
+        self.refresh_cover_textures();
+        self.refresh_screenshot_textures();
+        self.rebuild_game_rows();
+        self.rebuild_screenshot_rows();
+        // A `--rom` on the command line starts eagerly, before the first frame.
+        if let Some(pending) = self.pending_rom.take() {
+            self.start_path(&pending);
         }
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        if matches!(event, WindowEvent::RedrawRequested) {
-            self.render();
-            return;
+    fn event(&mut self, _ctx: &EventContext<'_>, event: &InputEvent) -> EventResult {
+        if let InputEvent::ModifiersChanged(modifiers) = event {
+            self.modifiers = *modifiers;
+            return EventResult::Ignored;
         }
-
-        match event {
-            WindowEvent::CloseRequested => {
-                self.flush_playtime();
-                event_loop.exit();
-                return;
+        self.handle_hotkey(event);
+        self.feed(event);
+        // A search filters as it is typed: read the field back and rebuild the
+        // rows when the query changed.
+        if self
+            .model
+            .editing
+            .as_ref()
+            .is_some_and(|edit| edit.kind == EditKind::Search)
+        {
+            let text = self.actions.edit_text();
+            if text != self.model.search {
+                self.model.search = text;
+                self.rebuild_game_rows();
+                self.dirty = true;
             }
-            WindowEvent::Resized(size) => self.resize(size.width, size.height),
-            WindowEvent::DroppedFile(path) => self.pending_drops.push(path),
-            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                self.scale_factor = scale_factor;
-                if let Some(backend) = self.backend.as_mut() {
-                    backend.set_scale_factor(scale_factor as f32);
-                }
-                self.ui.request_repaint();
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                self.cursor = self.to_logical(position);
-                self.feed(&InputEvent::PointerMove {
-                    position: self.cursor,
-                });
-            }
-            WindowEvent::CursorLeft { .. } => self.feed(&InputEvent::PointerLeave),
-            WindowEvent::MouseInput { state, button, .. } => {
-                let position = self.cursor;
-                let button = pointer_button(button);
-                let event = match state {
-                    ElementState::Pressed => InputEvent::PointerDown { position, button },
-                    ElementState::Released => InputEvent::PointerUp { position, button },
-                };
-                self.feed(&event);
-            }
-            WindowEvent::MouseWheel { delta, .. } => {
-                let delta = wheel_pixels(delta, self.scale_factor as f32);
-                let position = self.cursor;
-                self.feed(&InputEvent::Wheel {
-                    position,
-                    delta: Vec2::new(0.0, delta),
-                });
-            }
-            WindowEvent::ModifiersChanged(modifiers) => {
-                self.modifiers = modifiers.state();
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                // While a text edit is open the app owns the keyboard: every
-                // key goes to the field, not to the UI or the joypad bindings.
-                if self.model.editing.is_some() {
-                    if event.state == ElementState::Pressed {
-                        self.edit_key(&event);
-                        if let Some(window) = self.window.as_ref() {
-                            window.request_redraw();
-                        }
-                    }
-                    return;
-                }
-                // Backspace is the rewind key: hold it to step the game back.
-                if matches!(event.logical_key, WinitKey::Named(NamedKey::Backspace)) {
-                    self.rewinding = event.state == ElementState::Pressed;
-                    if let Some(window) = self.window.as_ref() {
-                        window.request_redraw();
-                    }
-                    return;
-                }
-                // Save-state hotkeys are app commands, not joypad bindings, and
-                // only fire on press (so a held key does not re-save).
-                if event.state == ElementState::Pressed {
-                    if let Some(action) =
-                        state_shortcut(&event.logical_key, self.modifiers.shift_key())
-                    {
-                        self.actions.push(action);
-                        self.handle_actions();
-                    }
-                    // F12 is the screenshot key; Shift+F12 also sets the cover.
-                    if matches!(event.logical_key, WinitKey::Named(NamedKey::F12)) {
-                        self.capture_screenshot(self.modifiers.shift_key());
-                    }
-                }
-                let Some(key) = map_key(&event.logical_key) else {
-                    return;
-                };
-                let input = match event.state {
-                    ElementState::Pressed => InputEvent::KeyDown { key },
-                    ElementState::Released => InputEvent::KeyUp { key },
-                };
-                self.feed(&input);
-            }
-            _ => {}
         }
+        EventResult::Handled
+    }
 
-        if let Some(window) = self.window.as_ref() {
-            window.request_redraw();
-        }
+    fn update(&mut self, ctx: &FrameContext<'_>) {
+        self.advance_frame(ctx.delta());
+    }
+
+    fn layout(&mut self, ctx: &FrameContext<'_>) {
+        self.layout_ui(ctx.viewport());
+    }
+
+    fn paint(&mut self, _ctx: &FrameContext<'_>, paint: &mut PaintContext) {
+        self.paint_ui(paint);
+    }
+
+    fn needs_frame(&self) -> bool {
+        // A running game drives its own clock; an overlay timer or a held
+        // rewind key needs frames too. Otherwise the loop waits for an event.
+        self.rewinding
+            || self.ui.overlays_animating()
+            || self
+                .session
+                .as_ref()
+                .is_some_and(|session| !session.paused())
+    }
+
+    fn caret(&self) -> Option<Rect> {
+        focused_caret(self.ui.tree())
     }
 }
 
-impl App {
-    fn to_logical(&self, position: PhysicalPosition<f64>) -> Vec2 {
-        Vec2::new(
-            position.x as f32 / self.scale_factor as f32,
-            position.y as f32 / self.scale_factor as f32,
-        )
+impl Drop for App {
+    fn drop(&mut self) {
+        // The stock runner exits without a hook, so bank the running game's
+        // play time here (it is also flushed every 15 seconds).
+        self.flush_playtime();
     }
-}
-
-/// Adapts the backend's font metrics to the layout engine, so text is measured
-/// with the exact advances it is painted with.
-struct BackendTextMeasurer {
-    metrics: FontMetrics,
-}
-
-impl TextMeasurer for BackendTextMeasurer {
-    fn advance(&self, ch: char, font_size: f32) -> f32 {
-        self.metrics.advance(ch, font_size)
-    }
-
-    fn advance_weighted(&self, ch: char, font_size: f32, weight: FontWeight) -> f32 {
-        self.metrics.advance_weighted(ch, font_size, weight)
-    }
-
-    fn line_height(&self, font_size: f32) -> f32 {
-        self.metrics.line_height(font_size)
-    }
-
-    fn ascent(&self, font_size: f32) -> f32 {
-        self.metrics.ascent(font_size)
-    }
-
-    fn measure_run(&self, text: &str, font_size: f32) -> f32 {
-        self.metrics.measure_run(text, font_size)
-    }
-
-    fn measure_run_weighted(&self, text: &str, font_size: f32, weight: FontWeight) -> f32 {
-        self.metrics.measure_run_weighted(text, font_size, weight)
-    }
-}
-
-/// The byte index before `caret`, the previous character boundary.
-fn prev_boundary(text: &str, caret: usize) -> usize {
-    let caret = caret.min(text.len());
-    text[..caret]
-        .char_indices()
-        .last()
-        .map(|(index, _)| index)
-        .unwrap_or(0)
-}
-
-/// The byte index after `caret`, the next character boundary.
-fn next_boundary(text: &str, caret: usize) -> usize {
-    let caret = caret.min(text.len());
-    text[caret..]
-        .chars()
-        .next()
-        .map(|ch| caret + ch.len_utf8())
-        .unwrap_or(caret)
 }
 
 /// Wall-clock milliseconds since the Unix epoch.
@@ -2664,16 +2474,6 @@ fn open_path(path: &Path) {
     #[cfg(not(target_os = "macos"))]
     let opener = "xdg-open";
     let _ = std::process::Command::new(opener).arg(path).spawn();
-}
-
-/// Platform wheel -> logical pixels (`y > 0` scrolls down).
-fn wheel_pixels(delta: MouseScrollDelta, scale: f32) -> f32 {
-    match delta {
-        MouseScrollDelta::LineDelta(_, lines) => -lines * WHEEL_LINE_HEIGHT,
-        MouseScrollDelta::PixelDelta(position) => {
-            -(position.y as f32) / if scale > 0.0 { scale } else { 1.0 }
-        }
-    }
 }
 
 /// The core manifest: the packaged `<app data>/cores/cores.json`, else the
@@ -2759,14 +2559,6 @@ fn game_row(game: Game, cover: Option<FrameHandle>) -> GameRow {
         tags: game.tags,
         screenshots: game.screenshots,
         cover,
-    }
-}
-
-fn pointer_button(button: MouseButton) -> PointerButton {
-    match button {
-        MouseButton::Right => PointerButton::Right,
-        MouseButton::Middle => PointerButton::Middle,
-        _ => PointerButton::Left,
     }
 }
 
@@ -2856,49 +2648,18 @@ fn inside_library(root: &Path, path: &Path) -> bool {
 
 /// The save-state hotkey for a key, matching the old front end's layout: `F5`
 /// quick-saves, `F6` quick-loads, `F1`–`F3` save slots 1–3, and
-/// `Shift`+`F1`–`F3` loads them.
-fn state_shortcut(key: &WinitKey, shift: bool) -> Option<Action> {
+/// `Shift`+`F1`–`F3` loads them. `F11` toggles fullscreen.
+fn state_shortcut(key: Key, shift: bool) -> Option<Action> {
     match key {
-        WinitKey::Named(NamedKey::F11) => Some(Action::ToggleFullscreen),
-        WinitKey::Named(NamedKey::F5) => Some(Action::SaveState(0)),
-        WinitKey::Named(NamedKey::F6) => Some(Action::LoadState(0)),
-        WinitKey::Named(NamedKey::F1) if shift => Some(Action::LoadState(1)),
-        WinitKey::Named(NamedKey::F2) if shift => Some(Action::LoadState(2)),
-        WinitKey::Named(NamedKey::F3) if shift => Some(Action::LoadState(3)),
-        WinitKey::Named(NamedKey::F1) => Some(Action::SaveState(1)),
-        WinitKey::Named(NamedKey::F2) => Some(Action::SaveState(2)),
-        WinitKey::Named(NamedKey::F3) => Some(Action::SaveState(3)),
-        _ => None,
-    }
-}
-
-fn map_key(key: &WinitKey) -> Option<Key> {
-    match key {
-        WinitKey::Named(NamedKey::Enter) => Some(Key::Enter),
-        WinitKey::Named(NamedKey::Escape) => Some(Key::Escape),
-        WinitKey::Named(NamedKey::Backspace) => Some(Key::Backspace),
-        WinitKey::Named(NamedKey::Delete) => Some(Key::Delete),
-        WinitKey::Named(NamedKey::Tab) => Some(Key::Tab),
-        WinitKey::Named(NamedKey::Space) => Some(Key::Space),
-        WinitKey::Named(NamedKey::Home) => Some(Key::Home),
-        WinitKey::Named(NamedKey::End) => Some(Key::End),
-        WinitKey::Named(NamedKey::ArrowUp) => Some(Key::ArrowUp),
-        WinitKey::Named(NamedKey::ArrowDown) => Some(Key::ArrowDown),
-        WinitKey::Named(NamedKey::ArrowLeft) => Some(Key::ArrowLeft),
-        WinitKey::Named(NamedKey::ArrowRight) => Some(Key::ArrowRight),
-        WinitKey::Named(NamedKey::F1) => Some(Key::F1),
-        WinitKey::Named(NamedKey::F2) => Some(Key::F2),
-        WinitKey::Named(NamedKey::F3) => Some(Key::F3),
-        WinitKey::Named(NamedKey::F4) => Some(Key::F4),
-        WinitKey::Named(NamedKey::F5) => Some(Key::F5),
-        WinitKey::Named(NamedKey::F6) => Some(Key::F6),
-        WinitKey::Named(NamedKey::F7) => Some(Key::F7),
-        WinitKey::Named(NamedKey::F8) => Some(Key::F8),
-        WinitKey::Named(NamedKey::F9) => Some(Key::F9),
-        WinitKey::Named(NamedKey::F10) => Some(Key::F10),
-        WinitKey::Named(NamedKey::F11) => Some(Key::F11),
-        WinitKey::Named(NamedKey::F12) => Some(Key::F12),
-        WinitKey::Character(text) => text.chars().next().map(Key::Character),
+        Key::F11 => Some(Action::ToggleFullscreen),
+        Key::F5 => Some(Action::SaveState(0)),
+        Key::F6 => Some(Action::LoadState(0)),
+        Key::F1 if shift => Some(Action::LoadState(1)),
+        Key::F2 if shift => Some(Action::LoadState(2)),
+        Key::F3 if shift => Some(Action::LoadState(3)),
+        Key::F1 => Some(Action::SaveState(1)),
+        Key::F2 => Some(Action::SaveState(2)),
+        Key::F3 => Some(Action::SaveState(3)),
         _ => None,
     }
 }
@@ -2967,25 +2728,13 @@ mod tests {
 
     #[test]
     fn save_state_hotkeys_match_the_old_layout() {
+        assert_eq!(state_shortcut(Key::F5, false), Some(Action::SaveState(0)));
+        assert_eq!(state_shortcut(Key::F6, false), Some(Action::LoadState(0)));
+        assert_eq!(state_shortcut(Key::F1, false), Some(Action::SaveState(1)));
+        assert_eq!(state_shortcut(Key::F1, true), Some(Action::LoadState(1)));
+        assert_eq!(state_shortcut(Key::F4, false), None);
         assert_eq!(
-            state_shortcut(&WinitKey::Named(NamedKey::F5), false),
-            Some(Action::SaveState(0))
-        );
-        assert_eq!(
-            state_shortcut(&WinitKey::Named(NamedKey::F6), false),
-            Some(Action::LoadState(0))
-        );
-        assert_eq!(
-            state_shortcut(&WinitKey::Named(NamedKey::F1), false),
-            Some(Action::SaveState(1))
-        );
-        assert_eq!(
-            state_shortcut(&WinitKey::Named(NamedKey::F1), true),
-            Some(Action::LoadState(1))
-        );
-        assert_eq!(state_shortcut(&WinitKey::Named(NamedKey::F4), false), None);
-        assert_eq!(
-            state_shortcut(&WinitKey::Named(NamedKey::F11), false),
+            state_shortcut(Key::F11, false),
             Some(Action::ToggleFullscreen)
         );
     }

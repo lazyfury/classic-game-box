@@ -3,7 +3,7 @@
 macOS 上的经典游戏机模拟器。**打开就能玩**：把 ROM 拖进窗口，接上手柄或者用键盘。
 
 > **迁移进行中。** 这个仓库正在从 Electron + WebAssembly + 自研 FC 核心，重写成
-> **原生 Rust（[quill](../quill) UI + winit/wgpu）+ 标准 libretro 核心**。
+> **原生 Rust（[igui](https://github.com/lazyfury/igui) UI + winit/wgpu）+ 标准 libretro 核心**。
 > 旧栈完整保留在 [`legacy/`](legacy/)，可继续构建与参考，但不再演进。
 >
 > 权威设计：[`docs/architecture/quill-native-migration.md`](docs/architecture/quill-native-migration.md)。
@@ -12,7 +12,7 @@ macOS 上的经典游戏机模拟器。**打开就能玩**：把 ROM 拖进窗�
 
 | | |
 |---|---|
-| 🎨 **界面** | Rust + quill（`crates/cgb-ui`），原生窗口，wgpu 上屏 |
+| 🎨 **界面** | Rust + [igui](https://github.com/lazyfury/igui)（`crates/cgb-ui`），原生窗口，wgpu 上屏 |
 | 🧩 **核心** | 标准 libretro：**Mesen**（NES）、**mGBA**（GB / GBC / GBA） |
 | 🔌 **兼容层** | `crates/cgb-libretro` 直接 `dlopen` 原生 `.dylib`，实现 libretro frontend |
 | 🔊 **音频** | `crates/cgb-audio`：cpal 输出 + 无锁环形队列 |
@@ -23,8 +23,8 @@ macOS 上的经典游戏机模拟器。**打开就能玩**：把 ROM 拖进窗�
 
 ## 从源码运行
 
-需要：macOS（Apple Silicon）、Rust stable、Xcode 命令行工具；quill 以
-`../quill` 相对路径依赖，请把两个仓库放在同一目录下。
+需要：macOS（Apple Silicon）、Rust stable、Xcode 命令行工具。UI 栈 igui 以
+GitHub **git 依赖**引入（`Cargo.lock` 固定 commit），无需相邻 checkout；首次构建需要联网。
 
 ```bash
 # 1. 构建原生 libretro 核心（第三方项目，首次要联网、几分钟）

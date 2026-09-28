@@ -412,11 +412,6 @@ impl Session {
     pub fn take_message(&self) -> Option<String> {
         self.core.take_message()
     }
-
-    /// One emulated frame, in seconds.
-    pub fn frame_seconds(&self) -> f64 {
-        self.frame_seconds
-    }
 }
 
 impl Drop for Session {

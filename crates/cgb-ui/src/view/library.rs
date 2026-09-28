@@ -16,7 +16,7 @@ use crate::icons::{Icon as SvgIcon, IconName};
 use crate::model::{Action, Confirm, EditKind, EditState, GameRow, SortKey, ViewModel};
 
 use super::components::{
-    chip, chip_bar, chip_group, compact_button, edit_field, grid_viewport, icon_button, spacer,
+    chip, chip_bar, chip_group, compact_button, grid_viewport, icon_button, spacer, text_field,
     window_for,
 };
 use super::Actions;
@@ -145,7 +145,7 @@ pub(super) fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: 
             let done = actions.clone();
             let clear = actions.clone();
             return row
-                .child(edit_field(theme, &edit.text, edit.caret).grow(1.0))
+                .child(text_field(theme, actions, "搜索…").grow(1.0))
                 .child(
                     Button::primary("完成", theme)
                         .mini()
@@ -198,7 +198,7 @@ pub(super) fn edit_bar(theme: &'static dyn Theme, edit: &EditState, actions: &Ac
             Row::new()
                 .align(Align::Center)
                 .gap(space::XS)
-                .child(edit_field(theme, &edit.text, edit.caret).grow(1.0))
+                .child(text_field(theme, actions, "").grow(1.0))
                 .child(
                     Button::primary("保存", theme)
                         .mini()

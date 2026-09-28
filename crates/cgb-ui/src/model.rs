@@ -69,14 +69,12 @@ pub enum EditKind {
 }
 
 /// An in-progress text edit. The app owns the keyboard while this is set and
-/// commits or cancels it; the view draws the field.
+/// commits or cancels it; the view mounts an `igui` `TextInput` from the shared
+/// editing state the app seeded into [`Actions`](crate::Actions).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EditState {
     pub game_id: i64,
     pub kind: EditKind,
-    pub text: String,
-    /// Caret position, a byte index into `text` on a char boundary.
-    pub caret: usize,
 }
 
 /// A post-process preset for the game picture.

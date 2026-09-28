@@ -27,11 +27,12 @@ pub fn run() -> i32 {
     let mut failed = 0usize;
     let mut warn = 0usize;
     type Check = fn(&Paths) -> Result<(), String>;
-    let checks: [(&str, Check); 4] = [
+    let checks: [(&str, Check); 5] = [
         ("paths", check_paths),
         ("library", check_library),
         ("settings", check_settings),
         ("icons", check_icons),
+        ("render", check_render),
     ];
     for (name, check) in checks {
         match check(&paths) {
@@ -174,6 +175,78 @@ fn check_icons(_paths: &Paths) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Build the library page, lay it out and paint it into a `DrawList`, then run
+/// the structural inspector. This exercises the view → tree → paint path with
+/// no window (the `igui` recording route), and asserts a semantic anchor so the
+/// check is not just "it drew something".
+fn check_render(_paths: &Paths) -> Result<(), String> {
+    use cgb_ui::{game_theme, Actions, Ui, ViewModel};
+    use igui::igui_core::{Size, ViewportSize};
+    use igui::igui_profile::{inspect, FrameCounters, FrameStats, Severity, StageTimes};
+    use igui::igui_render::{DrawCommand, PaintContext};
+    use igui::igui_theme::Mode;
+
+    let theme = game_theme(Mode::Dark);
+    let actions = Actions::default();
+    let model = ViewModel {
+        games: (0..40).map(sample_game).collect(),
+        // The app feeds the measured viewport back after the first layout; the
+        // virtualized grid uses it to size the mounted row window.
+        grid_viewport: 760.0,
+        ..ViewModel::default()
+    };
+    let mut ui = Ui::new(theme, &model, &actions);
+    let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+    ui.layout(viewport);
+    let mut ctx = PaintContext::new();
+    ui.paint(&mut ctx);
+    let list = ctx.into_draw_list();
+    if list.is_empty() {
+        return Err("the library page painted nothing".to_string());
+    }
+    let stats = FrameStats {
+        index: 0,
+        frame_ms: 0.0,
+        stages: StageTimes::new(0.0, 0.0, 0.0, 0.0),
+        counters: FrameCounters::new(ui.tree().node_count(), 0, list.commands().len(), 1),
+    };
+    let report = inspect(&list, &stats);
+    if report.count_of(Severity::Error) > 0 {
+        let finding = report
+            .findings()
+            .iter()
+            .find(|finding| finding.severity == Severity::Error)
+            .expect("an error finding");
+        return Err(format!("draw list inspector: {}", finding.summary()));
+    }
+    let labelled = list.commands().iter().any(
+        |command| matches!(command, DrawCommand::DrawText { text, .. } if text.contains("游戏库")),
+    );
+    if !labelled {
+        return Err("the library title was not painted".to_string());
+    }
+    Ok(())
+}
+
+/// A minimal library row for the render check.
+fn sample_game(index: usize) -> cgb_ui::GameRow {
+    cgb_ui::GameRow {
+        id: index as i64,
+        name: format!("Game {index}"),
+        file_name: format!("game{index}.nes"),
+        system: SystemId::Nes,
+        path: format!("/roms/game{index}.nes"),
+        size: (index as u64 + 1) * 4096,
+        pinned: index % 17 == 0,
+        play_count: (index % 9) as i64,
+        play_seconds: (index % 3600) as i64,
+        last_played_at: (index as i64) * 1000,
+        tags: Vec::new(),
+        screenshots: 0,
+        cover: None,
+    }
 }
 
 /// Parse the core manifest, returning how many cores it declares and which

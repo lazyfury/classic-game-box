@@ -568,17 +568,16 @@ fn the_status_line_colours_by_severity() {
     assert_eq!(colour(&model), Some(theme.palette().success));
 }
 
-/// The edit bar shows the text with a caret, and its buttons commit or
-/// cancel the edit.
+/// The edit bar shows a `TextInput` with the pending value, and its buttons
+/// commit or cancel the edit.
 #[test]
 fn the_edit_bar_shows_the_field_and_commits() {
     let actions = Actions::default();
+    actions.set_edit(Rc::new(RefCell::new(TextEdit::new("New Name"))));
     let model = ViewModel {
         editing: Some(EditState {
             game_id: 0,
             kind: EditKind::Name,
-            text: "New Name".to_string(),
-            caret: 3,
         }),
         ..ViewModel::default()
     };
@@ -590,9 +589,7 @@ fn the_edit_bar_shows_the_field_and_commits() {
         })
     };
     assert!(has("改名"), "the bar is labelled");
-    assert!(has("New"), "the text before the caret");
-    assert!(has("|"), "the caret");
-    assert!(has("Name"), "the text after the caret");
+    assert!(has("New Name"), "the field renders the pending value");
 
     click(&mut tree, text_position(&list, "保存"));
     assert_eq!(actions.drain(), vec![Action::CommitEdit]);

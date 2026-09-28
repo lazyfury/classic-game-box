@@ -7,8 +7,8 @@ The Rust workspace. One concern per crate; the dependency direction is
 
 | crate | type | responsibility |
 |---|---|---|
-| `cgb-app` | bin `classic-game-box` | winit + wgpu host, frame loop, wiring |
-| `cgb-ui` | lib | quill views built from a pure `ViewModel` |
+| `cgb-app` | bin `classic-game-box` | `igui_app` runtime host (winit + wgpu + input/IME), `AppLogic` frame loop, wiring |
+| `cgb-ui` | lib | igui views built from a pure `ViewModel` |
 | `cgb-libretro` | lib | libretro front end: `dlopen`, callbacks, ABI |
 | `cgb-systems` | lib | system/core registry, joypad ids (dependency-free) |
 | `cgb-audio` | lib | cpal output + SPSC ring buffer (int16 stereo) |

@@ -4,8 +4,13 @@
 > 代码骨架在 `crates/`、`cores/`，旧栈整体移到 `legacy/` 只作参考。
 > 决策已确认：目标核心是 **Mesen**（不是构建系统 Meson），UI 先做**最小闭环**，
 > 手柄用 **gilrs**，自研核心保留在 `legacy/` 作对照。
-> 目标：用 Rust + [quill](../../legacy/README.md)（`../quill`）重写前端，**只做 UI 与 libretro 兼容**，
+> 目标：用 Rust + [igui](https://github.com/lazyfury/igui) 重写前端，**只做 UI 与 libretro 兼容**，
 > 接入 **Mesen**（NES）、**mGBA**（GB/GBA）与 **MAME 2003-Plus**（街机）等原生 libretro core。
+>
+> **更新（igui 迁移）**：UI 栈已从相邻 `../quill` 改为 GitHub `igui` 的 git 依赖，固定
+> `v0.2.0`；crate 前缀 `draw_*` → `igui_*`，上游的 `Widget` / `NodeDecor` 已被显式 control
+> 模型（`Container` + `ControlContent`）取代。`cgb-app` 现跑在 `igui_app` 插件运行时上，
+> TextInput / IME 与帧循环见 §8、§10。
 
 ---
 
@@ -30,19 +35,18 @@
 ## 1. 范围
 
 ### 做
-- 原生窗口 + GPU 上屏（quill `draw_backend_wgpu`）。
+- 原生窗口 + GPU 上屏（quill `igui_backend_wgpu`）。
 - libretro frontend：dlopen core、回调注册、逐帧运行、XRGB8888 画面、int16 stereo 音频、
   键盘/手柄输入、`retro_serialize` 存档与电池存档 `RETRO_MEMORY_SAVE_RAM`。
 - Mesen 与 mGBA 的**原生 macOS 构建**（`cores/`）。
 - 最小闭环 UI：库网格（自建可见行虚拟化）、截图收藏、播放页、设置页、存档槽。
 - 游戏库持久化（SQLite：游戏 + 元数据 + 标签 + 截图）与设置持久化（JSON）。
-- 无截图的自动验证（`draw_backend_recording` + `draw_profile::inspect`）。
+- 无截图的自动验证（`igui_backend_recording` + `igui_profile::inspect`）。
 
 ### 不做（本阶段）
 - 自研 CPU/PPU/APU 模拟逻辑；`fc_*` 私有扩展；金手指原始字节面板。
-- **搜索 / 改名 / 标签编辑的输入 UI**（quill 无 `TextInput`，待自建后再接；数据层已就绪）。
-- **中文输入法（IME）**：自建输入层只处理字符键（拉丁），IME 需要 quill 上游支持或
-  macOS `NSTextInputClient` 桥接；计划中、未做。
+- ~~搜索 / 改名 / 标签编辑的输入 UI~~、~~中文输入法（IME）~~：已用上游
+  `igui_components::TextInput` + `igui_winit::ImePlugin` 实现（见 §10 风险 2）。
 - 倒带、扫描线滤镜、多人手柄的完整矩阵（预留接口，按需接回）。
 - Windows/Linux 打包；只保证 macOS Apple Silicon。
 
@@ -73,7 +77,7 @@
 
 ```
 cgb-app  →  { cgb-ui, cgb-libretro, cgb-audio, cgb-input, cgb-library, cgb-systems }
-cgb-ui        →  cgb-systems, quill(draw_*)
+cgb-ui        →  cgb-systems, igui(facade)+igui_svg+igui_core+igui_scene
 cgb-libretro  →  cgb-systems, libloading
 cgb-input     →  cgb-systems, gilrs
 cgb-audio     →  (cpal)
@@ -115,8 +119,8 @@ legacy/                     # 旧栈整体搬家，只读参考，不参与构�
 
 | crate | 类型 | 职责 | 关键依赖 |
 |---|---|---|---|
-| `cgb-app` | bin | winit 事件循环、wgpu surface、帧循环、接线 | winit, draw_backend_wgpu, 全部内部 crate |
-| `cgb-ui` | lib | quill 视图：侧栏、库列表、播放页、设置页、存档 | draw_{core,scene,ui,render,theme,components}, cgb-systems |
+| `cgb-app` | bin | `igui_app` 插件运行时（winit/wgpu/输入/IME/剪贴板）+ `AppLogic` 帧循环、接线 | igui, igui_winit, 全部内部 crate |
+| `cgb-ui` | lib | igui 视图：侧栏、库列表、播放页、设置页、存档 | igui (facade), igui_svg, igui_core, igui_scene, cgb-systems |
 | `cgb-libretro` | lib | libretro frontend：dlopen、回调、ABI 类型 | libloading, cgb-systems |
 | `cgb-systems` | lib | 纯领域：SystemId、CoreSpec、选核、joypad id | 无 |
 | `cgb-audio` | lib | cpal 输出 + 无锁样本队列（int16 stereo） | cpal, ringbuf |
@@ -164,7 +168,7 @@ dlopen(dylib)
 - `pitch` 是**行字节数**，不等于 `width * 4`；必须按 pitch 逐行拷贝。
 - 格式 `XRGB8888`（内存里 little-endian 是 `B,G,R,X`）→ 转成 quill 后端要的 RGBA8：
   每像素 swizzle（`swap R/B`）。256×240 ≈ 61k 像素/帧，CPU 可接受；
-  后续可在 `draw_backend_wgpu` 增加纹理格式参数省掉这一步（记在风险里）。
+  后续可在 `igui_backend_wgpu` 增加纹理格式参数省掉这一步（记在风险里）。
 - 也接受 **`RGB565`**（上游 mGBA 的输出）：每像素 2 字节。每像素字节数（`bpp`）
   由格式决定，**行切片按 `width * bpp`**，不是写死的 `width * 4`；
   否则 mGBA（240 宽、pitch 512）会越界。`SET_PIXEL_FORMAT` 只在接受时才记录格式，
@@ -174,12 +178,12 @@ dlopen(dylib)
   GBA 240×160、GB 160×144，都要动态处理，不能写死。
 - quill 侧：`WgpuBackend::{register_texture, update_texture}` + `TextureFilter::Nearest`
   + `DrawImage`（缩放由宿主算 destination）。
-- **Q1 已接（过渡方案）**：`draw_ui::Widget` 仍无 image 变体，但 `cgb-ui` 用 quill
-  的公开扩展点自建了叶组件 `frame::FrameImage`（实现 `draw_components::Component`，
+- **Q1 已接（过渡方案）**：`igui_ui::Widget` 仍无 image 变体，但 `cgb-ui` 用 quill
+  的公开扩展点自建了叶组件 `frame::FrameImage`（实现 `igui_components::Component`，
   在 `foreground` 装饰器里发 `DrawImage`，与 `Divider` 同一条路）。它按
   [`contain_fit`](../../crates/cgb-ui/src/frame.rs) 按比例放大到**撑满较短的一边**、
   较长的一边居中留黑边（非整数缩放；像素会略不均匀，换取画面尽量大）。
-  **仍待做（属于 quill）**：`Widget::Image` + `draw_components::Image` 才是上游正解，
+  **仍待做（属于 quill）**：`Widget::Image` + `igui_components::Image` 才是上游正解，
   这样任何 view 都能画图；本地组件只是不阻塞 Q1。
 
 ### 5.4 音频
@@ -309,8 +313,8 @@ Esc 退出。这不是纯审美：库网格一屏就能给每帧加两三千条 
 预览截图时右栏显示大图。删除游戏或截图前有确认条。窗口在 macOS 用 full-size content view，
 header 预留安全区（标题栏高度 + 红绿灯宽度）。
 
-游戏库用 `draw_components::Grid`，列数随中栏宽度 2/3/4 级（`cgb_ui::library_columns`；中栏由
-`draw_components::ResizeHandle` 拖动，宽度存在共享的 `Rc<Cell<f32>>`，拖动不重建树）。列数变化
+游戏库用 `igui_components::Grid`，列数随中栏宽度 2/3/4 级（`cgb_ui::library_columns`；中栏由
+`igui_components::ResizeHandle` 拖动，宽度存在共享的 `Rc<Cell<f32>>`，拖动不重建树）。列数变化
 由 `cgb-app` 节流触发重建；重建会重新接上正在进行的拖动（`Ui::rebuild` 的 re-arm），所以拖动
 不会被列数切换打断。网格**只挂可见行**：`cgb-ui` 按 `ScrollViewState` 的 offset/viewport 算出行
 窗口（`visible_rows`），上下用 `spacer` 撑出完整内容高度，行高固定（`CARD_HEIGHT`）。滚动状态
@@ -320,7 +324,8 @@ header 预留安全区（标题栏高度 + 红绿灯宽度）。
 **画面**：`cgb-ui` 的 `frame::FrameImage`（见 §5.3）在 `foreground` 装饰器里发
 `DrawImage`；卡片图标光栅化成纹理，每帧一条 `DrawImage`。上游 `Image` 组件仍是待补项。
 
-**未做**：改名 / 标签编辑 / 搜索（quill 无 `TextInput`，待自建）。
+**已做**：改名 / 标签编辑 / 搜索用 `igui_components::TextInput`（自带 caret / 选区 /
+IME 预编辑）。
 
 ---
 
@@ -336,7 +341,7 @@ ControlFlow::WaitUntil(now + frame_budget)
 ```
 
 - 没有游戏时退回事件驱动（`Wait`），不空转。
-- 画面用 `draw_backend_wgpu::TextureId` 流式更新（`update_texture`，不重新分配）。
+- 画面用 `igui_backend_wgpu::TextureId` 流式更新（`update_texture`，不重新分配）。
 - **DrawList 复用**：只在 `dirty` / 输入 / resize / 滚动时重建 DrawList；否则复用上一帧的
   list 重新 `submit`（游戏纹理是原地更新的），运行游戏时不重排不重绘。
 - **可见行虚拟化**：库/截图网格只挂视口内的行（见 §7），滚动一步的成本取决于视口而非游戏数。
@@ -353,13 +358,13 @@ ControlFlow::WaitUntil(now + frame_budget)
 
 ### 8.1 profiler
 
-`CGB_PERF=1` 打开 `draw_profile`：每帧打印 `layout/paint/submit/commands`，用 `draw_profile::inspect`
+`CGB_PERF=1` 打开 `igui_profile`：每帧打印 `layout/paint/submit/commands`，用 `igui_profile::inspect`
 审计当帧 `DrawList`（命令预算、SAVE/RESTORE 配平、退化/非有限几何等），每 120 帧打印一次聚合
 `FrameSummary`（均值/最大/近似 fps/各阶段均值/命令峰值）。`perf` 关闭时 `Profiler` 不存在，热路径零开销。
 
 ### 8.2 benchmark
 
-`crates/cgb-ui/benches/ui.rs` 用 `draw_bench` 跑 CPU 帧管线（`cargo bench -p cgb-ui`）：
+`crates/cgb-ui/benches/ui.rs` 用 `igui_bench` 跑 CPU 帧管线（`cargo bench -p cgb-ui`）：
 
 ```bash
 cargo bench -p cgb-ui                 # 全量
@@ -397,14 +402,15 @@ cargo bench -p cgb-ui -- --baseline benches/baseline.txt        # 回归门（�
 ## 10. 风险
 
 1. **Mesen 1.x 的 arm64 原生编译**——最不确定，Q1 先 spike；不行则换 Mesen2 或只留 mGBA。
-2. **quill 无 TextInput / 无音频 / 无手柄**——音频手柄自建（本计划已定），TextInput 后置。
+2. **TextInput / IME**——已解决：改名 / 搜索 / 标签用 `igui_components::TextInput`，
+   窗口由 `igui_winit::ImePlugin` 驱动；音频手柄本就是自建。
 3. **每帧 XRGB8888/RGB565→RGBA 转换** 有 CPU 成本；量大再给后端加纹理格式。
-3b. **quill 没有 Image 组件**——Q1 已用 `cgb-ui::frame::FrameImage`（`Component` +
-   `foreground` 装饰器）绕过；上游补 `Widget::Image` / `draw_components::Image` 后，
-   这个本地组件可以撤掉。
-4. **连续帧循环** quill 未原生支持，需在 `cgb-app` 自建（方案见 §8）。
+3b. **Image 组件**——`cgb-ui::frame::FrameImage`（`Component` + `Spec::foreground`）仍
+   自绘 `DrawImage`；上游若有标准 image 内容类型可替换。
+4. **帧循环**——已解决：`cgb-app` 跑在 `igui_app` 运行时上，`AppLogic::needs_frame` +
+   `Session::advance(dt)` 的时间累积；§8 的 `WaitUntil` 自建不再需要。
 5. **UI 功能面大**（旧前端约 1 万行 TS）——本阶段只做最小闭环，不追 1:1。
-6. **quill 以 path 依赖 `../quill`**——需要同级 checkout；后续可改成 git rev 锁定。
+6. **依赖形态**——已解决：igui 为 GitHub git 依赖，`Cargo.lock` 固定 commit，无需相邻 checkout。
 
 ---
 
@@ -413,7 +419,7 @@ cargo bench -p cgb-ui -- --baseline benches/baseline.txt        # 回归门（�
 沿用 quill / 旧仓库的「不截图」纪律：
 
 - `cargo check --workspace` / `cargo test --workspace` / `cargo fmt --check`。
-- UI 用 `draw_backend_recording` 录 `DrawList`，`draw_profile::inspect` 查结构错误，
+- UI 用 `igui_backend_recording` 录 `DrawList`，`igui_profile::inspect` 查结构错误，
   断言文字与关键命令，不驱动真实窗口。
 - core 侧用假 frontend 单测：直接调 `retro_*`，断言回调次数与内容（沿用旧 `test_libretro.cpp` 思路）。
 - 端到端：加载合成 NROM / 一个真实 ROM，跑 N 帧，像素哈希稳定。
@@ -450,8 +456,8 @@ host 暴露 `retro_cheat_set/reset`（loader 已解析）；导入 RetroArch `.c
 前端环缓冲：每 **2** 帧 `retro_serialize` 一次，回溯上限 **10 秒**；按住键 `unserialize` 回退。
 
 ### F. 扫描线等后处理 shader
-扩展 quill `draw_backend_wgpu`，加一个「后处理」能力（把帧纹理经命名 shader + uniforms
-画到目标）。预置 关 / 扫描线 / CRT / LCD 网格 / 锐化，参数存 settings。
+用 igui `igui_backend_wgpu::TextureEffect`（帧纹理经命名 shader + uniforms 画到目标）。
+预置 关 / 扫描线 / CRT / LCD 网格 / 锐化，参数存 settings。
 
 ### B. 核心能力增强
 `GET_CORE_OPTIONS_VERSION` / `SET_CORE_OPTIONS(_V2)` / `GET_VARIABLE` + 设置 UI
@@ -462,4 +468,4 @@ Arcade 缺 BIOS 提示；截图多选 / 批量删 / 导出；FBNeo 编译 `-Os`/
 库增量扫描（用 `mtime_ms`）；中栏可拖动分隔。
 
 ### 仍后置
-中文输入法（IME，需 quill 上游或 `NSTextInputClient`）；mGBA `.gba` 整机人眼验证。
+mGBA `.gba` 整机人眼验证；CJK 输入法的人眼验收（代码已接）。
