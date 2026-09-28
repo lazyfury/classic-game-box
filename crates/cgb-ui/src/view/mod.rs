@@ -224,14 +224,8 @@ pub fn build(
     // the caller mounts the target UI once it settles.
     if model.ui_hidden {
         mounted_rows.set((0, 0));
-        // A black "loading" surface while the OS animates the window.
         return (
-            Flex::column()
-                .grow(1.0)
-                .anchors(Edges::new(0.0, 0.0, 1.0, 1.0))
-                .surface(SurfaceStyle::new(Color::BLACK))
-                .mouse_filter(MouseFilter::Ignore)
-                .into_tree(),
+            Flex::column().mouse_filter(MouseFilter::Ignore).into_tree(),
             None,
         );
     }
