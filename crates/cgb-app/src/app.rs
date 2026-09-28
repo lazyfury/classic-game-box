@@ -7,7 +7,7 @@
 //! `Wait` and does no work. See `docs/architecture/quill-native-migration.md`
 //! §8.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -120,7 +120,6 @@ const BUNDLED_ARCADE_SYSTEM: &str = "assets/roms/arcade/system";
 pub fn run(args: Args) {
     let app = App::new(args);
     let drops: Rc<RefCell<Vec<PathBuf>>> = app.pending_drops.clone();
-    let resized: Rc<Cell<bool>> = app.resized.clone();
     let title = "Classic Game Box".to_string();
     let size = (1100.0, 760.0);
     IguiApp::new(AppConfig {
@@ -150,17 +149,17 @@ pub fn run(args: Args) {
     .plugin(ImePlugin)
     .plugin(TextMeasurePlugin)
     .plugin(ClipboardPlugin)
-    .plugin(HostPlugin { drops, resized })
+    .plugin(HostPlugin { drops })
     .logic(app)
     .build()
     .run();
 }
 
 /// Bridges host platform events the app cares about into shared flags: files
-/// dropped on the window, and window resizes (which force a re-layout).
+/// dropped on the window. (Window resizes are picked up from the presenter's
+/// viewport, so a repeated resize does not force a redundant re-layout.)
 struct HostPlugin {
     drops: Rc<RefCell<Vec<PathBuf>>>,
-    resized: Rc<Cell<bool>>,
 }
 
 impl Plugin for HostPlugin {
@@ -171,25 +170,18 @@ impl Plugin for HostPlugin {
     fn build(&self, app: &mut AppBuilder) {
         app.add_platform_observer(HostObserver {
             drops: self.drops.clone(),
-            resized: self.resized.clone(),
         });
     }
 }
 
 struct HostObserver {
     drops: Rc<RefCell<Vec<PathBuf>>>,
-    resized: Rc<Cell<bool>>,
 }
 
 impl PlatformObserver for HostObserver {
     fn on_platform(&mut self, event: PlatformEvent<'_>, _out: &mut Vec<InputEvent>) {
-        let Some(event) = event.downcast_ref::<WindowEvent>() else {
-            return;
-        };
-        match event {
-            WindowEvent::DroppedFile(path) => self.drops.borrow_mut().push(path.clone()),
-            WindowEvent::Resized(_) => self.resized.set(true),
-            _ => {}
+        if let Some(WindowEvent::DroppedFile(path)) = event.downcast_ref::<WindowEvent>() {
+            self.drops.borrow_mut().push(path.clone());
         }
     }
 }
@@ -280,9 +272,10 @@ struct App {
     /// delivers one `DroppedFile` event per file (through the host's observer),
     /// so they are buffered and added in one batch.
     pending_drops: Rc<RefCell<Vec<PathBuf>>>,
-    /// Set by the host when the window was resized, so the next frame lays out
-    /// for the new viewport.
-    resized: Rc<Cell<bool>>,
+    /// The viewport the mounted tree was last laid out for. A resize only
+    /// forces a re-layout when this actually changes (a fullscreen transition
+    /// fires many repeats).
+    last_viewport: Option<ViewportSize>,
 
     /// When the running game's play time was last flushed to the database.
     last_play_flush: Instant,
@@ -426,7 +419,7 @@ impl App {
             cores,
             modifiers: Modifiers::NONE,
             pending_drops: Rc::new(RefCell::new(Vec::new())),
-            resized: Rc::new(Cell::new(false)),
+            last_viewport: None,
             last_play_flush: Instant::now(),
             fps: 0.0,
             fps_frames: 0,
@@ -2202,11 +2195,6 @@ impl App {
     }
 
     fn advance_frame(&mut self, dt: f32) {
-        if self.resized.replace(false) {
-            // The surface follows the window; the UI must lay out for the new
-            // viewport.
-            self.ui.request_repaint();
-        }
         self.flush_drops();
         // Overlay timers (a message counting down) advance with the clock.
         self.ui.update(dt);
@@ -2492,7 +2480,15 @@ impl AppLogic for App {
     }
 
     fn layout(&mut self, ctx: &FrameContext<'_>) {
-        self.layout_ui(ctx.viewport());
+        // Re-layout only when the viewport actually changed: a fullscreen
+        // transition fires many `Resized` events, and a repeated same-size one
+        // must not re-lay-out the (heavy) library shell.
+        let viewport = ctx.viewport();
+        if self.last_viewport != Some(viewport) {
+            self.last_viewport = Some(viewport);
+            self.repaint = true;
+        }
+        self.layout_ui(viewport);
     }
 
     fn paint(&mut self, _ctx: &FrameContext<'_>, paint: &mut PaintContext) {
