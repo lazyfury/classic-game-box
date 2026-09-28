@@ -1106,8 +1106,7 @@ impl App {
             games.retain(|game| game.system == system);
         }
         if !self.model.search.is_empty() {
-            let needle = self.model.search.to_lowercase();
-            games.retain(|game| game.name.to_lowercase().contains(&needle));
+            games.retain(|game| game_matches_search(game, &self.model.search));
         }
         order_games(&mut games, key, desc);
         let covers = &self.cover_textures;
@@ -2548,6 +2547,27 @@ fn system_counts(games: &[Game]) -> Vec<SystemCount> {
         .collect()
 }
 
+/// Whether `game` matches a library search query.
+///
+/// Whitespace-separated tokens are AND-ed. A token starting with `#` matches a
+/// tag (substring, case-insensitive); any other token matches the display name
+/// (substring, case-insensitive). So `mario #rpg` finds names containing
+/// "mario" that also carry an "rpg" tag.
+fn game_matches_search(game: &Game, query: &str) -> bool {
+    query.split_whitespace().all(|token| {
+        if let Some(tag) = token.strip_prefix('#') {
+            let tag = tag.to_lowercase();
+            tag.is_empty()
+                || game
+                    .tags
+                    .iter()
+                    .any(|candidate| candidate.to_lowercase().contains(&tag))
+        } else {
+            game.name.to_lowercase().contains(&token.to_lowercase())
+        }
+    })
+}
+
 /// Project a library row into the view model's row.
 fn game_row(game: Game, cover: Option<FrameHandle>) -> GameRow {
     GameRow {
@@ -2691,6 +2711,22 @@ mod tests {
             screenshots: 0,
             tags: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_hash_token_searches_tags() {
+        let mut game = db_game("Super Mario", 1, false);
+        game.tags = vec!["RPG".to_string(), "经典".to_string()];
+        assert!(game_matches_search(&game, ""));
+        assert!(game_matches_search(&game, "mario"));
+        assert!(game_matches_search(&game, "#rpg"), "a #tag matches a tag");
+        assert!(game_matches_search(&game, "#经典"), "CJK tags match too");
+        assert!(game_matches_search(&game, "mario #RPG"), "AND-ed tokens");
+        assert!(
+            !game_matches_search(&game, "mario #action"),
+            "a missing tag fails the match"
+        );
+        assert!(!game_matches_search(&game, "zelda"));
     }
 
     #[test]

@@ -643,7 +643,7 @@ fn the_edit_field_focuses_and_accepts_text() {
 fn the_search_bar_starts_and_reflects_the_query() {
     let actions = Actions::default();
     let (mut tree, list) = laid_out(&ViewModel::default(), &actions);
-    click(&mut tree, text_position(&list, "搜索…"));
+    click(&mut tree, text_position(&list, "搜索名称 / #标签…"));
     assert_eq!(actions.drain(), vec![Action::StartSearch]);
 
     let model = ViewModel {

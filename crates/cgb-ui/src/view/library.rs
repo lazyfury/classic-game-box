@@ -52,7 +52,7 @@ pub(super) fn library_page(
 
     if model.games.is_empty() {
         let empty = if !model.search.is_empty() {
-            EmptyState::new("没有匹配的游戏", theme).description("换个关键词试试。")
+            EmptyState::new("没有匹配的游戏", theme).description("换个关键词，或用 #标签 过滤。")
         } else if model.system_filter.is_some() {
             EmptyState::new("该机种还没有游戏", theme).description("点“全部”看整个游戏库。")
         } else {
@@ -145,7 +145,7 @@ pub(super) fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: 
             let done = actions.clone();
             let clear = actions.clone();
             return row
-                .child(text_field(theme, actions, "搜索…").grow(1.0))
+                .child(text_field(theme, actions, "名称 / #标签…").grow(1.0))
                 .child(
                     Button::primary("完成", theme)
                         .mini()
@@ -160,13 +160,14 @@ pub(super) fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: 
     }
     let start = actions.clone();
     let label = if model.search.is_empty() {
-        "搜索…".to_string()
+        "搜索名称 / #标签…".to_string()
     } else {
         format!("搜索：{}", model.search)
     };
     row = row.child(
         Button::ghost(label, theme)
             .mini()
+            .grow(1.0)
             .on_click(move || start.push(Action::StartSearch)),
     );
     if !model.search.is_empty() {
