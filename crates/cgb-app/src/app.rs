@@ -286,6 +286,12 @@ struct App {
 
     /// When the running game's play time was last flushed to the database.
     last_play_flush: Instant,
+    /// Emulated frames per second: a short moving average of the core's frame
+    /// deltas, shown in the play column.
+    fps: f32,
+    /// The core frame counter and wall time the current FPS window started at.
+    fps_frames: u32,
+    fps_time: Instant,
     /// When the grid's column count was last recomputed from the middle width.
     /// Throttles the rebuild a column change triggers while the divider is
     /// dragged.
@@ -422,6 +428,9 @@ impl App {
             pending_drops: Rc::new(RefCell::new(Vec::new())),
             resized: Rc::new(Cell::new(false)),
             last_play_flush: Instant::now(),
+            fps: 0.0,
+            fps_frames: 0,
+            fps_time: Instant::now(),
             last_columns_check: Instant::now(),
         };
         app.refresh_library();
@@ -2050,6 +2059,19 @@ impl App {
                 self.model.paused = false;
                 self.model.status.clear();
                 self.session = Some(session);
+                // Reset the on-screen FPS window for the new machine; show the
+                // core's nominal rate until the first measured window.
+                self.fps = self
+                    .session
+                    .as_ref()
+                    .map(|session| session.target_fps())
+                    .unwrap_or(0.0);
+                self.fps_frames = self
+                    .session
+                    .as_ref()
+                    .map(|session| session.frame_index())
+                    .unwrap_or(0);
+                self.fps_time = Instant::now();
                 // Cheats are per game and applied right after load.
                 let cheat_path = cgb_library::cheat_file(&self.paths.cheats, rom_path);
                 self.cheats = cgb_library::load_cheats(&cheat_path);
@@ -2232,6 +2254,7 @@ impl App {
                 }
             }
         }
+        self.refresh_play_info();
 
         if self.dirty {
             self.rebuild_ui();
@@ -2240,6 +2263,52 @@ impl App {
         // updates its texture in place, so its frames re-submit the previous
         // list instead of laying out and painting the whole UI again.
         self.repaint = self.ui.take_repaint() || self.draw_list.is_none();
+    }
+
+    /// Recompute the play column's live info (FPS / resolution / core) and push
+    /// it into the mounted text node, without rebuilding the tree.
+    fn refresh_play_info(&mut self) {
+        let (frames, core_name) = match self.session.as_ref() {
+            Some(session) => (session.frame_index(), session.core_name().to_string()),
+            None => {
+                self.fps = 0.0;
+                if !self.model.info.is_empty() {
+                    self.model.info.clear();
+                    self.ui.set_info("");
+                }
+                return;
+            }
+        };
+        // A half-second window: long enough to be stable, short enough to feel
+        // live. Between ticks the mounted readout is left as is (unless it has
+        // not been mounted yet).
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.fps_time).as_secs_f32();
+        let tick = elapsed >= 0.5;
+        if tick {
+            let instant = frames.wrapping_sub(self.fps_frames) as f32 / elapsed;
+            self.fps = if self.fps <= 0.0 {
+                instant
+            } else {
+                self.fps * 0.5 + instant * 0.5
+            };
+            self.fps_frames = frames;
+            self.fps_time = now;
+        }
+        if !tick && !self.model.info.is_empty() {
+            return;
+        }
+        let (width, height) = self
+            .model
+            .frame
+            .as_ref()
+            .map(|frame| (frame.width, frame.height))
+            .unwrap_or((0, 0));
+        self.model.info = format!(
+            "{} FPS · {width}×{height} · {core_name}",
+            self.fps.round() as i32
+        );
+        self.ui.set_info(&self.model.info);
     }
 
     /// Resolve layout when the tree changed. The library / screenshots grids

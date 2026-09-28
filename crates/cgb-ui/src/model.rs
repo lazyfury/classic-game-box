@@ -398,6 +398,9 @@ pub struct ViewModel {
     pub search: String,
     /// The screenshot being previewed in the play column, by id.
     pub preview: Option<i64>,
+    /// The play column's live info line (FPS / resolution / core). The host
+    /// updates the mounted text node in place, so it does not rebuild the tree.
+    pub info: String,
     /// Whether the screenshots page is in multi-select mode.
     pub screenshot_select: bool,
     /// The screenshots ticked for a batch delete.
@@ -470,6 +473,7 @@ impl Default for ViewModel {
             grid_viewport: 0.0,
             search: String::new(),
             preview: None,
+            info: String::new(),
             screenshot_select: false,
             selected_screenshots: Vec::new(),
             editing: None,

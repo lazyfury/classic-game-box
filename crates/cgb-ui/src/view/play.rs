@@ -24,12 +24,13 @@ pub(super) fn fullscreen_play(
     theme: &'static dyn Theme,
     model: &ViewModel,
     actions: &Actions,
+    info_ref: &NodeRef,
 ) -> Column {
     let mut column = Column::new()
         .gap(0.0)
         .padding(Edges::ZERO)
         .mouse_filter(MouseFilter::Ignore)
-        .child(fullscreen_bar(theme, model, actions));
+        .child(fullscreen_bar(theme, model, actions, info_ref));
     match &model.frame {
         Some(frame) => {
             column =
@@ -56,6 +57,7 @@ pub(super) fn fullscreen_bar(
     theme: &'static dyn Theme,
     model: &ViewModel,
     actions: &Actions,
+    info_ref: &NodeRef,
 ) -> Column {
     let title = model
         .selected
@@ -76,6 +78,14 @@ pub(super) fn fullscreen_bar(
             .max_lines(1)
             .ellipsis(true),
     );
+    if !model.info.is_empty() {
+        row = row.child(
+            Text::caption(model.info.clone(), theme)
+                .tone(Tone::Muted)
+                .max_lines(1)
+                .ref_(info_ref),
+        );
+    }
     if !model.status.is_empty() {
         row = row.child(
             Text::caption(model.status.clone(), theme)
@@ -111,6 +121,7 @@ pub(super) fn play_column(
     theme: &'static dyn Theme,
     model: &ViewModel,
     actions: &Actions,
+    info_ref: &NodeRef,
 ) -> Column {
     if let Some(id) = model.preview {
         if let Some(shot) = model.screenshots.iter().find(|shot| shot.id == id) {
@@ -132,7 +143,21 @@ pub(super) fn play_column(
         .map(|game| game.name.clone())
         .or_else(|| (!model.core_name.is_empty()).then(|| model.core_name.clone()))
         .unwrap_or_else(|| "没有选中游戏".to_string());
-    column = column.child(Text::subheading(title, theme).max_lines(1).ellipsis(true));
+    let mut title_row = Row::new().align(Align::Center).gap(space::SM).child(
+        Text::subheading(title, theme)
+            .grow(1.0)
+            .max_lines(1)
+            .ellipsis(true),
+    );
+    if !model.info.is_empty() {
+        title_row = title_row.child(
+            Text::caption(model.info.clone(), theme)
+                .tone(Tone::Muted)
+                .max_lines(1)
+                .ref_(info_ref),
+        );
+    }
+    column = column.child(title_row);
 
     // The framebuffer itself: it grows into the remaining space and centres a
     // letterboxed picture inside whatever rectangle it gets.

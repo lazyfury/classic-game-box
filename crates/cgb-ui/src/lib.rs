@@ -75,6 +75,8 @@ pub struct Ui {
     /// The row range the active virtualized grid mounted in the current tree.
     /// The app uses it to skip a rebuild while scrolling inside it.
     mounted_rows: Cell<(usize, usize)>,
+    /// The play column's live info label (FPS / resolution), updated in place.
+    info_label: NodeRef,
 }
 
 impl Ui {
@@ -85,6 +87,7 @@ impl Ui {
         ));
         let resize_handle = NodeRef::new();
         let mounted_rows = Cell::new((0, 0));
+        let info_label = NodeRef::new();
         let (tree, middle_scroll) = view::build(
             theme,
             model,
@@ -92,6 +95,7 @@ impl Ui {
             &middle_width,
             &resize_handle,
             &mounted_rows,
+            &info_label,
         );
         let tips = resolve_tips(actions.take_tips());
         Self {
@@ -107,6 +111,7 @@ impl Ui {
             middle_width,
             resize_handle,
             mounted_rows,
+            info_label,
         }
     }
 
@@ -135,6 +140,7 @@ impl Ui {
             &self.middle_width,
             &self.resize_handle,
             &self.mounted_rows,
+            &self.info_label,
         );
         let retheme = !std::ptr::eq(self.theme, theme);
         self.tree = tree;
@@ -194,6 +200,17 @@ impl Ui {
     /// Take the pending repaint flag.
     pub fn take_repaint(&mut self) -> bool {
         std::mem::take(&mut self.repaint)
+    }
+
+    /// Update the play column's info text (FPS / resolution) in place, so a
+    /// live readout does not rebuild the tree. A no-op before the line mounts.
+    pub fn set_info(&mut self, info: &str) {
+        let Some(id) = self.info_label.get() else {
+            return;
+        };
+        if igui::igui_components::set_text(&mut self.tree, id, info) {
+            self.repaint = true;
+        }
     }
 
     /// The middle column's live width, for the host to persist after a drag.

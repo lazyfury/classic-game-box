@@ -208,6 +208,8 @@ impl Actions {
 /// drag across a rebuild (a column-count change rebuilds mid-drag).
 /// `mounted_rows` is set to the row range the active virtualized grid mounts,
 /// so the caller can tell whether a scroll still fits inside it.
+/// `info_ref` receives the play column's live info text node, so the host can
+/// update its FPS / resolution in place without rebuilding the tree.
 pub fn build(
     theme: &'static dyn Theme,
     model: &ViewModel,
@@ -215,6 +217,7 @@ pub fn build(
     middle_width: &Rc<Cell<f32>>,
     handle_ref: &NodeRef,
     mounted_rows: &Cell<(usize, usize)>,
+    info_ref: &NodeRef,
 ) -> (SceneTree, Option<ScrollViewState>) {
     mounted_rows.set(grid_window(model));
     // Immersive play: mount only the game picture and a slim overlay bar, so
@@ -224,7 +227,7 @@ pub fn build(
         mounted_rows.set((0, 0));
         let tree = Flex::column()
             .mouse_filter(MouseFilter::Ignore)
-            .child(fullscreen_play(theme, model, actions))
+            .child(fullscreen_play(theme, model, actions, info_ref))
             .into_tree();
         return (tree, None);
     }
@@ -249,7 +252,7 @@ pub fn build(
                 .child(rail(theme, model, actions))
                 .child(middle(theme, model, actions, &mut scroll, middle_width).ref_(&middle_ref))
                 .child(resize_handle(theme, middle_width, middle_ref).ref_(handle_ref))
-                .child(play_column(theme, model, actions)),
+                .child(play_column(theme, model, actions, info_ref)),
         );
     let tree = Flex::column()
         .mouse_filter(MouseFilter::Ignore)

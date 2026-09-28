@@ -412,6 +412,22 @@ impl Session {
     pub fn take_message(&self) -> Option<String> {
         self.core.take_message()
     }
+
+    /// How many frames the core has produced since load (wraps at `u32`). The
+    /// host takes the delta over wall time for the on-screen FPS.
+    pub fn frame_index(&self) -> u32 {
+        self.frame_index
+    }
+
+    /// The core's nominal frame rate, for the initial readout before the first
+    /// measured window.
+    pub fn target_fps(&self) -> f32 {
+        if self.frame_seconds > 0.0 {
+            (1.0 / self.frame_seconds) as f32
+        } else {
+            60.0
+        }
+    }
 }
 
 impl Drop for Session {

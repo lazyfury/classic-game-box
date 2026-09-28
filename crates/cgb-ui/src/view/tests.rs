@@ -31,6 +31,7 @@ fn laid_out(model: &ViewModel, actions: &Actions) -> (SceneTree, igui::igui_rend
         &width,
         &NodeRef::new(),
         &Cell::new((0, 0)),
+        &NodeRef::new(),
     );
     let viewport = igui::igui_core::ViewportSize::new(Size::new(1100.0, 760.0));
     igui::igui_ui::layout(&mut tree, viewport);
@@ -830,6 +831,7 @@ fn the_play_column_emits_a_draw_image() {
         &width,
         &NodeRef::new(),
         &Cell::new((0, 0)),
+        &NodeRef::new(),
     );
     igui::igui_ui::layout(
         &mut tree,
@@ -1147,6 +1149,7 @@ fn the_settings_page_scrolls_when_it_overflows() {
         &width,
         &NodeRef::new(),
         &Cell::new((0, 0)),
+        &NodeRef::new(),
     );
     let viewport = igui::igui_core::ViewportSize::new(Size::new(1100.0, 760.0));
     igui::igui_ui::layout(&mut tree, viewport);
