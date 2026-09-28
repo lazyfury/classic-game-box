@@ -2,8 +2,7 @@
 //! controls, and the virtualized grid of cover cards.
 
 use igui::igui_components::{
-    Button, Column, Component, EmptyState, Flex, Grid, NodeRef, Row, ScrollView, ScrollViewState,
-    Text,
+    Button, Column, Component, Divider, EmptyState, Flex, Grid, NodeRef, Row, ScrollView, ScrollViewState, Text,
 };
 use igui::igui_core::{Color, Edges};
 use igui::igui_render::Paint;
@@ -43,6 +42,7 @@ pub(super) fn library_page(
     );
     column = column.child(stats_bar(theme, model, actions));
     column = column.child(sort_bar(theme, model, actions));
+    column = column.child(Divider::horizontal(theme));
     column = column.child(search_bar(theme, model, actions));
     if let Some(edit) = &model.editing {
         if edit.kind != EditKind::Search {
@@ -165,8 +165,8 @@ pub(super) fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: 
         format!("搜索：{}", model.search)
     };
     row = row.child(
-        Button::ghost(label, theme)
-            .mini()
+        Button::new("", theme)
+            .child(Row::new().grow(1.0).shrink(1.0).align(Align::Start).justify(Justify::Start).child(Text::caption(label, theme)))
             .grow(1.0)
             .on_click(move || start.push(Action::StartSearch)),
     );
