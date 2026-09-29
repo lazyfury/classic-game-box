@@ -66,7 +66,8 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   线程执行（PPSSPP 的 emu 线程只排命令）。PSP 关闭倒带（state 大）。assets
   （`compat.ini`、字体、shader）由 `build.sh` 取上游 `assets/` 到
   `cores/dist/ppsspp/`，app 启动时递归 seed 到 `<system>/PPSSPP/`；否则核心在
-  `retro_init` 告警 “Core system files missing, expect bugs.”。真机：
+  `retro_init` 告警 “Core system files missing, expect bugs.”。**已完成人工验收**
+  （真实 PSP 游戏出画面 + 声音）。真机：
   `cargo run -p cgb-app -- --rom game.iso --core ppsspp`。
   **注意**：`CoreHost::drop` 必须先调核心的 `context_destroy()` 再
   `retro_unload_game()`（RetroArch 同序）；PPSSPP 在 `retro_unload_game` 里
