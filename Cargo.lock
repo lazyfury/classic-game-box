@@ -1022,8 +1022,8 @@ checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
 name = "igui"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_app",
  "igui_backend_recording",
@@ -1042,8 +1042,8 @@ dependencies = [
 
 [[package]]
 name = "igui_app"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_core",
  "igui_render",
@@ -1051,8 +1051,8 @@ dependencies = [
 
 [[package]]
 name = "igui_backend_recording"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_core",
  "igui_render",
@@ -1060,8 +1060,8 @@ dependencies = [
 
 [[package]]
 name = "igui_backend_wgpu"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "bytemuck",
  "igui_core",
@@ -1073,13 +1073,13 @@ dependencies = [
 
 [[package]]
 name = "igui_bench"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 
 [[package]]
 name = "igui_bench_suite"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_bench",
  "igui_components",
@@ -1091,8 +1091,8 @@ dependencies = [
 
 [[package]]
 name = "igui_components"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_core",
  "igui_render",
@@ -1103,13 +1103,13 @@ dependencies = [
 
 [[package]]
 name = "igui_core"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 
 [[package]]
 name = "igui_font"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "ab_glyph",
  "font8x8",
@@ -1123,8 +1123,8 @@ dependencies = [
 
 [[package]]
 name = "igui_headless"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_app",
  "igui_backend_recording",
@@ -1134,8 +1134,8 @@ dependencies = [
 
 [[package]]
 name = "igui_profile"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_core",
  "igui_render",
@@ -1143,16 +1143,16 @@ dependencies = [
 
 [[package]]
 name = "igui_render"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_core",
 ]
 
 [[package]]
 name = "igui_scene"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_core",
  "igui_render",
@@ -1160,8 +1160,8 @@ dependencies = [
 
 [[package]]
 name = "igui_svg"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_core",
  "igui_render",
@@ -1169,16 +1169,16 @@ dependencies = [
 
 [[package]]
 name = "igui_theme"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_core",
 ]
 
 [[package]]
 name = "igui_ui"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "igui_core",
  "igui_render",
@@ -1187,8 +1187,8 @@ dependencies = [
 
 [[package]]
 name = "igui_winit"
-version = "0.1.0"
-source = "git+https://github.com/lazyfury/igui?rev=ac734a44164f25ebe4c36ac2b7f13b04875f7bf5#ac734a44164f25ebe4c36ac2b7f13b04875f7bf5"
+version = "0.3.0"
+source = "git+https://github.com/lazyfury/igui?tag=v0.3.0#26bea5b727ec4885c57636f3a6e381e90a639453"
 dependencies = [
  "arboard",
  "igui_app",

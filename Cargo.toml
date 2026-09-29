@@ -29,11 +29,11 @@ repository = "https://github.com/lazyfury/classic-game-box"
 # Bump the pin with e.g.
 #   `cargo update -p igui -p igui_svg -p igui_winit -p igui_core`.
 # ---------------------------------------------------------------------------
-igui = { git = "https://github.com/lazyfury/igui", rev = "ac734a44164f25ebe4c36ac2b7f13b04875f7bf5", default-features = false }
-igui_svg = { git = "https://github.com/lazyfury/igui", rev = "ac734a44164f25ebe4c36ac2b7f13b04875f7bf5" }
-igui_winit = { git = "https://github.com/lazyfury/igui", rev = "ac734a44164f25ebe4c36ac2b7f13b04875f7bf5" }
-igui_core = { git = "https://github.com/lazyfury/igui", rev = "ac734a44164f25ebe4c36ac2b7f13b04875f7bf5" }
-igui_scene = { git = "https://github.com/lazyfury/igui", rev = "ac734a44164f25ebe4c36ac2b7f13b04875f7bf5" }
+igui = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0", default-features = false }
+igui_svg = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
+igui_winit = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
+igui_core = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
+igui_scene = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
 
 # ---------------------------------------------------------------------------
 # Internal crates. One concern each; see docs/architecture/quill-native-migration.md.
