@@ -36,6 +36,9 @@ pub const RETRO_ENVIRONMENT_SET_HW_RENDER: c_uint = 14;
 pub const RETRO_ENVIRONMENT_GET_VARIABLE: c_uint = 15;
 pub const RETRO_ENVIRONMENT_SET_VARIABLES: c_uint = 16;
 pub const RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: c_uint = 17;
+/// `RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE`: the front end hands the core a
+/// `retro_rumble_interface` so it can drive controller rumble.
+pub const RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE: c_uint = 23;
 pub const RETRO_ENVIRONMENT_GET_INPUT_DEVICE_CAPABILITIES: c_uint = 24;
 pub const RETRO_ENVIRONMENT_GET_LOG_INTERFACE: c_uint = 27;
 pub const RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY: c_uint = 31;
@@ -43,6 +46,8 @@ pub const RETRO_ENVIRONMENT_SET_CONTROLLER_INFO: c_uint = 35;
 pub const RETRO_ENVIRONMENT_SET_GEOMETRY: c_uint = 37;
 pub const RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION: c_uint = 52;
 pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS: c_uint = 53;
+/// Core options v2, with categories. `data` is a `retro_core_options_v2 *`.
+pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2: c_uint = 67;
 /// `RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER`: the front end hints which
 /// context type a core should pick. `data` is a `enum retro_hw_context_type *`.
 pub const RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER: c_uint = 56;
@@ -175,6 +180,50 @@ pub struct retro_core_option_definition {
     pub info: *const c_char,
     pub values: [retro_core_option_value; RETRO_NUM_CORE_OPTION_VALUES_MAX],
     pub default_value: *const c_char,
+}
+
+/// `struct retro_core_option_v2_category` (core options v2).
+#[repr(C)]
+pub struct retro_core_option_v2_category {
+    pub key: *const c_char,
+    pub desc: *const c_char,
+    pub info: *const c_char,
+}
+
+/// `struct retro_core_option_v2_definition` (core options v2).
+///
+/// Same values as v1 but with a category and two "categorized" labels; the
+/// array is terminated by a zeroed entry.
+#[repr(C)]
+pub struct retro_core_option_v2_definition {
+    pub key: *const c_char,
+    pub desc: *const c_char,
+    pub desc_categorized: *const c_char,
+    pub info: *const c_char,
+    pub info_categorized: *const c_char,
+    pub category_key: *const c_char,
+    pub values: [retro_core_option_value; RETRO_NUM_CORE_OPTION_VALUES_MAX],
+    pub default_value: *const c_char,
+}
+
+/// `struct retro_core_options_v2`: categories plus definitions.
+#[repr(C)]
+pub struct retro_core_options_v2 {
+    pub categories: *mut retro_core_option_v2_category,
+    pub definitions: *mut retro_core_option_v2_definition,
+}
+
+/// `RETRO_RUMBLE_*` effects (`enum retro_rumble_effect`).
+pub const RETRO_RUMBLE_STRONG: c_uint = 0;
+pub const RETRO_RUMBLE_WEAK: c_uint = 1;
+
+/// `struct retro_rumble_interface`: the core calls `set_rumble_state` to drive
+/// a pad's motors. The front end fills the field in on
+/// `GET_RUMBLE_INTERFACE`.
+#[repr(C)]
+pub struct retro_rumble_interface {
+    pub set_rumble_state:
+        Option<unsafe extern "C" fn(port: c_uint, effect: c_uint, strength: u16) -> bool>,
 }
 
 /// `struct retro_input_descriptor`.

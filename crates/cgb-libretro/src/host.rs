@@ -381,6 +381,18 @@ impl HostShared {
                 (*callback).log = core_log as *const () as *mut c_void;
                 true
             }
+            RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE => {
+                if data.is_null() {
+                    return false;
+                }
+                // Same shape of core bug as the log interface above: some
+                // cores (FreeJ2ME-Plus) call `set_rumble_state`
+                // unconditionally once they hold the interface, so declining
+                // leaves them calling a null pointer. Hand back a real no-op.
+                let interface = data as *mut retro_rumble_interface;
+                (*interface).set_rumble_state = Some(set_rumble_state);
+                true
+            }
             RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS => {
                 *lock(&self.input_descriptors) = read_input_descriptors(data);
                 true
@@ -402,16 +414,24 @@ impl HostShared {
                 true
             }
             RETRO_ENVIRONMENT_SET_CONTROLLER_INFO => true,
-            // Core options: we speak v1, so a core with v2/v1 definitions uses
-            // `SET_CORE_OPTIONS`; an older one falls back to `SET_VARIABLES`.
+            // Core options: we speak v2, so a modern core uses
+            // `SET_CORE_OPTIONS_V2` (with categories), a v1 core uses
+            // `SET_CORE_OPTIONS`, and an older one falls back to
+            // `SET_VARIABLES`. FreeJ2ME-Plus only gets this right at v2: at v1
+            // it hands a v2 array to `SET_CORE_OPTIONS`, which would misread.
             RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION => {
                 if !data.is_null() {
-                    *(data as *mut c_uint) = 1;
+                    *(data as *mut c_uint) = 2;
                 }
                 true
             }
             RETRO_ENVIRONMENT_SET_CORE_OPTIONS => {
                 *lock(&self.core_options) = read_core_options(data);
+                self.options_dirty.store(true, Ordering::Relaxed);
+                true
+            }
+            RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2 => {
+                *lock(&self.core_options) = read_core_options_v2(data);
                 self.options_dirty.store(true, Ordering::Relaxed);
                 true
             }
@@ -869,6 +889,12 @@ unsafe extern "C" fn core_log(level: c_uint, fmt: *const c_char) {
     eprintln!("core[{level}]: {text}");
 }
 
+/// `retro_rumble_interface.set_rumble_state`: accept and ignore. Real gamepad
+/// rumble is future work; what matters here is that the pointer is non-null.
+unsafe extern "C" fn set_rumble_state(_port: c_uint, _effect: c_uint, _strength: u16) -> bool {
+    true
+}
+
 unsafe extern "C" fn environment_cb(cmd: c_uint, data: *mut c_void) -> bool {
     match current() {
         Some(host) => host.environment(cmd, data),
@@ -1016,6 +1042,49 @@ unsafe fn read_core_options(data: *mut c_void) -> Vec<HostOption> {
         }
         let key = cstring(definition.key);
         let label = cstring(definition.desc);
+        let default = cstring(definition.default_value);
+        let mut values = Vec::new();
+        for value in definition.values.iter() {
+            if value.value.is_null() {
+                break;
+            }
+            values.push((cstring(value.value), cstring(value.label)));
+        }
+        out.push(host_option(key, label, values, default));
+        cursor = cursor.add(1);
+    }
+    out
+}
+
+/// Copy a core-options v2 set (`SET_CORE_OPTIONS_V2`) into owned options.
+///
+/// Categories are dropped: the settings UI shows one flat list, so an option's
+/// non-categorized label (`desc`) is what it shows. Cores that define v2
+/// options only publish them here.
+///
+/// # Safety
+///
+/// `data` is the pointer libretro passed with `SET_CORE_OPTIONS_V2`.
+unsafe fn read_core_options_v2(data: *mut c_void) -> Vec<HostOption> {
+    let mut out = Vec::new();
+    if data.is_null() {
+        return out;
+    }
+    let options = &*(data as *const retro_core_options_v2);
+    if options.definitions.is_null() {
+        return out;
+    }
+    let mut cursor = options.definitions;
+    loop {
+        let definition = &*cursor;
+        if definition.key.is_null() {
+            break;
+        }
+        let key = cstring(definition.key);
+        let mut label = cstring(definition.desc);
+        if label.is_empty() {
+            label = cstring(definition.desc_categorized);
+        }
         let default = cstring(definition.default_value);
         let mut values = Vec::new();
         for value in definition.values.iter() {
