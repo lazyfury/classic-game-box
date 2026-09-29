@@ -28,6 +28,60 @@
 
 pub mod ffi;
 
+#[cfg(target_os = "macos")]
+mod gl;
+
+/// Hardware rendering is only implemented on macOS (offscreen CGL). Elsewhere
+/// the module exists so `host` compiles, but every context request is refused.
+#[cfg(not(target_os = "macos"))]
+mod gl {
+    use std::ffi::{c_void, CStr};
+
+    pub const DEFAULT_WIDTH: u32 = 640;
+    pub const DEFAULT_HEIGHT: u32 = 480;
+
+    /// Never constructed: [`GlContext::new`] always fails off macOS.
+    pub struct GlContext {
+        width: u32,
+        height: u32,
+    }
+
+    impl GlContext {
+        pub fn new(
+            _width: u32,
+            _height: u32,
+            _depth: bool,
+            _stencil: bool,
+            _flip: bool,
+        ) -> Result<Self, String> {
+            Err("hardware rendering is not implemented on this platform".to_string())
+        }
+
+        pub fn framebuffer(&self) -> u32 {
+            0
+        }
+
+        pub fn make_current(&self) -> Result<(), String> {
+            Err("hardware rendering is not implemented on this platform".to_string())
+        }
+
+        pub fn read_frame(
+            &mut self,
+            _width: u32,
+            _height: u32,
+            _depth: bool,
+            _stencil: bool,
+        ) -> Result<Vec<u8>, String> {
+            let _ = (self.width, self.height);
+            Err("hardware rendering is not implemented on this platform".to_string())
+        }
+    }
+
+    pub fn proc_address(_name: &CStr) -> *mut c_void {
+        std::ptr::null_mut()
+    }
+}
+
 mod error;
 mod host;
 mod loader;

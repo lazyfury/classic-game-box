@@ -111,6 +111,14 @@
       "dylib": "fbneo_libretro.dylib",
       "sample_rate": 48000,
       "fps": 60.0
+    },
+    {
+      "key": "parallel_n64",
+      "name": "ParaLLEl N64",
+      "system": "n64",
+      "dylib": "parallel_n64_libretro.dylib",
+      "sample_rate": 32040,
+      "fps": 60.0
     }
   ]
 }

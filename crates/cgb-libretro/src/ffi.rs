@@ -29,6 +29,10 @@ pub const RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL: c_uint = 8;
 pub const RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: c_uint = 9;
 pub const RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: c_uint = 10;
 pub const RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS: c_uint = 11;
+/// `RETRO_ENVIRONMENT_SET_HW_RENDER`: the core asks the front end for a
+/// graphics context (OpenGL, Vulkan, …). `data` is a
+/// `retro_hw_render_callback *`.
+pub const RETRO_ENVIRONMENT_SET_HW_RENDER: c_uint = 14;
 pub const RETRO_ENVIRONMENT_GET_VARIABLE: c_uint = 15;
 pub const RETRO_ENVIRONMENT_SET_VARIABLES: c_uint = 16;
 pub const RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: c_uint = 17;
@@ -39,6 +43,9 @@ pub const RETRO_ENVIRONMENT_SET_CONTROLLER_INFO: c_uint = 35;
 pub const RETRO_ENVIRONMENT_SET_GEOMETRY: c_uint = 37;
 pub const RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION: c_uint = 52;
 pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS: c_uint = 53;
+/// `RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER`: the front end hints which
+/// context type a core should pick. `data` is a `enum retro_hw_context_type *`.
+pub const RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER: c_uint = 56;
 pub const RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION: c_uint = 59;
 pub const RETRO_ENVIRONMENT_SET_MESSAGE_EXT: c_uint = 60;
 /// `RETRO_ENVIRONMENT_GET_INPUT_BITMASKS` is experimental (`51 | 0x10000`).
@@ -54,6 +61,23 @@ pub const RETRO_MEMORY_SYSTEM_RAM: c_uint = 2;
 pub const RETRO_PIXEL_FORMAT_0RGB1555: c_uint = 0;
 pub const RETRO_PIXEL_FORMAT_XRGB8888: c_uint = 1;
 pub const RETRO_PIXEL_FORMAT_RGB565: c_uint = 2;
+
+/// `RETRO_HW_FRAME_BUFFER_VALID`: the sentinel a hardware-rendering core passes
+/// as `video_refresh`'s `data` to mean "present the context's framebuffer"
+/// (`(void*)-1`). It is not dereferenceable.
+pub const RETRO_HW_FRAME_BUFFER_VALID: usize = usize::MAX;
+
+// --- hardware rendering ---------------------------------------------------
+
+/// `RETRO_HW_CONTEXT_*` enum values. Only the OpenGL desktop kinds can be
+/// satisfied on macOS; anything else is refused.
+pub const RETRO_HW_CONTEXT_NONE: c_int = 0;
+pub const RETRO_HW_CONTEXT_OPENGL: c_int = 1;
+pub const RETRO_HW_CONTEXT_OPENGLES2: c_int = 2;
+pub const RETRO_HW_CONTEXT_OPENGL_CORE: c_int = 3;
+pub const RETRO_HW_CONTEXT_OPENGLES3: c_int = 4;
+pub const RETRO_HW_CONTEXT_OPENGLES_VERSION: c_int = 5;
+pub const RETRO_HW_CONTEXT_VULKAN: c_int = 6;
 
 // --- structs --------------------------------------------------------------
 
@@ -175,6 +199,39 @@ pub struct retro_controller_description {
 pub struct retro_controller_info {
     pub types: *const retro_controller_description,
     pub num_types: c_uint,
+}
+
+/// `retro_hw_context_reset_t`: `void (*)(void)`. Called by the front end when
+/// the context is created (`context_reset`) and just before it is torn down
+/// (`context_destroy`).
+pub type RetroHwContextResetFn = unsafe extern "C" fn();
+/// `retro_hw_get_current_framebuffer_t`: returns the OpenGL framebuffer object
+/// id the core should render into (`uintptr_t`).
+pub type RetroHwGetCurrentFramebufferFn = unsafe extern "C" fn() -> usize;
+/// `retro_hw_get_proc_address_t`: resolves a GL symbol name to its address.
+pub type RetroHwGetProcAddressFn = unsafe extern "C" fn(*const c_char) -> *mut c_void;
+
+/// `struct retro_hw_render_callback`.
+///
+/// The core fills `context_type`, `context_reset`, `context_destroy` and the
+/// depth/stencil/origin/version/cache flags; the front end fills in
+/// `get_current_framebuffer` and `get_proc_address` before returning `true`
+/// from `SET_HW_RENDER`. Field order and types match `libretro.h` exactly.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct retro_hw_render_callback {
+    pub context_type: c_int,
+    pub context_reset: Option<RetroHwContextResetFn>,
+    pub get_current_framebuffer: Option<RetroHwGetCurrentFramebufferFn>,
+    pub get_proc_address: Option<RetroHwGetProcAddressFn>,
+    pub depth: bool,
+    pub stencil: bool,
+    pub bottom_left_origin: bool,
+    pub version_major: c_uint,
+    pub version_minor: c_uint,
+    pub cache_context: bool,
+    pub context_destroy: Option<RetroHwContextResetFn>,
+    pub debug_context: bool,
 }
 
 // --- callback types the front end gives the core --------------------------

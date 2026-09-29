@@ -41,12 +41,23 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   `Session::advance(dt)` 的时间累积驱动，`needs_frame` 在跑游戏/带动画 overlay/倒带时为真。
   改名 / 搜索 / 标签编辑用上游 `igui_components::TextInput`（自带 caret/选区/IME 预编辑）。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
-  （mesen / mgba / nestopia / custom_nes_core / fbneo / genesis_plus_gx / picodrive）；
+  （mesen / mgba / nestopia / custom_nes_core / fbneo / genesis_plus_gx / picodrive /
+  parallel_n64）；
   `--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
   Sega 系（genesis / sms / gg / sg1000）有两个核心：Genesis Plus GX 与轻量的
   PicoDrive（同一模块四个机种，PicoDrive 是首个带 git submodule 的核心）。
   街机是 `SystemId::Arcade`（`.zip` → FBNeo，按 CRC 读标准 Neo Geo 套）。
+- **N64 硬件加速（GL 路径）**：`SystemId::N64`（`.z64/.n64/.v64`）→
+  ParaLLEl-N64 + GLideN64。`cgb-libretro` 实现 `SET_HW_RENDER`：用一个
+  **离屏 CGL 4.1 core 上下文 + FBO**（`crates/cgb-libretro/src/gl.rs`）接管核心
+  的 GL 渲染，每帧 `glReadPixels` 回读成 RGBA8，复用现有 `Frame`/`FrameImage`
+  纹理路径。N64 关闭倒带（state 太大）。计划与进度见
+  `docs/architecture/n64-gl-hw-render-plan.md`；真机验收：
+  `cargo run -p cgb-app -- --rom game.z64 --core parallel_n64`。
+  **注意**：不要换成 Mupen64Plus-Next——它的 GLideN64 在这台 macOS 26 / M4 上
+  渲染黑屏（RetroArch 里同样黑），ParaLLEl-N64 才正常。ParaLLEl-N64 带 arm64
+  dynarec，速度也够。
 
 ## 硬规则
 

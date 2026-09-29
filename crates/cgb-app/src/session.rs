@@ -15,7 +15,7 @@ use cgb_library::{
     save_state_thumb_path, write, StateSlot,
 };
 use cgb_libretro::CoreHost;
-use cgb_systems::{CoreSpec, RETRO_DEVICE_JOYPAD};
+use cgb_systems::{CoreSpec, SystemId, RETRO_DEVICE_JOYPAD};
 use cgb_ui::FrameHandle;
 use igui::igui_backend_wgpu::{TextureEffect, TextureFilter, WgpuBackend};
 use igui::igui_render::TextureId;
@@ -37,6 +37,16 @@ fn rewind_capacity(frame_seconds: f64) -> usize {
     }
     let frames = REWIND_SECONDS / frame_seconds;
     ((frames / REWIND_STRIDE as f64).ceil() as usize).clamp(1, 4096)
+}
+
+/// Whether rewind keeps snapshots for this console.
+///
+/// Rewind holds [`REWIND_SECONDS`] of serialized states in RAM. That is cheap
+/// for the 8/16-bit cores but not for the N64, whose state is tens of
+/// megabytes: a held rewind would balloon memory. Disable it there; the UI just
+/// has nothing to rewind.
+fn rewind_allowed(system: SystemId) -> bool {
+    !matches!(system, SystemId::N64)
 }
 
 /// A loaded cartridge plus everything that runs it.
@@ -145,7 +155,11 @@ impl Session {
             last_pixels: None,
             rewind: VecDeque::new(),
             rewind_stride: REWIND_STRIDE,
-            rewind_capacity: rewind_capacity(frame_seconds),
+            rewind_capacity: if rewind_allowed(spec.system) {
+                rewind_capacity(frame_seconds)
+            } else {
+                0
+            },
             frame_index: 0,
         })
     }

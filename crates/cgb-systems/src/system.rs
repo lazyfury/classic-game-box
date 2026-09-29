@@ -23,6 +23,8 @@ pub enum SystemId {
     Sg1000,
     /// Arcade: a MAME-family core, one ROM set per game.
     Arcade,
+    /// Nintendo 64. Hardware-rendered (OpenGL) via Mupen64Plus-Next/GLideN64.
+    N64,
 }
 
 /// The consoles, in the order the settings screen lists them.
@@ -35,6 +37,7 @@ pub const SYSTEMS: &[SystemId] = &[
     SystemId::GameGear,
     SystemId::Sg1000,
     SystemId::Arcade,
+    SystemId::N64,
 ];
 
 impl SystemId {
@@ -49,6 +52,7 @@ impl SystemId {
             SystemId::GameGear => "Sega Game Gear",
             SystemId::Sg1000 => "SG-1000",
             SystemId::Arcade => "Arcade (MAME)",
+            SystemId::N64 => "Nintendo 64",
         }
     }
 
@@ -64,6 +68,7 @@ impl SystemId {
             SystemId::GameGear => "GG",
             SystemId::Sg1000 => "SG",
             SystemId::Arcade => "ARC",
+            SystemId::N64 => "N64",
         }
     }
 
@@ -80,6 +85,7 @@ impl SystemId {
             SystemId::GameGear => &["gg"],
             SystemId::Sg1000 => &["sg"],
             SystemId::Arcade => &["zip"],
+            SystemId::N64 => &["z64", "n64", "v64"],
         }
     }
 
@@ -94,6 +100,7 @@ impl SystemId {
             SystemId::GameGear => "gg",
             SystemId::Sg1000 => "sg1000",
             SystemId::Arcade => "arcade",
+            SystemId::N64 => "n64",
         }
     }
 
@@ -109,6 +116,7 @@ impl SystemId {
             "gg" => Some(SystemId::GameGear),
             "sg1000" | "sg" => Some(SystemId::Sg1000),
             "arcade" => Some(SystemId::Arcade),
+            "n64" => Some(SystemId::N64),
             _ => None,
         }
     }
@@ -138,6 +146,7 @@ pub fn system_for_path(path: &str) -> SystemId {
         "gg" => SystemId::GameGear,
         "sg" => SystemId::Sg1000,
         "zip" => SystemId::Arcade,
+        "z64" | "n64" | "v64" => SystemId::N64,
         _ => SystemId::Nes,
     }
 }
@@ -160,6 +169,9 @@ mod tests {
         assert_eq!(system_for_path("columns.gg"), SystemId::GameGear);
         assert_eq!(system_for_path("girls.sg"), SystemId::Sg1000);
         assert_eq!(system_for_path("puckman.zip"), SystemId::Arcade);
+        assert_eq!(system_for_path("mario.z64"), SystemId::N64);
+        assert_eq!(system_for_path("MARIO.N64"), SystemId::N64);
+        assert_eq!(system_for_path("mario.v64"), SystemId::N64);
     }
 
     #[test]

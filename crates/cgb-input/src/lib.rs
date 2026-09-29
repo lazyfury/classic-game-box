@@ -167,6 +167,18 @@ impl KeyboardBindings {
             bindings.bind(Key::Character('b'), JoypadButton::L); // Genesis Y
             bindings.bind(Key::Character('n'), JoypadButton::R); // Genesis Z
             bindings.bind(Key::Character('m'), JoypadButton::R2); // Mode
+        } else if system == SystemId::N64 {
+            // Mupen64Plus-Next's libretro ids (see its input descriptors):
+            // N64 A = JOYPAD_B, N64 B = JOYPAD_Y, Z = L2, R shoulder = R2,
+            // L shoulder = Select, and the C buttons = X / A / L / R. The base
+            // layout already covers A (`z`/`j`), the D-pad and Start; add the
+            // missing buttons. Binding `x` to Y replaces its base A mapping.
+            bindings.bind(Key::Character('x'), JoypadButton::Y); // N64 B
+            bindings.bind(Key::Character('c'), JoypadButton::L2); // Z trigger
+            bindings.bind(Key::Character('v'), JoypadButton::R2); // R shoulder
+            bindings.bind(Key::Character('i'), JoypadButton::X); // C-Up
+            bindings.bind(Key::Character('j'), JoypadButton::L); // C-Left
+            bindings.bind(Key::Character('l'), JoypadButton::R); // C-Right
         }
         bindings
     }
@@ -542,6 +554,33 @@ mod tests {
             0,
         );
         assert!(!nes.is_down(0, JoypadButton::Y));
+    }
+
+    #[test]
+    fn the_n64_layout_adds_the_z_trigger_and_c_buttons() {
+        let bindings = KeyboardBindings::default_bindings_for(SystemId::N64);
+        let mut state = InputState::new();
+        for (key, button) in [
+            ('x', JoypadButton::Y),  // N64 B
+            ('c', JoypadButton::L2), // Z trigger
+            ('v', JoypadButton::R2), // R shoulder
+            ('i', JoypadButton::X),  // C-Up
+            ('j', JoypadButton::L),  // C-Left
+            ('l', JoypadButton::R),  // C-Right
+            ('z', JoypadButton::B),  // N64 A
+        ] {
+            bindings.apply(Key::Character(key), true, &mut state, 0);
+            assert!(state.is_down(0, button), "{key:?} -> {button:?}");
+        }
+        // A plain console keeps `x` on A and leaves the C buttons alone.
+        let mut nes = InputState::new();
+        KeyboardBindings::default_bindings_for(SystemId::Nes).apply(
+            Key::Character('c'),
+            true,
+            &mut nes,
+            0,
+        );
+        assert!(!nes.is_down(0, JoypadButton::L2));
     }
 
     #[test]

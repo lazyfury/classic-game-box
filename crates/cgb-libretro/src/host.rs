@@ -18,7 +18,7 @@
 //! and [`CoreHost::load_game`] enforce that order.
 
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_uint, c_void};
+use std::os::raw::{c_char, c_int, c_uint, c_void};
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicI16, AtomicPtr, AtomicU16, AtomicU32, Ordering};
@@ -102,6 +102,28 @@ struct HostOption {
     value_c: CString,
 }
 
+/// Hardware-rendering state: whether a GL core is active, plus the destroy
+/// callback and framebuffer flags it asked for. The `GlContext` itself lives in
+/// [`HostShared::gl`].
+#[derive(Clone, Copy, Default)]
+struct HwRenderState {
+    /// The core's `context_reset`, called once `retro_load_game` has returned
+    /// and the offscreen GL context and FBO exist. Deferred on purpose: a core
+    /// may only arm its first-reset hook at the *end* of `retro_load_game`
+    /// (Mupen64Plus-Next sets `first_context_reset` there), so calling it from
+    /// inside `SET_HW_RENDER` leaves the graphics plugin unconnected.
+    reset: Option<RetroHwContextResetFn>,
+    /// The core's `context_destroy`, called just before the context is torn
+    /// down.
+    destroy: Option<RetroHwContextResetFn>,
+    /// Whether depth / stencil attachments were requested (reused when the FBO
+    /// is rebuilt for a new size).
+    depth: bool,
+    stencil: bool,
+    /// True once `SET_HW_RENDER` was accepted and the context is live.
+    active: bool,
+}
+
 /// State shared with the callbacks.
 struct HostShared {
     /// From `RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY`; stable for the host's
@@ -129,6 +151,13 @@ struct HostShared {
     options_dirty: AtomicBool,
     /// The last `SET_MESSAGE` text, taken by the app.
     message: Mutex<Option<String>>,
+    /// Hardware-rendering state (GL core), or defaults when none is active.
+    hw: Mutex<HwRenderState>,
+    /// The offscreen GL context and framebuffer, when a core asked for one.
+    gl: Mutex<Option<crate::gl::GlContext>>,
+    /// Set of the frame size the core reported through
+    /// `RETRO_HW_FRAME_BUFFER_VALID`, pending a read-back in `take_frame`.
+    hw_frame: Mutex<Option<(u32, u32)>>,
 }
 
 impl HostShared {
@@ -146,6 +175,9 @@ impl HostShared {
             core_options: Mutex::new(Vec::new()),
             options_dirty: AtomicBool::new(false),
             message: Mutex::new(None),
+            hw: Mutex::new(HwRenderState::default()),
+            gl: Mutex::new(None),
+            hw_frame: Mutex::new(None),
         }
     }
 
@@ -156,6 +188,13 @@ impl HostShared {
     /// `data` points to `pitch * height` readable bytes in the core's frame
     /// format, as libretro promises for the duration of the callback.
     unsafe fn on_video(&self, data: *const c_void, width: u32, height: u32, pitch: usize) {
+        // A hardware-rendering core hands over a sentinel, not pixels: the image
+        // is in the GL framebuffer and is read back in `take_frame`. Do not
+        // dereference `data`.
+        if data as usize == RETRO_HW_FRAME_BUFFER_VALID {
+            *lock(&self.hw_frame) = Some((width, height));
+            return;
+        }
         if data.is_null() || width == 0 || height == 0 {
             // `GET_CAN_DUPE` is true: no data means "repeat the last frame".
             return;
@@ -223,6 +262,72 @@ impl HostShared {
             let excess = queue.len() - MAX;
             queue.drain(0..excess);
         }
+    }
+
+    /// Accept a hardware-rendering request: build an offscreen GL context and
+    /// FBO, hand the core the two front-end callbacks, then let it create its
+    /// resources by calling its `context_reset`.
+    ///
+    /// Only desktop OpenGL is satisfiable here; every other context type is
+    /// refused so the core can fall back (or report the failure).
+    ///
+    /// # Safety
+    ///
+    /// `data` is the `retro_hw_render_callback *` from `SET_HW_RENDER`.
+    unsafe fn set_hw_render(&self, data: *mut c_void) -> bool {
+        if data.is_null() {
+            return false;
+        }
+        let callback = &mut *(data as *mut retro_hw_render_callback);
+        if callback.context_type != RETRO_HW_CONTEXT_OPENGL_CORE
+            && callback.context_type != RETRO_HW_CONTEXT_OPENGL
+        {
+            return false;
+        }
+
+        let depth = callback.depth;
+        let stencil = callback.stencil;
+        let flip = callback.bottom_left_origin;
+
+        let context = match crate::gl::GlContext::new(
+            crate::gl::DEFAULT_WIDTH,
+            crate::gl::DEFAULT_HEIGHT,
+            depth,
+            stencil,
+            flip,
+        ) {
+            Ok(context) => context,
+            Err(error) => {
+                eprintln!("cgb-libretro: hardware render unavailable: {error}");
+                return false;
+            }
+        };
+        if let Err(error) = context.make_current() {
+            eprintln!("cgb-libretro: hardware render unavailable: {error}");
+            return false;
+        }
+
+        // Fill in the front end's half of the contract before the core uses
+        // any of it.
+        callback.get_current_framebuffer = Some(get_current_framebuffer_cb);
+        callback.get_proc_address = Some(get_proc_address_cb);
+
+        let reset = callback.context_reset;
+        let destroy = callback.context_destroy;
+
+        *lock(&self.gl) = Some(context);
+        {
+            let mut hw = lock(&self.hw);
+            hw.reset = reset;
+            hw.destroy = destroy;
+            hw.depth = depth;
+            hw.stencil = stencil;
+            hw.active = true;
+        }
+
+        // `context_reset` is deliberately *not* called here; see `HwRenderState`.
+        // It runs from `CoreHost::load_game` once `retro_load_game` returns.
+        true
     }
 
     /// The live libretro environment handler. Returns whether the command is
@@ -379,8 +484,17 @@ impl HostShared {
             RETRO_ENVIRONMENT_SET_ROTATION
             | RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL
             | RETRO_ENVIRONMENT_SET_GEOMETRY => true,
-            // Everything else (core options callbacks, VFS, hw render, …) is
-            // reported unsupported so the core degrades predictably.
+            // Hardware rendering: we can offer OpenGL, so a core that wants it
+            // gets a context; the preference hint steers cores that ask.
+            RETRO_ENVIRONMENT_SET_HW_RENDER => self.set_hw_render(data),
+            RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER => {
+                if !data.is_null() {
+                    *(data as *mut c_int) = RETRO_HW_CONTEXT_OPENGL_CORE;
+                }
+                true
+            }
+            // Everything else (core options callbacks, VFS, …) is reported
+            // unsupported so the core degrades predictably.
             _ => false,
         }
     }
@@ -459,6 +573,16 @@ impl CoreHost {
         }
         self.loaded = true;
         self.game_path = Some(path.to_path_buf());
+
+        // A hardware-rendering core builds its GL resources on the first
+        // context reset. That must run *now*, after `retro_load_game` has
+        // returned: the core only arms its first-reset hook at the end of
+        // load_game (this is why the front end must not reset from inside
+        // `SET_HW_RENDER`). The GL context is still current and the FBO exists.
+        let reset = lock(&self.shared.hw).reset.take();
+        if let Some(reset) = reset {
+            unsafe { reset() };
+        }
         Ok(())
     }
 
@@ -474,8 +598,34 @@ impl CoreHost {
     }
 
     /// Take the frame produced since the last call, if any.
+    ///
+    /// Software cores leave their pixels in `video`; a hardware core leaves a
+    /// size marker and the image in the GL framebuffer, so read that back here
+    /// on the calling (main) thread.
     pub fn take_frame(&self) -> Option<Frame> {
-        lock(&self.shared.video).take()
+        if let Some(frame) = lock(&self.shared.video).take() {
+            return Some(frame);
+        }
+        let (width, height) = lock(&self.shared.hw_frame).take()?;
+        let (depth, stencil) = {
+            let hw = lock(&self.shared.hw);
+            (hw.depth, hw.stencil)
+        };
+        let mut guard = lock(&self.shared.gl);
+        let context = guard.as_mut()?;
+        let width = width.max(1);
+        let height = height.max(1);
+        match context.read_frame(width, height, depth, stencil) {
+            Ok(rgba) => Some(Frame {
+                width,
+                height,
+                rgba,
+            }),
+            Err(error) => {
+                eprintln!("cgb-libretro: frame read-back failed: {error}");
+                None
+            }
+        }
     }
 
     /// Drain the audio produced since the last call (int16 stereo, interleaved).
@@ -666,6 +816,18 @@ impl Drop for CoreHost {
             if self.loaded {
                 (self.core.api().unload_game)();
             }
+            // Let the core free its GL objects while the context is still
+            // current, then drop the context and the FBO.
+            let destroy = {
+                let mut hw = lock(&self.shared.hw);
+                let destroy = hw.destroy.take();
+                hw.active = false;
+                destroy
+            };
+            if let Some(destroy) = destroy {
+                destroy();
+            }
+            *lock(&self.shared.gl) = None;
             (self.core.api().deinit)();
         }
     }
@@ -718,6 +880,55 @@ unsafe extern "C" fn video_cb(data: *const c_void, width: c_uint, height: c_uint
     if let Some(host) = current() {
         host.on_video(data, width, height, pitch);
     }
+}
+
+/// `retro_hw_get_current_framebuffer_t`: the FBO id the core renders into.
+unsafe extern "C" fn get_current_framebuffer_cb() -> usize {
+    match current() {
+        Some(host) => lock(&host.gl)
+            .as_ref()
+            .map(|context| context.framebuffer() as usize)
+            .unwrap_or(0),
+        None => 0,
+    }
+}
+
+/// `retro_hw_get_proc_address_t`: resolve a GL symbol for the core.
+unsafe extern "C" fn get_proc_address_cb(symbol: *const c_char) -> *mut c_void {
+    if symbol.is_null() {
+        return ptr::null_mut();
+    }
+    let name = CStr::from_ptr(symbol);
+    // Redirect the core's "default framebuffer" (GL id 0) to the offscreen FBO
+    // the front end owns. Our CGL context has no drawable, so real FBO 0 is not
+    // a valid render target; a core that binds 0 (GLideN64 does) would otherwise
+    // render into nothing.
+    if name.to_bytes() == b"glBindFramebuffer" {
+        return shim_bind_framebuffer as *mut c_void;
+    }
+    crate::gl::proc_address(name)
+}
+
+/// The front end FBO id, or 0 when no hardware context is live.
+fn frontend_framebuffer() -> usize {
+    match current() {
+        Some(host) => lock(&host.gl)
+            .as_ref()
+            .map(|context| context.framebuffer() as usize)
+            .unwrap_or(0),
+        None => 0,
+    }
+}
+
+/// `glBindFramebuffer` interposer: map a bind of the default framebuffer (0) to
+/// the front end's FBO, then call the real function.
+unsafe extern "C" fn shim_bind_framebuffer(target: c_uint, framebuffer: c_uint) {
+    let remapped = if framebuffer == 0 {
+        frontend_framebuffer()
+    } else {
+        framebuffer as usize
+    };
+    crate::gl::bind_framebuffer(target, remapped as c_uint);
 }
 
 unsafe extern "C" fn audio_cb(left: i16, right: i16) {
@@ -934,4 +1145,57 @@ fn scale5(value: u8) -> u8 {
 
 fn scale6(value: u8) -> u8 {
     (value << 2) | (value >> 4)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn host() -> HostShared {
+        HostShared::new(Path::new("/tmp"), Path::new("/tmp"))
+    }
+
+    #[test]
+    fn the_hw_sentinel_is_not_dereferenced() {
+        let host = host();
+        unsafe {
+            host.on_video(RETRO_HW_FRAME_BUFFER_VALID as *const c_void, 640, 480, 0);
+        }
+        assert!(
+            lock(&host.video).is_none(),
+            "no software pixels are produced"
+        );
+        assert_eq!(*lock(&host.hw_frame), Some((640, 480)));
+    }
+
+    #[test]
+    fn preferred_hw_render_is_opengl_core() {
+        let host = host();
+        let mut context_type: c_int = -1;
+        let ok = unsafe {
+            host.environment(
+                RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER,
+                &mut context_type as *mut c_int as *mut c_void,
+            )
+        };
+        assert!(ok);
+        assert_eq!(context_type, RETRO_HW_CONTEXT_OPENGL_CORE);
+    }
+
+    #[test]
+    fn hardware_render_refuses_vulkan() {
+        let host = host();
+        let mut callback = retro_hw_render_callback {
+            context_type: RETRO_HW_CONTEXT_VULKAN,
+            ..Default::default()
+        };
+        let ok = unsafe {
+            host.environment(
+                RETRO_ENVIRONMENT_SET_HW_RENDER,
+                &mut callback as *mut retro_hw_render_callback as *mut c_void,
+            )
+        };
+        assert!(!ok, "Vulkan is not offered");
+        assert!(!lock(&host.hw).active);
+    }
 }

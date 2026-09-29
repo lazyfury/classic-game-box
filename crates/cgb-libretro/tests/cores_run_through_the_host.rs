@@ -178,6 +178,38 @@ fn cores_run_through_the_host() {
         eprintln!("skip: {} not built", picodrive.display());
     }
 
+    // ParaLLEl-N64 is hardware-rendered, so it cannot be driven with a
+    // synthetic ROM (it needs a real IPL3 boot block and an OpenGL frame).
+    // Prove it opens through the loader and declares the N64 content it wants;
+    // the GL path itself is the manual check in
+    // docs/architecture/n64-gl-hw-render-plan.md.
+    let n64 = dist_core("parallel_n64_libretro.dylib");
+    if n64.is_file() {
+        let dir = std::env::temp_dir();
+        let host = CoreHost::new(&n64, &dir, &dir).expect("open parallel_n64");
+        let info = host.system_info();
+        assert!(
+            info.library_name.contains("ParaLLEl"),
+            "{}",
+            info.library_name
+        );
+        for ext in ["z64", "n64", "v64"] {
+            assert!(
+                info.valid_extensions.iter().any(|e| e == ext),
+                "parallel_n64 does not declare .{ext}: {:?}",
+                info.valid_extensions
+            );
+        }
+        eprintln!(
+            "parallel_n64_libretro.dylib: {} ({:?})",
+            info.library_name, info.valid_extensions
+        );
+        drop(host);
+        tested += 1;
+    } else {
+        eprintln!("skip: {} not built", n64.display());
+    }
+
     if tested == 0 {
         eprintln!("skip: no cores built (run ./scripts/build-cores.sh)");
     }

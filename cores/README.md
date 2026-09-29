@@ -11,6 +11,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 | `nestopia` | NES / FC | `libretro/nestopia` | `dist/nestopia_libretro.dylib` | ✅ arm64, synthetic NROM |
 | `custom_nes_core` | NES / FC | `legacy/packages/fc-{core,libretro}` | `dist/custom_nes_core_libretro.dylib` | ✅ arm64 (clang++ direct), synthetic NROM |
 | `fbneo` | Arcade | `libretro/FBNeo` | `dist/fbneo_libretro.dylib` | ✅ arm64, loads standard Neo Geo sets (encrypted C-ROMs) |
+| `parallel_n64` | Nintendo 64 | `libretro/parallel-n64` | `dist/parallel_n64_libretro.dylib` | ✅ arm64 + dynarec, **hardware-rendered** (OpenGL / GLideN64) |
 | `genesis_plus_gx` | MD / Genesis / SMS / GG / SG-1000 | `libretro/Genesis-Plus-GX` | `dist/genesis_plus_gx_libretro.dylib` | 🔧 build.sh added, not yet built/verified |
 | `picodrive` | MD / Genesis / SMS / GG / SG-1000 | `libretro/picodrive` | `dist/picodrive_libretro.dylib` | 🔧 build.sh added, not yet built/verified |
 
@@ -44,7 +45,8 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 - `name` defaults to `key`.
 - `sample_rate` / `fps` are hints only: the real values come from the core's
   own `av_info` after a game loads.
-- `system` is `nes`, `gba`, `gb`, `gbc` or `arcade`; an unknown system is skipped with a
+- `system` is `nes`, `gba`, `gb`, `gbc`, `arcade`, `n64` (or one of the Sega
+  keys); an unknown system is skipped with a
   warning. A duplicate `(system, key)` keeps the first.
 
 The app reads the packaged `<app data>/cores/cores.json`, else this file when

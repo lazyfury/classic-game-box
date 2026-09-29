@@ -50,3 +50,9 @@
 /legacy/electron/release/
 /legacy/third_party/emsdk/
 frames/
+
+# GLideN64 shader cache written into the working directory by the N64 core.
+/Mupen64plus/
+**/Mupen64plus/
+/ParallelN64/
+**/ParallelN64/
