@@ -42,7 +42,7 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   改名 / 搜索 / 标签编辑用上游 `igui_components::TextInput`（自带 caret/选区/IME 预编辑）。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
   （mesen / mgba / nestopia / custom_nes_core / fbneo / genesis_plus_gx / picodrive /
-  parallel_n64）；
+  parallel_n64 / freej2me_plus）；
   `--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
   Sega 系（genesis / sms / gg / sg1000）有两个核心：Genesis Plus GX 与轻量的
@@ -58,6 +58,23 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   **注意**：不要换成 Mupen64Plus-Next——它的 GLideN64 在这台 macOS 26 / M4 上
   渲染黑屏（RetroArch 里同样黑），ParaLLEl-N64 才正常。ParaLLEl-N64 带 arm64
   dynarec，速度也够。
+- **J2ME（Java ME）**：`SystemId::J2me`（`.jar`/`.kjx`）→ **FreeJ2ME-Plus**
+  （`TASEmulators/freej2me-plus`）。它的 libretro 模块只是 C shim，用
+  `fork/exec` 起一个 Java VM（`freej2me_plus-lr.jar`）走 stdin/stdout 管道；
+  软件 XRGB8888 输出。`cores/freej2me_plus/build.sh` 除了 dylib 还编译 jar、
+  用 `jlink` 出精简 JRE（`java.base,java.desktop,jdk.charsets`），产物在
+  `cores/dist/freej2me_plus/`（dylib 在 `cores/dist/`）。app 启动时把 jar seed
+  到 `<app data>/system/`（覆盖旧 jar）、把 `runtime/bin` 前置到 `PATH`（core 用
+  `execvp("java")`），无需系统装 Java。宿主为此支持了 **core options v2** 与
+  **`GET_RUMBLE_INTERFACE`**：FreeJ2ME-Plus 在 v1 下会把 v2 数组当 v1 读
+  （分辨率变 0），且无 rumble 接口时会调空指针而 SIGSEGV；`build.sh` 还给
+  `Libretro.java` 打补丁把管道路径按 UTF-8 解码（否则中文游戏名找不到文件、
+  一直黑屏）、并把按住键的 `keyRepeated` 从每帧 60Hz 限速到“400ms 首延迟 +
+  80ms 间隔”。manifest 的 `option_defaults` 在 load 前把 `freej2me_backlightcolor`
+  默认设成 `Disabled`（核心默认 `Green`，会给整个画面蒙一层绿）。**音频不走 libretro**：
+  声音由 Java 子进程用 JavaSound 直接播到 CoreAudio，能出声但不听前端控制（暂停/音量）
+  ——当前按“保持现状”收尾。已知缺口：
+  **无即时存档（倒带已禁用）、键盘回调未接**（joypad 可玩，手机键盘已映射到手柄）。
 
 ## 硬规则
 
@@ -113,11 +130,19 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/ico
 | 机种 / CoreSpec 选核、joypad id | `crates/cgb-systems/src/` |
 | UI 视图与帧循环 | `crates/cgb-ui/src/`、`crates/cgb-app/src/app.rs`（`AppLogic` + `run` 的插件组装） |
 | 原生 core 构建 / 加核心流程 | `cores/README.md`、`cores/build.sh.example`、`cores/*/build.sh` |
+| J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`crates/cgb-app/src/app.rs`（`j2me_dir` / `prepend_path`） |
 | 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
 | 旧 Electron/C++/wasm 栈 | `legacy/`（只读） |
 
 ## 已知缺口（先记录，不擅自补）
 
+- **J2ME / FreeJ2ME-Plus** 的 `retro_audio_sample_batch` 从不被核心调用：声音是 **Java 子进程
+  自己**用 JavaSound 直接输出到 CoreAudio（能出声，但不进 `cgb-audio`、不随暂停静音、
+  应用内音量无效）。要做统一控制需把 PCM 经管道转给 libretro；当前按“保持现状”收尾。
+  `retro_serialize` 返回 false（**无即时存档/倒带**，`Session` 已按空串拒绝）；
+  核心用 `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK` 收键盘、用 `MOUSE`/`POINTER`
+  收触摸指针，宿主**均未接**（joypad 可用，手机键盘已映射到 16 键）。宿主的
+  `GET_RUMBLE_INTERFACE` 只给一个 no-op（不真震动），仅为避免核心空指针崩溃。
 - igui 仍没有**标准 Image 内容类型**（上游 Stage 33 删了 `Widget`，改用
   `ControlContent`）：`cgb-ui/src/frame.rs` 的 `FrameImage` 仍用 `Component` +
   `Spec::foreground` 自绘 `DrawImage`。上游若有 image 内容类型，可考虑替换本地组件。

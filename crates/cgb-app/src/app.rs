@@ -116,6 +116,13 @@ struct ScreenshotTexture {
 /// directory, like the dev `cores/cores.json` fallback.
 const BUNDLED_ARCADE_SYSTEM: &str = "assets/roms/arcade/system";
 
+/// The FreeJ2ME-Plus bundle: beside the core dylib it carries the
+/// `freej2me_plus-lr.jar` the core loads and a `jlink`-trimmed JRE under
+/// `runtime/`. Built by `cores/freej2me_plus/build.sh`; packaged into the app's
+/// Resources (`freej2me_plus/`). The core starts a Java VM from the system
+/// `PATH`, so the runtime is exposed that way rather than copied.
+const BUNDLED_J2ME: &str = "freej2me_plus";
+
 /// Runs the app on the `igui_app` plugin runtime (winit + wgpu + input).
 pub fn run(args: Args) {
     let app = App::new(args);
@@ -336,6 +343,23 @@ impl App {
             .filter(|dir| dir.is_dir())
             .unwrap_or_else(|| PathBuf::from(BUNDLED_ARCADE_SYSTEM));
         let _ = seed_dir(&bundled_arcade, &paths.system);
+        // J2ME runs the game in a child Java VM: seed the jar into the system
+        // dir the core reads, and put the bundled JRE first on `PATH` so the
+        // core's `execvp("java")` finds it. Without a bundle (never built) the
+        // `PATH` is left alone, so a system `java` still works.
+        if let Some(j2me) = j2me_dir() {
+            // The shipped jar always wins: it is ours, not player data, so a
+            // rebuilt jar (with an upstream fix, say) replaces the copy in the
+            // system dir. `seed_dir` would skip it, since it keeps existing
+            // files to protect a player-supplied BIOS.
+            let jar = j2me.join("freej2me_plus-lr.jar");
+            if jar.is_file() {
+                let _ = std::fs::copy(&jar, paths.system.join("freej2me_plus-lr.jar"));
+            }
+            if let Ok(runtime_bin) = std::fs::canonicalize(j2me.join("runtime/bin")) {
+                prepend_path(&runtime_bin);
+            }
+        }
         let mut settings = Settings::load(&paths.settings_json);
         // Remember where the library is so the next run finds it. An explicit
         // `--library-dir` sticks; so does an install that predates the single
@@ -1093,6 +1117,8 @@ impl App {
             return;
         };
         let core_key = session.core_key().to_string();
+        // A saved choice is a live override of the manifest default applied at
+        // load (see `Session::start`).
         for option in session.core_options() {
             let key = format!("{core_key}:{}", option.key);
             if let Some(value) = self.settings.core_options.get(&key) {
@@ -2724,6 +2750,34 @@ pub(crate) fn resource_dir() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let resources = exe.parent()?.parent()?.join("Resources");
     resources.is_dir().then_some(resources)
+}
+
+/// The bundled FreeJ2ME-Plus jar and JRE: the packaged app's Resources, or the
+/// build output in a checkout. `None` when it was never built, so the app falls
+/// back to a `java` already on `PATH`.
+fn j2me_dir() -> Option<PathBuf> {
+    if let Some(resources) = resource_dir() {
+        let bundled = resources.join(BUNDLED_J2ME);
+        if bundled.is_dir() {
+            return Some(bundled);
+        }
+    }
+    let dev = PathBuf::from("cores/dist").join(BUNDLED_J2ME);
+    dev.is_dir().then_some(dev)
+}
+
+/// Put `dir` first on `PATH`. Process-global, called once at startup before the
+/// window and any worker threads exist. The FreeJ2ME core `chdir`s to the
+/// system directory before it `exec`s `java`, so the entry must be absolute
+/// (the caller canonicalises it).
+fn prepend_path(dir: &Path) {
+    let mut paths = vec![dir.to_path_buf()];
+    if let Some(existing) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&existing));
+    }
+    if let Ok(joined) = std::env::join_paths(paths) {
+        std::env::set_var("PATH", joined);
+    }
 }
 
 /// Map the UI preset to the backend's effect.

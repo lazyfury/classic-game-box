@@ -46,7 +46,9 @@ fn rewind_capacity(frame_seconds: f64) -> usize {
 /// megabytes: a held rewind would balloon memory. Disable it there; the UI just
 /// has nothing to rewind.
 fn rewind_allowed(system: SystemId) -> bool {
-    !matches!(system, SystemId::N64)
+    // The N64's state is tens of megabytes, and the J2ME core cannot serialize
+    // at all (`retro_serialize` returns false), so neither gets a rewind ring.
+    !matches!(system, SystemId::N64 | SystemId::J2me)
 }
 
 /// A loaded cartridge plus everything that runs it.
@@ -94,6 +96,13 @@ impl Session {
     ) -> Result<Self, String> {
         let mut core =
             CoreHost::new(&spec.module, system_dir, save_dir).map_err(|error| error.to_string())?;
+        // The manifest's recommended option values, applied *before* load so a
+        // core that reads an option once at load time sees them (FreeJ2ME-Plus
+        // bakes its LCD backlight mask at load). The player's own saved values
+        // are applied later, live (see `App::reload_core_options`).
+        for (key, value) in &spec.option_defaults {
+            core.set_core_option(key, value);
+        }
         core.load_game(rom_path, data)
             .map_err(|error| error.to_string())?;
         // Both ports are joypads; some cores expect this before input.

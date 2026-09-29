@@ -24,6 +24,7 @@ pub struct Settings {
     pub sg1000_core: Option<String>,
     pub arcade_core: Option<String>,
     pub n64_core: Option<String>,
+    pub j2me_core: Option<String>,
     /// The game library folder: the database, screenshots, saves and cheats
     /// all live under it, so the folder is one self-contained library that can
     /// be copied between machines. `None` means none was chosen yet.
@@ -93,6 +94,7 @@ impl Settings {
             SystemId::Sg1000 => self.sg1000_core.as_deref(),
             SystemId::Arcade => self.arcade_core.as_deref(),
             SystemId::N64 => self.n64_core.as_deref(),
+            SystemId::J2me => self.j2me_core.as_deref(),
         }
     }
 
@@ -108,6 +110,7 @@ impl Settings {
             SystemId::Sg1000 => &mut self.sg1000_core,
             SystemId::Arcade => &mut self.arcade_core,
             SystemId::N64 => &mut self.n64_core,
+            SystemId::J2me => &mut self.j2me_core,
         };
         *slot = key.map(str::to_string);
     }

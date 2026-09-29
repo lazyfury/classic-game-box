@@ -81,6 +81,18 @@ else
 	echo "   注意：cores/dist 里没有 .dylib，打包后没有可运行核心（先跑 ./scripts/build-cores.sh）" >&2
 fi
 
+echo "==> 打包 freej2me（jar + 精简 JRE）"
+# The J2ME core is only a shim: it needs `freej2me_plus-lr.jar` and a Java VM.
+# The bundle built by cores/freej2me_plus/build.sh lives beside the dylibs; the
+# app seeds the jar into the writable system dir and puts `runtime/bin` on PATH.
+J2ME_DIST="$CORES_DIST/freej2me_plus"
+if [ -d "$J2ME_DIST" ]; then
+	mkdir -p "$APP/Contents/Resources/freej2me_plus"
+	cp -R "$J2ME_DIST/." "$APP/Contents/Resources/freej2me_plus/"
+else
+	echo "   注意：$J2ME_DIST 不存在，J2ME 核心将依赖系统的 java（先跑 ./cores/freej2me_plus/build.sh）" >&2
+fi
+
 echo "==> 打包 assets"
 mkdir -p "$APP/Contents/Resources/assets"
 cp -R "$ASSETS/." "$APP/Contents/Resources/assets/"
@@ -94,7 +106,9 @@ fi
 /usr/bin/plutil -lint "$APP/Contents/Info.plist"
 
 echo "==> codesign (ad-hoc)"
-codesign --force --sign - "$APP"
+# `--deep` so the nested JRE under Resources/freej2me_plus/runtime is signed
+# too; ad-hoc is enough for a locally built app, not a distribution signature.
+codesign --force --deep --sign - "$APP"
 codesign --verify --verbose=2 "$APP"
 
 echo "==> 完成"

@@ -18,6 +18,7 @@
 //!   GB/GBC   160x144, 59.7275 fps, 131072 Hz  (mGBA resamples the GB clock)
 //! ```
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::SystemId;
@@ -41,6 +42,12 @@ pub struct CoreSpec {
     pub sample_rate: u32,
     /// A hint for the frame clock. The real rate comes from `av_info`.
     pub frame_seconds: f64,
+    /// Frontend-recommended core-option values, applied for options the player
+    /// has not chosen. A core's own default can be a poor fit for a desktop
+    /// frontend — FreeJ2ME-Plus tints every frame with a green LCD backlight
+    /// until this one is set — so the manifest can pick a saner start. Empty
+    /// means "whatever the core defaults to".
+    pub option_defaults: BTreeMap<String, String>,
 }
 
 impl CoreSpec {
@@ -60,6 +67,7 @@ impl CoreSpec {
             module,
             sample_rate: 0,
             frame_seconds: 1.0 / 60.0,
+            option_defaults: BTreeMap::new(),
         }
     }
 
@@ -109,6 +117,7 @@ mod tests {
             module: PathBuf::from(format!("{key}_libretro.dylib")),
             sample_rate,
             frame_seconds: 1.0 / 60.0,
+            option_defaults: BTreeMap::new(),
         }
     }
 

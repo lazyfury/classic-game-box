@@ -14,6 +14,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 | `parallel_n64` | Nintendo 64 | `libretro/parallel-n64` | `dist/parallel_n64_libretro.dylib` | ✅ arm64 + dynarec, **hardware-rendered** (OpenGL / GLideN64) |
 | `genesis_plus_gx` | MD / Genesis / SMS / GG / SG-1000 | `libretro/Genesis-Plus-GX` | `dist/genesis_plus_gx_libretro.dylib` | 🔧 build.sh added, not yet built/verified |
 | `picodrive` | MD / Genesis / SMS / GG / SG-1000 | `libretro/picodrive` | `dist/picodrive_libretro.dylib` | 🔧 build.sh added, not yet built/verified |
+| `freej2me_plus` | J2ME (Java ME) | `TASEmulators/freej2me-plus` | `dist/freej2me_plus_libretro.dylib` | ✅ arm64, boots a JVM and returns 240×320 frames |
 
 ```bash
 ./scripts/build-cores.sh              # every cores/*/build.sh, in name order
@@ -45,9 +46,14 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 - `name` defaults to `key`.
 - `sample_rate` / `fps` are hints only: the real values come from the core's
   own `av_info` after a game loads.
-- `system` is `nes`, `gba`, `gb`, `gbc`, `arcade`, `n64` (or one of the Sega
-  keys); an unknown system is skipped with a
+- `system` is `nes`, `gba`, `gb`, `gbc`, `arcade`, `n64`, `j2me` (or one of
+  the Sega keys); an unknown system is skipped with a
   warning. A duplicate `(system, key)` keeps the first.
+- `option_defaults` (optional) is a `{ "core_option_key": "value" }` map the
+  app applies **before loading**, for options the player has not chosen. A core's
+  own default can be a poor fit for a desktop frontend: `freej2me_plus` overrides
+  `freej2me_backlightcolor` to `Disabled`, because the core otherwise tints every
+  frame with a green LCD backlight.
 
 The app reads the packaged `<app data>/cores/cores.json`, else this file when
 running from a checkout. `dylib` is a file name resolved in the packaged
@@ -102,6 +108,20 @@ git submodules (`platform/libpicofe`, `cpu/cyclone`, `pico/cd/libchdr`,
 `--recurse-submodules`. It builds from `Makefile.libretro` at the
 `libretro/picodrive` repo root with `platform=osx`, renders **RGB565**, declares
 `need_fullpath`, and lists once per console like Genesis Plus GX.
+
+`freej2me_plus` is the odd one: the libretro module is only a shim that
+`fork/exec`s a Java VM (`freej2me_plus-lr.jar`) and talks to it over
+stdin/stdout. Its `build.sh` therefore also compiles the jar and builds a
+`jlink`-trimmed JRE, and needs a JDK 9+ on the machine (upstream's own Ant
+build instead wants JDK 8; the script compiles with `javac --release 8`, which
+works on any modern JDK). Before compiling it patches `Libretro.java` from a
+pristine copy: decode the piped game/save paths as UTF-8 (non-ASCII names would
+otherwise be "not found" and the JVM exits to a black frame), and rate-limit the
+synthetic key repeat (upstream fires `keyRepeated` every frame, i.e. ~60/s, so a
+held direction races). The outputs land in `cores/dist/freej2me_plus/`
+(`freej2me_plus-lr.jar` + `runtime/`); the app seeds the jar into the writable
+system dir and puts `runtime/bin` on `PATH` so the core finds `java`. See
+`crates/cgb-app/src/app.rs` (`j2me_dir`, `prepend_path`).
 
 `./scripts/build-cores.sh` runs every `cores/*/build.sh` in name order;
 `--skip-mgba` skips the cmake build.

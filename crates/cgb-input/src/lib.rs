@@ -179,6 +179,27 @@ impl KeyboardBindings {
             bindings.bind(Key::Character('i'), JoypadButton::X); // C-Up
             bindings.bind(Key::Character('j'), JoypadButton::L); // C-Left
             bindings.bind(Key::Character('l'), JoypadButton::R); // C-Right
+        } else if system == SystemId::J2me {
+            // FreeJ2ME's libretro buttons, straight from its input descriptors:
+            // Y = "OK/Fire", SELECT = "Left Softkey", START = "Right Softkey",
+            // A/B = Num 9/7, L/R = Num 1/3, X = Num 0, L3 = Num 5, R3 = CLR.
+            //
+            // The game's own confirm is **OK/Fire**, not SELECT: SELECT/START
+            // are the LCDUI softkeys. A Canvas game that checks `FIRE` (or
+            // `KEY_NUM5`) therefore ignores the Select binding, which is why
+            // "some games don't respond to select". Put confirm on Enter/Space
+            // (it was Start) and the softkeys on q/e, so a keyboard has an
+            // obvious OK key as well as both softkeys.
+            bindings.bind(Key::Enter, JoypadButton::Y); // OK/Fire
+            bindings.bind(Key::Space, JoypadButton::Y); // OK/Fire
+            bindings.bind(Key::Character('q'), JoypadButton::Select); // left softkey
+            bindings.bind(Key::Character('e'), JoypadButton::Start); // right softkey
+            bindings.bind(Key::Character('1'), JoypadButton::L); // Num 1
+            bindings.bind(Key::Character('3'), JoypadButton::R); // Num 3
+            bindings.bind(Key::Character('5'), JoypadButton::L3); // Num 5
+            bindings.bind(Key::Character('7'), JoypadButton::B); // Num 7
+            bindings.bind(Key::Character('9'), JoypadButton::A); // Num 9
+            bindings.bind(Key::Character('0'), JoypadButton::R3); // CLR
         }
         bindings
     }
@@ -581,6 +602,32 @@ mod tests {
             0,
         );
         assert!(!nes.is_down(0, JoypadButton::L2));
+    }
+
+    #[test]
+    fn the_j2me_layout_puts_confirm_on_enter() {
+        let bindings = KeyboardBindings::default_bindings_for(SystemId::J2me);
+        let mut state = InputState::new();
+        // Confirm is FreeJ2ME's "OK/Fire" (libretro Y), not Start; Select is
+        // the left softkey, so Enter must not land on Start.
+        bindings.apply(Key::Enter, true, &mut state, 0);
+        assert!(state.is_down(0, JoypadButton::Y));
+        assert!(!state.is_down(0, JoypadButton::Start));
+        bindings.apply(Key::Space, true, &mut state, 0);
+        assert!(state.is_down(0, JoypadButton::Y));
+        for (key, button) in [
+            ('q', JoypadButton::Select), // left softkey
+            ('e', JoypadButton::Start),  // right softkey
+            ('1', JoypadButton::L),
+            ('3', JoypadButton::R),
+            ('5', JoypadButton::L3),
+            ('7', JoypadButton::B),
+            ('9', JoypadButton::A),
+            ('0', JoypadButton::R3),
+        ] {
+            bindings.apply(Key::Character(key), true, &mut state, 0);
+            assert!(state.is_down(0, button), "{key:?} -> {button:?}");
+        }
     }
 
     #[test]

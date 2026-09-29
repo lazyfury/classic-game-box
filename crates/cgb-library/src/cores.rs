@@ -25,6 +25,7 @@
 //! or a path. `key` must be unique **per console**: one module can serve two
 //! consoles (mGBA appears once for GBA and once for GB).
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use cgb_systems::{CoreSpec, SystemId};
@@ -46,6 +47,9 @@ struct Entry {
     sample_rate: u32,
     #[serde(default)]
     fps: f64,
+    /// Frontend-recommended core-option values (see [`CoreSpec::option_defaults`]).
+    #[serde(default)]
+    option_defaults: BTreeMap<String, String>,
 }
 
 /// Read a manifest into specs, or `[]` when it is missing. A malformed file is
@@ -95,6 +99,7 @@ pub fn load_cores(path: &Path) -> Vec<CoreSpec> {
             module: PathBuf::from(entry.dylib),
             sample_rate: entry.sample_rate,
             frame_seconds: 1.0 / fps,
+            option_defaults: entry.option_defaults,
         });
     }
     out
@@ -186,6 +191,37 @@ mod tests {
         assert!(cores
             .iter()
             .any(|core| core.key == "fbneo" && core.system == SystemId::Arcade));
+        // FreeJ2ME-Plus tints every frame with a green LCD backlight by
+        // default; the manifest overrides it to Disabled.
+        let j2me = cores
+            .iter()
+            .find(|core| core.key == "freej2me_plus")
+            .expect("j2me core in the manifest");
+        assert_eq!(
+            j2me.option_defaults
+                .get("freej2me_backlightcolor")
+                .map(String::as_str),
+            Some("Disabled")
+        );
+    }
+
+    #[test]
+    fn a_frontend_option_default_is_parsed() {
+        let path = write_manifest(
+            r#"{ "cores": [
+                { "key": "j2me", "system": "j2me", "dylib": "j2me.dylib",
+                  "option_defaults": { "freej2me_backlightcolor": "Disabled" } }
+            ] }"#,
+        );
+        let cores = load_cores(&path);
+        assert_eq!(
+            cores[0]
+                .option_defaults
+                .get("freej2me_backlightcolor")
+                .map(String::as_str),
+            Some("Disabled")
+        );
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

@@ -119,6 +119,15 @@
       "dylib": "parallel_n64_libretro.dylib",
       "sample_rate": 32040,
       "fps": 60.0
+    },
+    {
+      "key": "freej2me_plus",
+      "name": "FreeJ2ME-Plus",
+      "system": "j2me",
+      "dylib": "freej2me_plus_libretro.dylib",
+      "sample_rate": 44100,
+      "fps": 60.0,
+      "option_defaults": { "freej2me_backlightcolor": "Disabled" }
     }
   ]
 }

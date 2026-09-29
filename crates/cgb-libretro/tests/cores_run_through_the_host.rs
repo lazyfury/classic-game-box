@@ -210,6 +210,65 @@ fn cores_run_through_the_host() {
         eprintln!("skip: {} not built", n64.display());
     }
 
+    // FreeJ2ME-Plus runs the game in a child Java VM, so there is no synthetic
+    // game to load. Prove the core opens, declares the J2ME content it wants,
+    // and — the reason the host speaks core options v2 — parses its options.
+    // FreeJ2ME-Plus only gets this right at v2: at v1 it hands a v2 array to
+    // `SET_CORE_OPTIONS`, whose layout differs, so the resolution default reads
+    // back as 0 and the JVM starts with no screen. Opening the core spawns the
+    // VM, so only do it when the jar and a bundled runtime are both present.
+    let j2me = dist_core("freej2me_plus_libretro.dylib");
+    let j2me_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../cores/dist/freej2me_plus");
+    let jar = j2me_dir.join("freej2me_plus-lr.jar");
+    let runtime_bin = j2me_dir.join("runtime/bin");
+    if j2me.is_file() && jar.is_file() && runtime_bin.join("java").is_file() {
+        let mut paths = vec![std::fs::canonicalize(&runtime_bin).expect("runtime bin")];
+        if let Some(existing) = std::env::var_os("PATH") {
+            paths.extend(std::env::split_paths(&existing));
+        }
+        std::env::set_var("PATH", std::env::join_paths(paths).expect("PATH"));
+
+        let dir = std::env::temp_dir().join(format!("cgb-j2me-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::fs::copy(&jar, dir.join("freej2me_plus-lr.jar")).expect("seed jar");
+
+        let host = CoreHost::new(&j2me, &dir, &dir).expect("open freej2me_plus");
+        let info = host.system_info();
+        assert!(
+            info.library_name.contains("FreeJ2ME"),
+            "{}",
+            info.library_name
+        );
+        for ext in ["jar", "kjx"] {
+            assert!(
+                info.valid_extensions.iter().any(|e| e == ext),
+                "freej2me_plus does not declare .{ext}: {:?}",
+                info.valid_extensions
+            );
+        }
+        assert!(info.need_fullpath, "freej2me reads the jar itself");
+        let options = host.core_options();
+        let resolution = options
+            .iter()
+            .find(|option| option.key == "freej2me_resolution")
+            .expect("v2 core options parsed");
+        assert_eq!(resolution.value, "240x320");
+        assert!(!host.input_descriptors().is_empty(), "input descriptors");
+        eprintln!(
+            "freej2me_plus_libretro.dylib: {} ({} options)",
+            info.library_name,
+            options.len()
+        );
+        // Drop before the next core: the host slot is a single global. This
+        // also kills the child JVM.
+        drop(host);
+        let _ = std::fs::remove_dir_all(&dir);
+        tested += 1;
+    } else {
+        eprintln!("skip: freej2me_plus not built (./cores/freej2me_plus/build.sh)");
+    }
+
     if tested == 0 {
         eprintln!("skip: no cores built (run ./scripts/build-cores.sh)");
     }
