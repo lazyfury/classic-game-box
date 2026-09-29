@@ -25,6 +25,8 @@ pub enum SystemId {
     Arcade,
     /// Nintendo 64. Hardware-rendered (OpenGL) via Mupen64Plus-Next/GLideN64.
     N64,
+    /// PlayStation Portable. Hardware-rendered (OpenGL) via PPSSPP.
+    Psp,
     /// J2ME (Java ME): the feature-phone games. A `.jar` MIDlet suite, run by
     /// a Java VM the core starts as a child process.
     J2me,
@@ -41,6 +43,7 @@ pub const SYSTEMS: &[SystemId] = &[
     SystemId::Sg1000,
     SystemId::Arcade,
     SystemId::N64,
+    SystemId::Psp,
     SystemId::J2me,
 ];
 
@@ -57,6 +60,7 @@ impl SystemId {
             SystemId::Sg1000 => "SG-1000",
             SystemId::Arcade => "Arcade (MAME)",
             SystemId::N64 => "Nintendo 64",
+            SystemId::Psp => "PlayStation Portable",
             SystemId::J2me => "J2ME (Java ME)",
         }
     }
@@ -74,6 +78,7 @@ impl SystemId {
             SystemId::Sg1000 => "SG",
             SystemId::Arcade => "ARC",
             SystemId::N64 => "N64",
+            SystemId::Psp => "PSP",
             SystemId::J2me => "J2ME",
         }
     }
@@ -92,6 +97,9 @@ impl SystemId {
             SystemId::Sg1000 => &["sg"],
             SystemId::Arcade => &["zip"],
             SystemId::N64 => &["z64", "n64", "v64"],
+            // PSP disc/eboot images and CHD-compressed dumps. No other console
+            // here claims these yet; when one does, the scanner must disambiguate.
+            SystemId::Psp => &["iso", "cso", "pbp", "chd"],
             // `.jar` is a MIDlet suite; `.kjx` is a Keitai (i-appli) archive
             // the core also accepts. `.jad` (the descriptor) is not a game.
             SystemId::J2me => &["jar", "kjx"],
@@ -110,6 +118,7 @@ impl SystemId {
             SystemId::Sg1000 => "sg1000",
             SystemId::Arcade => "arcade",
             SystemId::N64 => "n64",
+            SystemId::Psp => "psp",
             SystemId::J2me => "j2me",
         }
     }
@@ -127,6 +136,7 @@ impl SystemId {
             "sg1000" | "sg" => Some(SystemId::Sg1000),
             "arcade" => Some(SystemId::Arcade),
             "n64" => Some(SystemId::N64),
+            "psp" => Some(SystemId::Psp),
             "j2me" | "java" => Some(SystemId::J2me),
             _ => None,
         }
@@ -158,6 +168,7 @@ pub fn system_for_path(path: &str) -> SystemId {
         "sg" => SystemId::Sg1000,
         "zip" => SystemId::Arcade,
         "z64" | "n64" | "v64" => SystemId::N64,
+        "iso" | "cso" | "pbp" | "chd" => SystemId::Psp,
         "jar" | "kjx" => SystemId::J2me,
         _ => SystemId::Nes,
     }
@@ -184,6 +195,10 @@ mod tests {
         assert_eq!(system_for_path("mario.z64"), SystemId::N64);
         assert_eq!(system_for_path("MARIO.N64"), SystemId::N64);
         assert_eq!(system_for_path("mario.v64"), SystemId::N64);
+        assert_eq!(system_for_path("crisis.iso"), SystemId::Psp);
+        assert_eq!(system_for_path("CRISIS.CSO"), SystemId::Psp);
+        assert_eq!(system_for_path("homebrew.pbp"), SystemId::Psp);
+        assert_eq!(system_for_path("dumped.chd"), SystemId::Psp);
         assert_eq!(system_for_path("pileup.jar"), SystemId::J2me);
         assert_eq!(system_for_path("PILEUP.JAR"), SystemId::J2me);
         assert_eq!(system_for_path("keitai.kjx"), SystemId::J2me);

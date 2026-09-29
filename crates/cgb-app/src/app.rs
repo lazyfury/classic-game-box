@@ -33,8 +33,8 @@ use winit::window::{Fullscreen, Window};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{
-    collect_games, decode_png, encode_png, import_roms, load_cores, seed_dir, Game, ImportReport,
-    Library, Paths, Settings,
+    collect_games, decode_png, encode_png, import_roms, load_cores, seed_dir, seed_dir_recursive,
+    Game, ImportReport, Library, Paths, Settings,
 };
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
 use cgb_ui::{
@@ -122,6 +122,12 @@ const BUNDLED_ARCADE_SYSTEM: &str = "assets/roms/arcade/system";
 /// Resources (`freej2me_plus/`). The core starts a Java VM from the system
 /// `PATH`, so the runtime is exposed that way rather than copied.
 const BUNDLED_J2ME: &str = "freej2me_plus";
+
+/// The PPSSPP assets (`compat.ini`, fonts, `shaders/`, `lang/`, …). Built into
+/// `cores/dist/ppsspp/` by `cores/ppsspp/build.sh` and packaged into the app's
+/// Resources (`ppsspp/`). The core reads them from `<system dir>/PPSSPP/`, so
+/// they are seeded there — without `compat.ini` it warns at init.
+const BUNDLED_PPSSPP: &str = "ppsspp";
 
 /// Runs the app on the `igui_app` plugin runtime (winit + wgpu + input).
 pub fn run(args: Args) {
@@ -359,6 +365,13 @@ impl App {
             if let Ok(runtime_bin) = std::fs::canonicalize(j2me.join("runtime/bin")) {
                 prepend_path(&runtime_bin);
             }
+        }
+        // PPSSPP reads its assets from `<system dir>/PPSSPP/`: `compat.ini`
+        // (per-game compatibility fixes) plus fonts, shaders and translations
+        // for its own screens. They are a tree, so seed recursively; a file the
+        // player drops there wins.
+        if let Some(ppsspp) = ppsspp_assets_dir() {
+            let _ = seed_dir_recursive(&ppsspp, &paths.system.join("PPSSPP"));
         }
         let mut settings = Settings::load(&paths.settings_json);
         // Remember where the library is so the next run finds it. An explicit
@@ -2764,6 +2777,20 @@ fn j2me_dir() -> Option<PathBuf> {
     }
     let dev = PathBuf::from("cores/dist").join(BUNDLED_J2ME);
     dev.is_dir().then_some(dev)
+}
+
+/// The bundled PPSSPP assets: the packaged app's Resources, or the build output
+/// in a checkout. `None` when they were never fetched, so a user who installed
+/// them into the system directory by hand is left alone.
+fn ppsspp_assets_dir() -> Option<PathBuf> {
+    if let Some(resources) = resource_dir() {
+        let bundled = resources.join(BUNDLED_PPSSPP);
+        if bundled.join("compat.ini").is_file() {
+            return Some(bundled);
+        }
+    }
+    let dev = PathBuf::from("cores/dist").join(BUNDLED_PPSSPP);
+    dev.join("compat.ini").is_file().then_some(dev)
 }
 
 /// Put `dir` first on `PATH`. Process-global, called once at startup before the

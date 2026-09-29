@@ -46,8 +46,14 @@ pub const RETRO_ENVIRONMENT_SET_CONTROLLER_INFO: c_uint = 35;
 pub const RETRO_ENVIRONMENT_SET_GEOMETRY: c_uint = 37;
 pub const RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION: c_uint = 52;
 pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS: c_uint = 53;
+/// Core options v1 with a translation: `data` is a `retro_core_options_intl *`.
+pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL: c_uint = 54;
 /// Core options v2, with categories. `data` is a `retro_core_options_v2 *`.
 pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2: c_uint = 67;
+/// Core options v2 with a translation: `data` is a `retro_core_options_v2_intl *`.
+/// A core built with translations (e.g. PPSSPP) registers its options through
+/// this instead of `SET_CORE_OPTIONS_V2` whenever the front end answers v2.
+pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL: c_uint = 68;
 /// `RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER`: the front end hints which
 /// context type a core should pick. `data` is a `enum retro_hw_context_type *`.
 pub const RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER: c_uint = 56;
@@ -211,6 +217,22 @@ pub struct retro_core_option_v2_definition {
 pub struct retro_core_options_v2 {
     pub categories: *mut retro_core_option_v2_category,
     pub definitions: *mut retro_core_option_v2_definition,
+}
+
+/// `struct retro_core_options_intl`: a v1 definition array plus a translation.
+/// `local` may be null, in which case `us` is the only text.
+#[repr(C)]
+pub struct retro_core_options_intl {
+    pub us: *mut retro_core_option_definition,
+    pub local: *mut retro_core_option_definition,
+}
+
+/// `struct retro_core_options_v2_intl`: a v2 option set plus a translation.
+/// `local` may be null, in which case `us` is the only text.
+#[repr(C)]
+pub struct retro_core_options_v2_intl {
+    pub us: *mut retro_core_options_v2,
+    pub local: *mut retro_core_options_v2,
 }
 
 /// `RETRO_RUMBLE_*` effects (`enum retro_rumble_effect`).

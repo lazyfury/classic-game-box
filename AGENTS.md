@@ -42,7 +42,7 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   改名 / 搜索 / 标签编辑用上游 `igui_components::TextInput`（自带 caret/选区/IME 预编辑）。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
   （mesen / mgba / nestopia / custom_nes_core / fbneo / genesis_plus_gx / picodrive /
-  parallel_n64 / freej2me_plus）；
+  parallel_n64 / ppsspp / freej2me_plus）；
   `--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
   Sega 系（genesis / sms / gg / sg1000）有两个核心：Genesis Plus GX 与轻量的
@@ -58,6 +58,19 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   **注意**：不要换成 Mupen64Plus-Next——它的 GLideN64 在这台 macOS 26 / M4 上
   渲染黑屏（RetroArch 里同样黑），ParaLLEl-N64 才正常。ParaLLEl-N64 带 arm64
   dynarec，速度也够。
+- **PSP 硬件加速（GL 路径）**：`SystemId::Psp`（`.iso/.cso/.pbp/.chd`）→
+  **PPSSPP**。它复用同一条 `SET_HW_RENDER` 离屏 GL 路径：`cores/ppsspp/build.sh`
+  装 libretro buildbot 的 `apple/osx/arm64` dylib（上游 libretro Makefile 把 arm64
+  当 x86_64、且 ffmpeg 子模块无 arm64 slice，源码构建不现实）；它请求
+  `OPENGL_CORE 3.1`，正好被现有 4.1 core 上下文满足，GL 命令只在 `retro_run`
+  线程执行（PPSSPP 的 emu 线程只排命令）。PSP 关闭倒带（state 大）。assets
+  （`compat.ini`、字体、shader）由 `build.sh` 取上游 `assets/` 到
+  `cores/dist/ppsspp/`，app 启动时递归 seed 到 `<system>/PPSSPP/`；否则核心在
+  `retro_init` 告警 “Core system files missing, expect bugs.”。真机：
+  `cargo run -p cgb-app -- --rom game.iso --core ppsspp`。
+  **注意**：`CoreHost::drop` 必须先调核心的 `context_destroy()` 再
+  `retro_unload_game()`（RetroArch 同序）；PPSSPP 在 `retro_unload_game` 里
+  `delete ctx`，反序会空指针崩溃。
 - **J2ME（Java ME）**：`SystemId::J2me`（`.jar`/`.kjx`）→ **FreeJ2ME-Plus**
   （`TASEmulators/freej2me-plus`）。它的 libretro 模块只是 C shim，用
   `fork/exec` 起一个 Java VM（`freej2me_plus-lr.jar`）走 stdin/stdout 管道；
@@ -136,6 +149,12 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/ico
 
 ## 已知缺口（先记录，不擅自补）
 
+- **Nestopia 的 Blargg NTSC filter 跨核崩溃**：同一个进程里先跑过 Mesen（至少一帧）、
+  再加载 Nestopia 并启用该 filter 时，Nestopia 的 `FilterNtsc` 会读到野指针而段错误。
+  只发生在 Mesen 之后（`dlclose`、日志回调、后台线程都已排除）；其它核心（mGBA /
+  Genesis / FBNeo / PicoDrive / custom_nes_core）之后都正常。已用
+  `cores/cores.json` 的 `option_defaults` 把 `nestopia_blargg_ntsc_filter` 默认设成
+  `disabled` 规避，Nestopia 因而输出 256×224。根因在第三方核心，未深挖。
 - **J2ME / FreeJ2ME-Plus** 的 `retro_audio_sample_batch` 从不被核心调用：声音是 **Java 子进程
   自己**用 JavaSound 直接输出到 CoreAudio（能出声，但不进 `cgb-audio`、不随暂停静音、
   应用内音量无效）。要做统一控制需把 PCM 经管道转给 libretro；当前按“保持现状”收尾。

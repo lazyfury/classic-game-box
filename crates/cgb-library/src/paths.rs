@@ -198,6 +198,41 @@ pub fn seed_dir(bundled: &Path, target: &Path) -> std::io::Result<usize> {
     Ok(copied)
 }
 
+/// Like [`seed_dir`], but copies subdirectories too.
+///
+/// Some cores ship a *tree* of assets, not a flat list of BIOS files: PPSSPP
+/// reads `<system dir>/PPSSPP/` and expects `compat.ini`, `shaders/`, `lang/`,
+/// … The same "a player-supplied file wins" rule applies at every level.
+pub fn seed_dir_recursive(bundled: &Path, target: &Path) -> std::io::Result<usize> {
+    if !bundled.is_dir() {
+        return Ok(0);
+    }
+    std::fs::create_dir_all(target)?;
+    let mut copied = 0;
+    copy_tree(bundled, target, &mut copied)?;
+    Ok(copied)
+}
+
+/// Copy every file under `src` into `dst`, recursing into directories and
+/// skipping names that already exist in the target.
+fn copy_tree(src: &Path, dst: &Path, copied: &mut usize) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(src)? {
+        let path = entry?.path();
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+        let dest = dst.join(name);
+        if path.is_dir() {
+            std::fs::create_dir_all(&dest)?;
+            copy_tree(&path, &dest, copied)?;
+        } else if path.is_file() && !dest.exists() {
+            std::fs::copy(&path, &dest)?;
+            *copied += 1;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,6 +286,29 @@ mod tests {
         let root = temp_dir("missing");
         let target = root.join("target");
         assert_eq!(seed_dir(&root.join("nope"), &target).unwrap(), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn seed_recursive_copies_a_tree_and_keeps_player_files() {
+        let root = temp_dir("tree");
+        let bundled = root.join("bundled");
+        let target = root.join("target");
+        std::fs::create_dir_all(bundled.join("shaders")).unwrap();
+        std::fs::write(bundled.join("compat.ini"), b"bundled").unwrap();
+        std::fs::write(bundled.join("shaders/glsl.frag"), b"shader").unwrap();
+        std::fs::create_dir_all(&target).unwrap();
+        // A player-supplied file (or a seeded one from an earlier run) wins.
+        std::fs::write(target.join("compat.ini"), b"player").unwrap();
+
+        assert_eq!(seed_dir_recursive(&bundled, &target).unwrap(), 1);
+        assert_eq!(std::fs::read(target.join("compat.ini")).unwrap(), b"player");
+        assert_eq!(
+            std::fs::read(target.join("shaders/glsl.frag")).unwrap(),
+            b"shader"
+        );
+        // Seeding again copies nothing.
+        assert_eq!(seed_dir_recursive(&bundled, &target).unwrap(), 0);
         let _ = std::fs::remove_dir_all(&root);
     }
 

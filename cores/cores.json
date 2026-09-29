@@ -94,7 +94,8 @@
       "system": "nes",
       "dylib": "nestopia_libretro.dylib",
       "sample_rate": 48000,
-      "fps": 60.098
+      "fps": 60.098,
+      "option_defaults": { "nestopia_blargg_ntsc_filter": "disabled" }
     },
     {
       "key": "custom_nes_core",
@@ -119,6 +120,14 @@
       "dylib": "parallel_n64_libretro.dylib",
       "sample_rate": 32040,
       "fps": 60.0
+    },
+    {
+      "key": "ppsspp",
+      "name": "PPSSPP",
+      "system": "psp",
+      "dylib": "ppsspp_libretro.dylib",
+      "sample_rate": 44100,
+      "fps": 59.94
     },
     {
       "key": "freej2me_plus",

@@ -49,6 +49,8 @@ cgb-ui = { path = "crates/cgb-ui" }
 # Platform / host dependencies.
 # ---------------------------------------------------------------------------
 libloading = "0.8"
+# Build-dependency of `cgb-libretro`: compiles the C variadic log shim.
+cc = "1"
 cpal = "0.15"
 ringbuf = "0.4"
 gilrs = "0.11"

@@ -12,6 +12,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 | `custom_nes_core` | NES / FC | `legacy/packages/fc-{core,libretro}` | `dist/custom_nes_core_libretro.dylib` | ✅ arm64 (clang++ direct), synthetic NROM |
 | `fbneo` | Arcade | `libretro/FBNeo` | `dist/fbneo_libretro.dylib` | ✅ arm64, loads standard Neo Geo sets (encrypted C-ROMs) |
 | `parallel_n64` | Nintendo 64 | `libretro/parallel-n64` | `dist/parallel_n64_libretro.dylib` | ✅ arm64 + dynarec, **hardware-rendered** (OpenGL / GLideN64) |
+| `ppsspp` | PlayStation Portable | `hrydgard/ppsspp` (buildbot dylib) | `dist/ppsspp_libretro.dylib` | ✅ arm64 (buildbot dylib), **hardware-rendered** (OpenGL) |
 | `genesis_plus_gx` | MD / Genesis / SMS / GG / SG-1000 | `libretro/Genesis-Plus-GX` | `dist/genesis_plus_gx_libretro.dylib` | 🔧 build.sh added, not yet built/verified |
 | `picodrive` | MD / Genesis / SMS / GG / SG-1000 | `libretro/picodrive` | `dist/picodrive_libretro.dylib` | 🔧 build.sh added, not yet built/verified |
 | `freej2me_plus` | J2ME (Java ME) | `TASEmulators/freej2me-plus` | `dist/freej2me_plus_libretro.dylib` | ✅ arm64, boots a JVM and returns 240×320 frames |
@@ -46,14 +47,17 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 - `name` defaults to `key`.
 - `sample_rate` / `fps` are hints only: the real values come from the core's
   own `av_info` after a game loads.
-- `system` is `nes`, `gba`, `gb`, `gbc`, `arcade`, `n64`, `j2me` (or one of
+- `system` is `nes`, `gba`, `gb`, `gbc`, `arcade`, `n64`, `psp`, `j2me` (or one of
   the Sega keys); an unknown system is skipped with a
   warning. A duplicate `(system, key)` keeps the first.
 - `option_defaults` (optional) is a `{ "core_option_key": "value" }` map the
   app applies **before loading**, for options the player has not chosen. A core's
   own default can be a poor fit for a desktop frontend: `freej2me_plus` overrides
   `freej2me_backlightcolor` to `Disabled`, because the core otherwise tints every
-  frame with a green LCD backlight.
+  frame with a green LCD backlight. `nestopia` overrides
+  `nestopia_blargg_ntsc_filter` to `disabled`: its Blargg NTSC filter reads a
+  wild pointer (SIGSEGV) when Nestopia is loaded in-process after Mesen has run
+  a frame, and the crisp 256×224 output suits the nearest-neighbour scaler.
 
 The app reads the packaged `<app data>/cores/cores.json`, else this file when
 running from a checkout. `dylib` is a file name resolved in the packaged
@@ -108,6 +112,17 @@ git submodules (`platform/libpicofe`, `cpu/cyclone`, `pico/cd/libchdr`,
 `--recurse-submodules`. It builds from `Makefile.libretro` at the
 `libretro/picodrive` repo root with `platform=osx`, renders **RGB565**, declares
 `need_fullpath`, and lists once per console like Genesis Plus GX.
+
+`ppsspp` is the PlayStation Portable core. Its `build.sh` installs the libretro
+buildbot's `apple/osx/arm64` dylib instead of compiling: the upstream libretro
+Makefile coerces every `TARGET_ARCH` containing "64" to `x86_64`, and its macOS
+ffmpeg bundle (`hrydgard/ppsspp-ffmpeg`) ships only `macosx/universal` with no
+`arm64` slice, so the buildbot artifact is the maintained arm64 build (override
+with `PPSSPP_URL`). It links only desktop OpenGL, so it rides the same offscreen
+GL path as ParaLLEl-N64. The script also fetches the upstream `assets/` tree
+into `cores/dist/ppsspp/`; the app seeds that into `<system dir>/PPSSPP/` at
+startup (without `compat.ini` the core warns at init), and `package-macos.sh`
+ships it in `Resources/ppsspp/`.
 
 `freej2me_plus` is the odd one: the libretro module is only a shim that
 `fork/exec`s a Java VM (`freej2me_plus-lr.jar`) and talks to it over

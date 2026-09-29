@@ -42,13 +42,14 @@ fn rewind_capacity(frame_seconds: f64) -> usize {
 /// Whether rewind keeps snapshots for this console.
 ///
 /// Rewind holds [`REWIND_SECONDS`] of serialized states in RAM. That is cheap
-/// for the 8/16-bit cores but not for the N64, whose state is tens of
+/// for the 8/16-bit cores but not for the N64 and PSP, whose states are tens of
 /// megabytes: a held rewind would balloon memory. Disable it there; the UI just
 /// has nothing to rewind.
 fn rewind_allowed(system: SystemId) -> bool {
-    // The N64's state is tens of megabytes, and the J2ME core cannot serialize
-    // at all (`retro_serialize` returns false), so neither gets a rewind ring.
-    !matches!(system, SystemId::N64 | SystemId::J2me)
+    // The N64's and PSP's states are tens of megabytes, and the J2ME core
+    // cannot serialize at all (`retro_serialize` returns false), so none of
+    // them gets a rewind ring.
+    !matches!(system, SystemId::N64 | SystemId::Psp | SystemId::J2me)
 }
 
 /// A loaded cartridge plus everything that runs it.

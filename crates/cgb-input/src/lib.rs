@@ -179,6 +179,15 @@ impl KeyboardBindings {
             bindings.bind(Key::Character('i'), JoypadButton::X); // C-Up
             bindings.bind(Key::Character('j'), JoypadButton::L); // C-Left
             bindings.bind(Key::Character('l'), JoypadButton::R); // C-Right
+        } else if system == SystemId::Psp {
+            // PPSSPP's libretro ids: Cross = B, Circle = A, Square = Y,
+            // Triangle = X, L/R = the shoulders. The base layout already
+            // covers Cross (`z`/`j`), Circle (`x`/`k`), the D-pad, Start and
+            // Select; add the two remaining face buttons and the shoulders.
+            bindings.bind(Key::Character('c'), JoypadButton::Y); // Square
+            bindings.bind(Key::Character('v'), JoypadButton::X); // Triangle
+            bindings.bind(Key::Character('q'), JoypadButton::L);
+            bindings.bind(Key::Character('e'), JoypadButton::R);
         } else if system == SystemId::J2me {
             // FreeJ2ME's libretro buttons, straight from its input descriptors:
             // Y = "OK/Fire", SELECT = "Left Softkey", START = "Right Softkey",
@@ -602,6 +611,23 @@ mod tests {
             0,
         );
         assert!(!nes.is_down(0, JoypadButton::L2));
+    }
+
+    #[test]
+    fn the_psp_layout_adds_square_triangle_and_shoulders() {
+        let bindings = KeyboardBindings::default_bindings_for(SystemId::Psp);
+        let mut state = InputState::new();
+        for (key, button) in [
+            ('z', JoypadButton::B), // Cross
+            ('x', JoypadButton::A), // Circle
+            ('c', JoypadButton::Y), // Square
+            ('v', JoypadButton::X), // Triangle
+            ('q', JoypadButton::L),
+            ('e', JoypadButton::R),
+        ] {
+            bindings.apply(Key::Character(key), true, &mut state, 0);
+            assert!(state.is_down(0, button), "{key:?} -> {button:?}");
+        }
     }
 
     #[test]

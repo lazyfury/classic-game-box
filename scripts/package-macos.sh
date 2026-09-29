@@ -93,6 +93,17 @@ else
 	echo "   注意：$J2ME_DIST 不存在，J2ME 核心将依赖系统的 java（先跑 ./cores/freej2me_plus/build.sh）" >&2
 fi
 
+echo "==> 打包 PPSSPP assets"
+# PPSSPP reads `<system dir>/PPSSPP/` (compat.ini, fonts, shaders). The app seeds
+# the bundled copy there at startup; without compat.ini it warns at init.
+PPSSPP_DIST="$CORES_DIST/ppsspp"
+if [ -f "$PPSSPP_DIST/compat.ini" ]; then
+	mkdir -p "$APP/Contents/Resources/ppsspp"
+	cp -R "$PPSSPP_DIST/." "$APP/Contents/Resources/ppsspp/"
+else
+	echo "   注意：$PPSSPP_DIST 不存在，PPSSPP 缺少 assets 会在启动时告警（先跑 ./cores/ppsspp/build.sh）" >&2
+fi
+
 echo "==> 打包 assets"
 mkdir -p "$APP/Contents/Resources/assets"
 cp -R "$ASSETS/." "$APP/Contents/Resources/assets/"

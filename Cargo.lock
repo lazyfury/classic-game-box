@@ -387,6 +387,8 @@ dependencies = [
 name = "cgb-libretro"
 version = "0.2.0"
 dependencies = [
+ "cc",
+ "cgb-library",
  "cgb-systems",
  "libloading",
  "thiserror 2.0.20",

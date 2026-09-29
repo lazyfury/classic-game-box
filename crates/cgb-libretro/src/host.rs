@@ -378,7 +378,7 @@ impl HostShared {
                 // false here leaves them with a null function pointer and they
                 // crash on the first log line. Always hand back a real sink.
                 let callback = data as *mut RetroLogCallback;
-                (*callback).log = core_log as *const () as *mut c_void;
+                (*callback).log = cgb_core_log as *const () as *mut c_void;
                 true
             }
             RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE => {
@@ -432,6 +432,16 @@ impl HostShared {
             }
             RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2 => {
                 *lock(&self.core_options) = read_core_options_v2(data);
+                self.options_dirty.store(true, Ordering::Relaxed);
+                true
+            }
+            RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL => {
+                *lock(&self.core_options) = read_core_options_intl(data);
+                self.options_dirty.store(true, Ordering::Relaxed);
+                true
+            }
+            RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL => {
+                *lock(&self.core_options) = read_core_options_v2_intl(data);
                 self.options_dirty.store(true, Ordering::Relaxed);
                 true
             }
@@ -833,11 +843,14 @@ impl Drop for CoreHost {
         // Unpublish first so no callback can reach a half-dropped host.
         HOST.store(ptr::null_mut(), Ordering::Release);
         unsafe {
-            if self.loaded {
-                (self.core.api().unload_game)();
-            }
-            // Let the core free its GL objects while the context is still
-            // current, then drop the context and the FBO.
+            // Tear down the core's hardware-render resources *before*
+            // `retro_unload_game`: the core expects `context_destroy` while its
+            // game state and our GL context are still alive. RetroArch does the
+            // same — `video_driver_free_hw_context()` (which calls
+            // `context_destroy`) runs before `retro_unload_game()` in
+            // `core_unload_game` (runloop.c). PPSSPP in particular deletes its
+            // graphics context inside `retro_unload_game`, so calling
+            // `context_destroy` afterwards null-derefs and crashes.
             let destroy = {
                 let mut hw = lock(&self.shared.hw);
                 let destroy = hw.destroy.take();
@@ -846,6 +859,12 @@ impl Drop for CoreHost {
             };
             if let Some(destroy) = destroy {
                 destroy();
+            }
+            // Drop the offscreen context and FBO once the core has released
+            // its GL objects, but keep it alive across `unload_game` (a core
+            // may still touch GL while shutting its renderer down).
+            if self.loaded {
+                (self.core.api().unload_game)();
             }
             *lock(&self.shared.gl) = None;
             (self.core.api().deinit)();
@@ -877,15 +896,25 @@ struct RetroLogCallback {
     log: *mut c_void,
 }
 
-/// The front end's log sink. Declared non-variadic on purpose: the core calls
-/// it with a printf-style varargs tail, which this ignores (it prints the
-/// format string). On arm64 the extra arguments sit in registers/stack the
-/// callee never reads, so the mismatch is harmless.
-unsafe extern "C" fn core_log(level: c_uint, fmt: *const c_char) {
-    if fmt.is_null() {
+// The core's log callback is C-variadic, which Rust cannot define on stable.
+// `src/log_shim.c` is the real callback: it `vsnprintf`s the message and calls
+// `cgb_log_emit` with the finished line, so the log shows the actual text
+// instead of the raw format string (e.g. `[%s] %s`).
+extern "C" {
+    fn cgb_core_log(level: c_uint, fmt: *const c_char, ...);
+}
+
+/// The Rust end of [`cgb_core_log`]: print an already-formatted log line.
+///
+/// # Safety
+///
+/// `text` is a NUL-terminated string owned by the shim, valid for this call.
+#[no_mangle]
+unsafe extern "C" fn cgb_log_emit(level: c_uint, text: *const c_char) {
+    if text.is_null() {
         return;
     }
-    let text = CStr::from_ptr(fmt).to_string_lossy();
+    let text = CStr::from_ptr(text).to_string_lossy();
     eprintln!("core[{level}]: {text}");
 }
 
@@ -1099,6 +1128,55 @@ unsafe fn read_core_options_v2(data: *mut c_void) -> Vec<HostOption> {
     out
 }
 
+/// Copy a v1 international set (`SET_CORE_OPTIONS_INTL`), preferring the
+/// English (`us`) definitions; `local` is only a translation of them.
+///
+/// # Safety
+///
+/// `data` is the pointer libretro passed with `SET_CORE_OPTIONS_INTL`.
+unsafe fn read_core_options_intl(data: *mut c_void) -> Vec<HostOption> {
+    if data.is_null() {
+        return Vec::new();
+    }
+    let intl = &*(data as *const retro_core_options_intl);
+    let definitions = if intl.us.is_null() {
+        intl.local
+    } else {
+        intl.us
+    };
+    if definitions.is_null() {
+        return Vec::new();
+    }
+    read_core_options(definitions as *mut c_void)
+}
+
+/// Copy a v2 international set (`SET_CORE_OPTIONS_V2_INTL`), preferring the
+/// English (`us`) definitions.
+///
+/// A translations-enabled core (PPSSPP) registers its options through this
+/// command, not `SET_CORE_OPTIONS_V2`, whenever the front end answers v2.
+/// Missing it leaves every option unset — and a core that reads its render
+/// resolution from an option then renders nothing at all.
+///
+/// # Safety
+///
+/// `data` is the pointer libretro passed with `SET_CORE_OPTIONS_V2_INTL`.
+unsafe fn read_core_options_v2_intl(data: *mut c_void) -> Vec<HostOption> {
+    if data.is_null() {
+        return Vec::new();
+    }
+    let intl = &*(data as *const retro_core_options_v2_intl);
+    let set = if intl.us.is_null() {
+        intl.local
+    } else {
+        intl.us
+    };
+    if set.is_null() {
+        return Vec::new();
+    }
+    read_core_options_v2(set as *mut c_void)
+}
+
 /// Copy a core-options v0 array (`SET_VARIABLES`) into owned options.
 ///
 /// Each `value` is `"Description; value1|value2|…"`; the first value is the
@@ -1266,5 +1344,50 @@ mod tests {
         };
         assert!(!ok, "Vulkan is not offered");
         assert!(!lock(&host.hw).active);
+    }
+
+    #[test]
+    fn v2_intl_core_options_are_parsed() {
+        // PPSSPP (a translations-enabled core) registers its options through
+        // `SET_CORE_OPTIONS_V2_INTL`, not `SET_CORE_OPTIONS_V2`. If this is
+        // dropped every option is unset and the core's own resolution
+        // default (0) makes it render nothing.
+        let key = CString::new("ppsspp_internal_resolution").unwrap();
+        let desc = CString::new("Internal Resolution").unwrap();
+        let default = CString::new("480x272").unwrap();
+        let value = CString::new("480x272").unwrap();
+        let value_label = CString::new("480x272 (1x)").unwrap();
+
+        let mut definition: retro_core_option_v2_definition = unsafe { std::mem::zeroed() };
+        definition.key = key.as_ptr();
+        definition.desc = desc.as_ptr();
+        definition.default_value = default.as_ptr();
+        definition.values[0].value = value.as_ptr();
+        definition.values[0].label = value_label.as_ptr();
+
+        let definitions = [definition, unsafe { std::mem::zeroed() }];
+        let mut set = retro_core_options_v2 {
+            categories: ptr::null_mut(),
+            definitions: definitions.as_ptr() as *mut retro_core_option_v2_definition,
+        };
+        let mut intl = retro_core_options_v2_intl {
+            us: &mut set,
+            local: ptr::null_mut(),
+        };
+
+        let host = host();
+        let ok = unsafe {
+            host.environment(
+                RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL,
+                &mut intl as *mut retro_core_options_v2_intl as *mut c_void,
+            )
+        };
+        assert!(ok);
+        let options = lock(&host.core_options);
+        let option = options
+            .iter()
+            .find(|option| option.key == "ppsspp_internal_resolution")
+            .expect("the us set is parsed");
+        assert_eq!(option.value, "480x272");
     }
 }

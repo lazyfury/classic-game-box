@@ -44,6 +44,23 @@ fn dist_core(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// The manifest's `option_defaults` for `core`, applied before `load_game`
+/// exactly as the app does. Empty when the core has no entry.
+fn manifest_option_defaults(core: &Path) -> Vec<(String, String)> {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../cores/cores.json");
+    let specs = cgb_library::load_cores(&manifest);
+    let file = core.file_name();
+    specs
+        .iter()
+        .filter(|spec| spec.module.file_name() == file)
+        .flat_map(|spec| {
+            spec.option_defaults
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+        })
+        .collect()
+}
+
 /// Load `rom` into `core`, run a few frames and return the host plus the
 /// geometry the core reported. Panics if the core cannot do its job.
 ///
@@ -58,6 +75,11 @@ fn run(core: &Path, rom_name: &str, rom: &[u8]) -> (CoreHost, AvInfo) {
     std::fs::write(&rom_path, rom).expect("write rom");
 
     let mut host = CoreHost::new(core, &dir, &dir).expect("open core");
+    // Apply the manifest's frontend-recommended defaults before loading, the
+    // same way `Session::new` does in the app.
+    for (key, value) in manifest_option_defaults(core) {
+        host.set_core_option(&key, &value);
+    }
     host.load_game(&rom_path, rom).expect("load game");
 
     let av = host.av_info();
@@ -72,26 +94,26 @@ fn run(core: &Path, rom_name: &str, rom: &[u8]) -> (CoreHost, AvInfo) {
     (host, av)
 }
 
-/// NES cores and the sample rate each reports, as declared in
-/// `cores/cores.json`.
-const NES_CORES: &[(&str, f64)] = &[
-    ("mesen_libretro.dylib", 48_000.0),
-    ("nestopia_libretro.dylib", 48_000.0),
-    ("custom_nes_core_libretro.dylib", 44_100.0),
+/// NES cores, with the geometry and sample rate each reports, as declared in
+/// `cores/cores.json`. Nestopia's default overscan (8/8) yields 224 lines.
+const NES_CORES: &[(&str, u32, u32, f64)] = &[
+    ("mesen_libretro.dylib", 256, 240, 48_000.0),
+    ("nestopia_libretro.dylib", 256, 224, 48_000.0),
+    ("custom_nes_core_libretro.dylib", 256, 240, 44_100.0),
 ];
 
 #[test]
 fn cores_run_through_the_host() {
     let mut tested = 0;
 
-    for (name, expected_rate) in NES_CORES {
+    for (name, width, height, expected_rate) in NES_CORES {
         let core = dist_core(name);
         if !core.is_file() {
             eprintln!("skip: {} not built", core.display());
             continue;
         }
         let (host, av) = run(&core, "test.nes", &nrom());
-        assert_eq!((av.width, av.height), (256, 240), "{name}");
+        assert_eq!((av.width, av.height), (*width, *height), "{name}");
         assert!(
             (av.sample_rate - expected_rate).abs() < 1.0,
             "{name} reported {}Hz, manifest says {expected_rate}",
@@ -208,6 +230,39 @@ fn cores_run_through_the_host() {
         tested += 1;
     } else {
         eprintln!("skip: {} not built", n64.display());
+    }
+
+    // PPSSPP is hardware-rendered too (the same offscreen GL path as N64), so
+    // it cannot be driven by a synthetic ROM either — a real PSP image is
+    // needed to boot and report an av_info. Prove it opens through the loader
+    // and declares the PSP content it wants; the GL path is the manual check
+    // (`cargo run -p cgb-app -- --rom game.iso --core ppsspp`).
+    let psp = dist_core("ppsspp_libretro.dylib");
+    if psp.is_file() {
+        let dir = std::env::temp_dir();
+        let host = CoreHost::new(&psp, &dir, &dir).expect("open ppsspp");
+        let info = host.system_info();
+        assert!(
+            info.library_name.contains("PPSSPP"),
+            "{}",
+            info.library_name
+        );
+        for ext in ["iso", "cso", "pbp", "chd"] {
+            assert!(
+                info.valid_extensions.iter().any(|e| e == ext),
+                "ppsspp does not declare .{ext}: {:?}",
+                info.valid_extensions
+            );
+        }
+        assert!(info.need_fullpath, "ppsspp reads the file itself");
+        eprintln!(
+            "ppsspp_libretro.dylib: {} ({:?})",
+            info.library_name, info.valid_extensions
+        );
+        drop(host);
+        tested += 1;
+    } else {
+        eprintln!("skip: {} not built", psp.display());
     }
 
     // FreeJ2ME-Plus runs the game in a child Java VM, so there is no synthetic
