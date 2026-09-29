@@ -60,7 +60,8 @@ pub(super) fn cheats_page(
 
     let import = actions.clone();
     column = column.child(
-        Button::secondary("导入 .cht…", theme).on_click(move || import.push(Action::ImportCheats)),
+        Button::secondary("导入 .cht…", theme)
+            .on_click(move |_tree, _id| import.push(Action::ImportCheats)),
     );
     column = column.child(
         Text::caption(
@@ -108,6 +109,6 @@ pub(super) fn cheat_row(
         .child(
             button
                 .mini()
-                .on_click(move || toggle.push(Action::ToggleCheat(index))),
+                .on_click(move |_tree, _id| toggle.push(Action::ToggleCheat(index))),
         )
 }

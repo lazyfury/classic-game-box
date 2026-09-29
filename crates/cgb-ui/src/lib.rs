@@ -180,7 +180,7 @@ impl Ui {
             .data::<Control>(id)
             .and_then(|control| control.drag_callback.clone())
         {
-            (callback.borrow_mut())(&mut self.tree, DragPhase::Start, Vec2::ZERO);
+            (callback.borrow_mut())(&mut self.tree, id, DragPhase::Start, Vec2::ZERO);
         }
         let state = igui::igui_ui::gui_state_mut(&mut self.tree);
         state.dragging = Some(id);
@@ -347,7 +347,7 @@ impl Ui {
         self.overlays.menu_at(position, move |tree, node| {
             let item = |label: &str, action: Action| {
                 let actions = actions.clone();
-                MenuItem::new(label, theme).on_click(move || actions.push(action))
+                MenuItem::new(label, theme).on_click(move |_tree, _id| actions.push(action))
             };
             let menu = Menu::new(theme)
                 .item(item("开始游戏", Action::Play(index)))
@@ -363,7 +363,7 @@ impl Ui {
                     let actions = actions.clone();
                     MenuItem::new("删除…", theme)
                         .destructive()
-                        .on_click(move || {
+                        .on_click(move |_tree, _id| {
                             actions.push(Action::RequestDelete(Confirm::DeleteGame(game_id)))
                         })
                 });
@@ -399,7 +399,7 @@ impl Ui {
                 let actions = actions.clone();
                 menu = menu.item(
                     MenuItem::new(label, theme)
-                        .on_click(move || actions.push(Action::SelectCore(index))),
+                        .on_click(move |_tree, _id| actions.push(Action::SelectCore(index))),
                 );
             }
             tree.add_child(node, menu);
@@ -532,7 +532,7 @@ impl Ui {
                 .data::<Control>(node)
                 .and_then(|control| control.callback.clone())
             {
-                (callback.borrow_mut())();
+                (callback.borrow_mut())(&mut self.tree, node);
                 self.repaint = true;
                 return true;
             }

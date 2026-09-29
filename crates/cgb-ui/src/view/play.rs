@@ -83,28 +83,35 @@ pub(super) fn play_column(
     let pause = if model.paused { "继续" } else { "暂停" };
     let mut controls = Row::new().gap(space::SM);
     let toggle = actions.clone();
-    controls = controls
-        .child(Button::primary(pause, theme).on_click(move || toggle.push(Action::TogglePause)));
+    controls = controls.child(
+        Button::primary(pause, theme).on_click(move |_tree, _id| toggle.push(Action::TogglePause)),
+    );
     let reset = actions.clone();
-    controls = controls
-        .child(Button::secondary("复位", theme).on_click(move || reset.push(Action::Reset)));
+    controls = controls.child(
+        Button::secondary("复位", theme).on_click(move |_tree, _id| reset.push(Action::Reset)),
+    );
     let rewind = actions.clone();
-    controls =
-        controls.child(Button::ghost("倒带", theme).on_click(move || rewind.push(Action::Rewind)));
+    controls = controls.child(
+        Button::ghost("倒带", theme).on_click(move |_tree, _id| rewind.push(Action::Rewind)),
+    );
     let save = actions.clone();
     controls = controls.child(
-        Button::secondary("快速存档", theme).on_click(move || save.push(Action::SaveState(0))),
+        Button::secondary("快速存档", theme)
+            .on_click(move |_tree, _id| save.push(Action::SaveState(0))),
     );
     let load = actions.clone();
     controls = controls.child(
-        Button::secondary("快速读档", theme).on_click(move || load.push(Action::LoadState(0))),
+        Button::secondary("快速读档", theme)
+            .on_click(move |_tree, _id| load.push(Action::LoadState(0))),
     );
     let shot = actions.clone();
-    controls = controls
-        .child(Button::ghost("截图", theme).on_click(move || shot.push(Action::Screenshot)));
+    controls = controls.child(
+        Button::ghost("截图", theme).on_click(move |_tree, _id| shot.push(Action::Screenshot)),
+    );
     let cover = actions.clone();
     controls = controls.child(
-        Button::ghost("设为封面", theme).on_click(move || cover.push(Action::ScreenshotCover)),
+        Button::ghost("设为封面", theme)
+            .on_click(move |_tree, _id| cover.push(Action::ScreenshotCover)),
     );
     let full = actions.clone();
     let full_label = if model.fullscreen {
@@ -113,7 +120,8 @@ pub(super) fn play_column(
         "全屏"
     };
     controls = controls.child(
-        Button::secondary(full_label, theme).on_click(move || full.push(Action::ToggleFullscreen)),
+        Button::secondary(full_label, theme)
+            .on_click(move |_tree, _id| full.push(Action::ToggleFullscreen)),
     );
     column = column.child(controls);
 
@@ -199,7 +207,7 @@ pub(super) fn preview_column(
                         theme.palette().foreground,
                         14.0,
                     ))
-                    .on_click(move || previous.push(Action::StepPreview(-1)))
+                    .on_click(move |_tree, _id| previous.push(Action::StepPreview(-1)))
                     .ref_(&prev_node),
             )
             .child(Text::caption(format_when(shot.created_at), theme).tone(Tone::Subtle))
@@ -210,7 +218,7 @@ pub(super) fn preview_column(
                         theme.palette().foreground,
                         14.0,
                     ))
-                    .on_click(move || next.push(Action::StepPreview(1)))
+                    .on_click(move |_tree, _id| next.push(Action::StepPreview(1)))
                     .ref_(&next_node),
             ),
     );
@@ -220,23 +228,28 @@ pub(super) fn preview_column(
         let set = actions.clone();
         let id = shot.id;
         controls = controls.child(
-            Button::secondary("设为封面", theme).on_click(move || set.push(Action::SetCover(id))),
+            Button::secondary("设为封面", theme)
+                .on_click(move |_tree, _id| set.push(Action::SetCover(id))),
         );
     }
     let reveal = actions.clone();
     let reveal_id = shot.id;
     controls = controls.child(
         Button::ghost("在访达中显示", theme)
-            .on_click(move || reveal.push(Action::RevealScreenshot(reveal_id))),
+            .on_click(move |_tree, _id| reveal.push(Action::RevealScreenshot(reveal_id))),
     );
     let remove = actions.clone();
     let remove_id = shot.id;
-    controls = controls.child(Button::destructive("删除", theme).on_click(move || {
-        remove.push(Action::RequestDelete(Confirm::DeleteScreenshot(remove_id)))
-    }));
+    controls = controls.child(
+        Button::destructive("删除", theme).on_click(move |_tree, _id| {
+            remove.push(Action::RequestDelete(Confirm::DeleteScreenshot(remove_id)))
+        }),
+    );
     let close = actions.clone();
-    controls = controls
-        .child(Button::secondary("关闭", theme).on_click(move || close.push(Action::ClosePreview)));
+    controls = controls.child(
+        Button::secondary("关闭", theme)
+            .on_click(move |_tree, _id| close.push(Action::ClosePreview)),
+    );
     column.child(controls)
 }
 

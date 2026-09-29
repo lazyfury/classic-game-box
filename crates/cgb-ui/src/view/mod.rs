@@ -339,7 +339,7 @@ fn rail_item(
             };
             SurfaceStyle::new(fill).radius(radius::MD)
         })
-        .on_click(move || actions.push(Action::Show(section)));
+        .on_click(move |_tree, _id| actions.push(Action::Show(section)));
     // Every section uses a vendored SVG icon, so the rail is one stroke set.
     let icon = match section {
         Section::Library => IconName::Library,

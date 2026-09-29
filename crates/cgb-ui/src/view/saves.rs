@@ -86,17 +86,17 @@ pub(super) fn save_slot_row(
         .child(
             Button::ghost("存", theme)
                 .mini()
-                .on_click(move || save.push(Action::SaveToSlot(slot))),
+                .on_click(move |_tree, _id| save.push(Action::SaveToSlot(slot))),
         )
         .child(
             Button::ghost("读", theme)
                 .mini()
-                .on_click(move || load.push(Action::LoadFromSlot(slot))),
+                .on_click(move |_tree, _id| load.push(Action::LoadFromSlot(slot))),
         )
         .child(
             Button::ghost("删", theme)
                 .mini()
-                .on_click(move || delete.push(Action::DeleteSlot(slot))),
+                .on_click(move |_tree, _id| delete.push(Action::DeleteSlot(slot))),
         )
 }
 

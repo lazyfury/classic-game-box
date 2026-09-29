@@ -73,7 +73,7 @@ pub(super) fn screenshots_page(
                 .child(
                     Button::ghost(select_label, theme)
                         .mini()
-                        .on_click(move || toggle.push(Action::ToggleScreenshotSelect)),
+                        .on_click(move |_tree, _id| toggle.push(Action::ToggleScreenshotSelect)),
                 )
                 .child(
                     Button::ghost("", theme)
@@ -84,7 +84,7 @@ pub(super) fn screenshots_page(
                             theme.palette().foreground,
                             CARD_ICON,
                         ))
-                        .on_click(move || open.push(Action::OpenScreenshotsFolder))
+                        .on_click(move |_tree, _id| open.push(Action::OpenScreenshotsFolder))
                         .ref_(&folder_node),
                 ),
         );
@@ -111,12 +111,12 @@ pub(super) fn screenshots_page(
                 .child(
                     Button::destructive("删除选中", theme)
                         .mini()
-                        .on_click(move || delete.push(Action::DeleteSelectedScreenshots)),
+                        .on_click(move |_tree, _id| delete.push(Action::DeleteSelectedScreenshots)),
                 )
                 .child(
                     Button::ghost("取消", theme)
                         .mini()
-                        .on_click(move || cancel.push(Action::ToggleScreenshotSelect)),
+                        .on_click(move |_tree, _id| cancel.push(Action::ToggleScreenshotSelect)),
                 ),
         );
     }
@@ -235,7 +235,7 @@ pub(super) fn thumbnail(
         .min_size(0.0, PLACEHOLDER_HEIGHT)
         .surface(SurfaceStyle::new(theme.palette().surface).radius(radius::SM))
         .clip(true)
-        .on_click(move || {
+        .on_click(move |_tree, _id| {
             click.push(if select {
                 Action::ToggleScreenshotSelected(id)
             } else {
@@ -278,7 +278,7 @@ pub(super) fn shot_controls(
             theme.palette().foreground,
             "设为封面",
             actions,
-            move || set.push(Action::SetCover(id)),
+            move |_tree, _id| set.push(Action::SetCover(id)),
         ));
     }
     let reveal = actions.clone();
@@ -288,7 +288,7 @@ pub(super) fn shot_controls(
         theme.palette().foreground,
         "在访达中显示",
         actions,
-        move || reveal.push(Action::RevealScreenshot(reveal_id)),
+        move |_tree, _id| reveal.push(Action::RevealScreenshot(reveal_id)),
     ));
     let remove = actions.clone();
     let remove_id = shot.id;
@@ -297,6 +297,6 @@ pub(super) fn shot_controls(
         theme.palette().foreground,
         "删除",
         actions,
-        move || remove.push(Action::RequestDelete(Confirm::DeleteScreenshot(remove_id))),
+        move |_tree, _id| remove.push(Action::RequestDelete(Confirm::DeleteScreenshot(remove_id))),
     ))
 }

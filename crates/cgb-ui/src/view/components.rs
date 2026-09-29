@@ -3,7 +3,8 @@
 //! helpers.
 
 use igui::igui_components::{Button, Component, Flex, NodeRef, Text, TextInput};
-use igui::igui_core::{Color, Edges};
+use igui::igui_core::{Color, Edges, NodeId};
+use igui::igui_scene::SceneTree;
 use igui::igui_theme::{radius, space, Theme, Tone};
 use igui::igui_ui::{Align, Justify, SurfaceStyle};
 
@@ -78,7 +79,7 @@ pub(super) fn icon_button(
     color: Color,
     tip: &str,
     actions: &Actions,
-    on_click: impl FnMut() + 'static,
+    on_click: impl FnMut(&mut SceneTree, NodeId) + 'static,
 ) -> impl Component {
     let node = NodeRef::new();
     actions.tip(&node, tip);
@@ -89,7 +90,7 @@ pub(super) fn icon_button(
 
 /// The bare frame a compact icon button shares: a fixed square, a hover fill
 /// and a click, with no padding of its own.
-pub(super) fn compact_button(on_click: impl FnMut() + 'static) -> Flex {
+pub(super) fn compact_button(on_click: impl FnMut(&mut SceneTree, NodeId) + 'static) -> Flex {
     Flex::row()
         .align(Align::Center)
         .justify(Justify::Center)

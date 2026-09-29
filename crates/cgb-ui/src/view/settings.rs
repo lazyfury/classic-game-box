@@ -47,7 +47,7 @@ pub(super) fn settings_page(
             .child(current)
             .child(
                 Button::secondary("切换游戏库…", theme)
-                    .on_click(move || switch.push(Action::SwitchLibrary)),
+                    .on_click(move |_tree, _id| switch.push(Action::SwitchLibrary)),
             ),
     );
 
@@ -57,7 +57,7 @@ pub(super) fn settings_page(
         let pick = actions.clone();
         theme_chips = theme_chips.child(
             chip(theme, choice.label(), model.theme_choice == choice)
-                .on_click(move || pick.push(Action::SetThemeChoice(choice))),
+                .on_click(move |_tree, _id| pick.push(Action::SetThemeChoice(choice))),
         );
     }
     let mut look_chips = chip_group();
@@ -66,7 +66,7 @@ pub(super) fn settings_page(
         let label = if light { "浅色" } else { "深色" };
         look_chips = look_chips.child(
             chip(theme, label, model.light == light)
-                .on_click(move || pick.push(Action::SetLight(light))),
+                .on_click(move |_tree, _id| pick.push(Action::SetLight(light))),
         );
     }
     body = body.child(
@@ -102,7 +102,7 @@ pub(super) fn settings_page(
         let select = Select::new(theme)
             .value(current.name.clone())
             .min_width(170.0)
-            .on_open(move || {
+            .on_open(move |_tree, _id| {
                 if let Some(anchor) = anchor.get() {
                     open.push(Action::OpenCoreMenu { system, anchor });
                 }
@@ -133,7 +133,7 @@ pub(super) fn settings_page(
         let actions = actions.clone();
         shader_chips = shader_chips.child(
             chip(theme, kind.label(), model.shader == kind)
-                .on_click(move || actions.push(Action::SetShader(kind))),
+                .on_click(move |_tree, _id| actions.push(Action::SetShader(kind))),
         );
     }
     body = body.child(
@@ -164,13 +164,17 @@ pub(super) fn settings_page(
                     .child(
                         Button::ghost("‹", theme)
                             .mini()
-                            .on_click(move || previous.push(Action::CycleCoreOption(index, -1))),
+                            .on_click(move |_tree, _id| {
+                                previous.push(Action::CycleCoreOption(index, -1))
+                            }),
                     )
                     .child(Text::caption(option.value.as_str(), theme).tone(Tone::Muted))
                     .child(
                         Button::ghost("›", theme)
                             .mini()
-                            .on_click(move || next.push(Action::CycleCoreOption(index, 1))),
+                            .on_click(move |_tree, _id| {
+                                next.push(Action::CycleCoreOption(index, 1))
+                            }),
                     ),
             );
         }
@@ -190,7 +194,7 @@ pub(super) fn settings_page(
         let actions = actions.clone();
         msaa_chips = msaa_chips.child(
             chip(theme, mode.label(), model.msaa == mode)
-                .on_click(move || actions.push(Action::SetMsaa(mode))),
+                .on_click(move |_tree, _id| actions.push(Action::SetMsaa(mode))),
         );
     }
     body = body.child(

@@ -77,11 +77,11 @@ pub(super) fn library_page(
             .gap(space::SM)
             .child(
                 Button::secondary("添加游戏文件…", theme)
-                    .on_click(move || add_files.push(Action::AddGames)),
+                    .on_click(move |_tree, _id| add_files.push(Action::AddGames)),
             )
             .child(
                 Button::ghost("打开游戏库…", theme)
-                    .on_click(move || add_dir.push(Action::SwitchLibrary)),
+                    .on_click(move |_tree, _id| add_dir.push(Action::SwitchLibrary)),
             ),
     );
     column
@@ -94,7 +94,7 @@ pub(super) fn stats_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &
     let all = actions.clone();
     filter_chips = filter_chips.child(
         chip(theme, "全部", model.system_filter.is_none())
-            .on_click(move || all.push(Action::FilterSystem(None))),
+            .on_click(move |_tree, _id| all.push(Action::FilterSystem(None))),
     );
     for tally in &model.system_counts {
         let filter = actions.clone();
@@ -102,7 +102,7 @@ pub(super) fn stats_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &
         let label = format!("{} {}", system.short(), tally.count);
         filter_chips = filter_chips.child(
             chip(theme, &label, model.system_filter == Some(system))
-                .on_click(move || filter.push(Action::FilterSystem(Some(system)))),
+                .on_click(move |_tree, _id| filter.push(Action::FilterSystem(Some(system)))),
         );
     }
     chip_bar(theme, "按模拟器筛选", filter_chips)
@@ -116,7 +116,7 @@ pub(super) fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &A
         let actions = actions.clone();
         sort_chips = sort_chips.child(
             chip(theme, key.label(), model.sort == key)
-                .on_click(move || actions.push(Action::Sort(key))),
+                .on_click(move |_tree, _id| actions.push(Action::Sort(key))),
         );
     }
     let toggle = actions.clone();
@@ -131,7 +131,7 @@ pub(super) fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &A
         Button::ghost("", theme)
             .mini()
             .child(SvgIcon::new(arrow, theme.palette().foreground, CARD_ICON))
-            .on_click(move || toggle.push(Action::ToggleSortOrder))
+            .on_click(move |_tree, _id| toggle.push(Action::ToggleSortOrder))
             .ref_(&dir_node),
     );
     chip_bar(theme, "排序", sort_chips)
@@ -150,12 +150,12 @@ pub(super) fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: 
                 .child(
                     Button::primary("完成", theme)
                         .mini()
-                        .on_click(move || done.push(Action::CommitEdit)),
+                        .on_click(move |_tree, _id| done.push(Action::CommitEdit)),
                 )
                 .child(
                     Button::ghost("清除", theme)
                         .mini()
-                        .on_click(move || clear.push(Action::ClearSearch)),
+                        .on_click(move |_tree, _id| clear.push(Action::ClearSearch)),
                 );
         }
     }
@@ -176,7 +176,7 @@ pub(super) fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: 
                     .child(Text::caption(label, theme)),
             )
             .grow(1.0)
-            .on_click(move || start.push(Action::StartSearch)),
+            .on_click(move |_tree, _id| start.push(Action::StartSearch)),
     );
     if !model.search.is_empty() {
         let clear = actions.clone();
@@ -185,7 +185,7 @@ pub(super) fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: 
             theme.palette().foreground,
             "清除搜索",
             actions,
-            move || clear.push(Action::ClearSearch),
+            move |_tree, _id| clear.push(Action::ClearSearch),
         ));
     }
     row
@@ -211,12 +211,12 @@ pub(super) fn edit_bar(theme: &'static dyn Theme, edit: &EditState, actions: &Ac
                 .child(
                     Button::primary("保存", theme)
                         .mini()
-                        .on_click(move || save.push(Action::CommitEdit)),
+                        .on_click(move |_tree, _id| save.push(Action::CommitEdit)),
                 )
                 .child(
                     Button::ghost("取消", theme)
                         .mini()
-                        .on_click(move || cancel.push(Action::CancelEdit)),
+                        .on_click(move |_tree, _id| cancel.push(Action::CancelEdit)),
                 ),
         )
 }
@@ -310,8 +310,10 @@ pub(super) fn game_card(
             };
             SurfaceStyle::new(fill).radius(radius::MD)
         })
-        .on_click(move || click.push(Action::Play(index)))
-        .on_secondary_click(move |position| menu.push(Action::GameContextMenu { index, position }))
+        .on_click(move |_tree, _id| click.push(Action::Play(index)))
+        .on_secondary_click(move |_tree, _id, position| {
+            menu.push(Action::GameContextMenu { index, position })
+        })
         .child(cover(theme, game, index, actions))
         .child(
             Text::small(game.name.as_str(), theme)
@@ -461,11 +463,11 @@ pub(super) fn card_controls(
     };
     row = row.child(icon_button(IconName::Pencil, ink, "改名", actions, {
         let actions = actions.clone();
-        move || actions.push(Action::StartRename(game_id))
+        move |_tree, _id| actions.push(Action::StartRename(game_id))
     }));
     row = row.child(icon_button(IconName::Tag, ink, "标签", actions, {
         let actions = actions.clone();
-        move || actions.push(Action::StartTagEdit(game_id))
+        move |_tree, _id| actions.push(Action::StartTagEdit(game_id))
     }));
     let pin_tip = if game.pinned {
         "取消置顶"
@@ -474,11 +476,11 @@ pub(super) fn card_controls(
     };
     row.child(icon_button(IconName::Pin, pin_ink, pin_tip, actions, {
         let actions = actions.clone();
-        move || actions.push(Action::TogglePin(index))
+        move |_tree, _id| actions.push(Action::TogglePin(index))
     }))
     .child(icon_button(IconName::Trash, ink, "删除", actions, {
         let actions = actions.clone();
-        move || actions.push(Action::RequestDelete(Confirm::DeleteGame(game_id)))
+        move |_tree, _id| actions.push(Action::RequestDelete(Confirm::DeleteGame(game_id)))
     }))
 }
 
@@ -494,7 +496,7 @@ pub(super) fn screenshot_entry(
     let click = actions.clone();
     let game_id = game.id;
     let ink = media::ON_MEDIA_MUTED;
-    compact_button(move || click.push(Action::ShowScreenshots(game_id)))
+    compact_button(move |_tree, _id| click.push(Action::ShowScreenshots(game_id)))
         .gap(2.0)
         .child(SvgIcon::new(IconName::Camera, ink, CARD_ICON))
         .child(Text::caption(game.screenshots.to_string(), theme).color(ink))
