@@ -77,7 +77,7 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   请求 `OPENGL_CORE 3.3`，复用同一条离屏 GL 路径。BIOS 可选（HLE/OpenBIOS；
   真实 BIOS 放 `<system>/scph550x.bin`）。PS1 关闭倒带（state 大）。`.iso/.chd/.pbp`
   与 PSP 冲突，仍归 PSP；单游戏用卡片右键的**「选择机种…」**覆盖（存在库
-  `games.system`，`Library::set_system`，rescan 不覆盖）。
+  `games.system`，`Library::set_system`，rescan 不覆盖）。**已完成人工验收**。
 - **J2ME（Java ME）**：`SystemId::J2me`（`.jar`/`.kjx`）→ **FreeJ2ME-Plus**
   （`TASEmulators/freej2me-plus`）。它的 libretro 模块只是 C shim，用
   `fork/exec` 起一个 Java VM（`freej2me_plus-lr.jar`）走 stdin/stdout 管道；
