@@ -618,7 +618,7 @@ impl super::App {
                     .unwrap_or(0);
                 self.fps_time = Instant::now();
                 // Cheats are per game and applied right after load.
-                let cheat_path = cgb_library::cheat_file(&self.paths.cheats, rom_path);
+                let cheat_path = cgb_paths::cheat_file(&self.paths.cheats, rom_path);
                 self.cheats = cgb_library::load_cheats(&cheat_path);
                 self.cheat_path = Some(cheat_path);
                 if let Some(session) = self.session.as_ref() {

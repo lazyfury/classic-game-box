@@ -13,7 +13,8 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 - **布局**：应用是**根包** `cgb-app`（bin `classic-game-box`），代码在根 `src/`；
   UI 是应用内 `src/ui` 模块，应用逻辑按功能拆在 `src/app/{library,screenshots,saves,
   cheats,settings,cores,input,textures,window,project,helpers}.rs`（参照 `../archiver`）。
-  引擎/设备仍是独立子 crate：`crates/{cgb-systems,cgb-libretro,cgb-audio,cgb-input,cgb-library}`。
+  引擎/设备仍是独立子 crate：`crates/{cgb-systems,cgb-paths,cgb-cores,cgb-library,
+  cgb-libretro,cgb-audio,cgb-input}`。
 - 分支 `refactor/app-root`（合并后可回 `main`）。
 - **Q0 完成**：计划、目录结构、Rust 工作区骨架、`cargo check/test/clippy` 全绿。
 - **Q1 完成**：Mesen 原生 arm64 编译 + dlopen + 出画面（`ui::frame::FrameImage`）+ 键盘。
@@ -128,7 +129,7 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
    不使用 `fc_*` 私有扩展（`custom_nes_core` 会导出该扩展，但被忽略）。
    ABI 头是 `cores/libretro/libretro.h`；**不要整读**（≈8700 行），`rg` 定位再看。
 4. **依赖方向单向**：`cgb-app`（根包，`src/`）→ `{cgb-libretro, cgb-audio,
-   cgb-input, cgb-library, cgb-systems}`；应用内的 `src/ui` 不认识 libretro；
+   cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems}`；应用内的 `src/ui` 不认识 libretro；
    `cgb-libretro` 不认识 UI 与音频设备（只暴露 `Frame` / `Vec<i16>`）。
    `cgb-systems` 无依赖。`crates/` 里的子 crate 不得反向依赖根 app。
 5. **igui 的边界**：`igui_core` / `igui_scene` / `igui_ui` / `igui_components`

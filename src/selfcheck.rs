@@ -13,7 +13,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::ui::{rasterize_icon, IconName};
-use cgb_library::{encode_png, load_cores, DiskGame, Library, Paths, Settings};
+use cgb_cores::load_cores;
+use cgb_library::{encode_png, DiskGame, Library};
+use cgb_paths::{Paths, Settings};
 use cgb_systems::SystemId;
 
 use crate::app::resource_dir;

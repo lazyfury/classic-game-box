@@ -18,4 +18,4 @@ cc.workspace = true
 [dev-dependencies]
 # The integration test applies the manifest's `option_defaults` before loading,
 # the same way `Session::new` does, so it tests the app's loading path.
-cgb-library.workspace = true
+cgb-cores.workspace = true

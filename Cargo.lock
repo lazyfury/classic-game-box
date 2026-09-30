@@ -356,9 +356,11 @@ name = "cgb-app"
 version = "0.2.0"
 dependencies = [
  "cgb-audio",
+ "cgb-cores",
  "cgb-input",
  "cgb-library",
  "cgb-libretro",
+ "cgb-paths",
  "cgb-systems",
  "igui",
  "igui_core",
@@ -379,6 +381,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cgb-cores"
+version = "0.2.0"
+dependencies = [
+ "cgb-systems",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "ureq",
+ "zip",
+]
+
+[[package]]
 name = "cgb-input"
 version = "0.2.0"
 dependencies = [
@@ -391,15 +405,11 @@ dependencies = [
 name = "cgb-library"
 version = "0.2.0"
 dependencies = [
+ "cgb-paths",
  "cgb-systems",
- "dirs",
  "png 0.17.16",
  "rusqlite",
- "serde",
- "serde_json",
  "thiserror 2.0.20",
- "ureq",
- "zip",
 ]
 
 [[package]]
@@ -407,10 +417,20 @@ name = "cgb-libretro"
 version = "0.2.0"
 dependencies = [
  "cc",
- "cgb-library",
+ "cgb-cores",
  "cgb-systems",
  "libloading",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "cgb-paths"
+version = "0.2.0"
+dependencies = [
+ "cgb-systems",
+ "dirs",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

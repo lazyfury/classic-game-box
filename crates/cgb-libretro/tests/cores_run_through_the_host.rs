@@ -71,7 +71,7 @@ fn dist_core(name: &str) -> PathBuf {
 /// exactly as the app does. Empty when the core has no entry.
 fn manifest_option_defaults(core: &Path) -> Vec<(String, String)> {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../cores/cores.json");
-    let specs = cgb_library::load_cores(&manifest);
+    let specs = cgb_cores::load_cores(&manifest);
     let file = core.file_name();
     specs
         .iter()

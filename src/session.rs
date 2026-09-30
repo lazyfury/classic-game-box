@@ -11,11 +11,9 @@ use std::path::{Path, PathBuf};
 use crate::ui::FrameHandle;
 use cgb_audio::AudioOutput;
 use cgb_input::InputState;
-use cgb_library::{
-    battery_save_path, encode_png, exists, list_slots, read, remove, save_state_path,
-    save_state_thumb_path, write, StateSlot,
-};
+use cgb_library::{encode_png, exists, list_slots, read, remove, write, StateSlot};
 use cgb_libretro::CoreHost;
+use cgb_paths::{battery_save_path, save_state_path, save_state_thumb_path};
 use cgb_systems::{CoreSpec, SystemId, RETRO_DEVICE_JOYPAD};
 use igui::igui_backend_wgpu::{TextureEffect, TextureFilter, WgpuBackend};
 use igui::igui_render::TextureId;

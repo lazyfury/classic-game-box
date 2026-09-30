@@ -5,6 +5,8 @@ members = [
     "crates/cgb-systems",
     "crates/cgb-audio",
     "crates/cgb-input",
+    "crates/cgb-paths",
+    "crates/cgb-cores",
     "crates/cgb-library",
 ]
 
@@ -55,6 +57,8 @@ cgb-systems = { path = "crates/cgb-systems" }
 cgb-libretro = { path = "crates/cgb-libretro" }
 cgb-audio = { path = "crates/cgb-audio" }
 cgb-input = { path = "crates/cgb-input" }
+cgb-paths = { path = "crates/cgb-paths" }
+cgb-cores = { path = "crates/cgb-cores" }
 cgb-library = { path = "crates/cgb-library" }
 
 # ---------------------------------------------------------------------------
@@ -91,6 +95,8 @@ cgb-systems.workspace = true
 cgb-libretro.workspace = true
 cgb-audio.workspace = true
 cgb-input.workspace = true
+cgb-paths.workspace = true
+cgb-cores.workspace = true
 cgb-library.workspace = true
 
 # The `igui` facade: `ui` (drawing / components), `app` (the plugin runtime),

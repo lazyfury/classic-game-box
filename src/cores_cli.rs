@@ -4,11 +4,12 @@
 
 use std::path::Path;
 
-use cgb_library::{
+use cgb_cores::{
     cache_path, download_core, register_downloaded, registry_path, update_catalog, write_catalog,
-    Catalog, CatalogEntry, Paths, Platform, DEFAULT_SOURCE,
+    Catalog, CatalogEntry, Platform, DEFAULT_SOURCE,
 };
 use cgb_libretro::CoreHost;
+use cgb_paths::Paths;
 
 use crate::cli::Args;
 

@@ -6,8 +6,9 @@
 
 use std::path::Path;
 
+use cgb_paths::{save_state_path, save_state_thumb_path};
+
 use crate::error::LibraryError;
-use crate::paths::{save_state_path, save_state_thumb_path};
 
 /// How many save-state slots a game has (slot 0 is the quick slot).
 pub const SLOT_COUNT: u8 = 10;

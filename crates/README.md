@@ -12,10 +12,12 @@ exactly one device each.
 | crate | type | responsibility |
 |---|---|---|
 | `cgb-systems` | lib | system/core registry, joypad ids (dependency-free) |
+| `cgb-paths` | lib | file layout (`Paths`) + settings (`Settings`) |
+| `cgb-cores` | lib | `cores.json` manifest, buildbot catalog, runtime downloader |
+| `cgb-library` | lib | SQLite game library, ROM import, screenshots, save states, `.srm`, cheats |
 | `cgb-libretro` | lib | libretro front end: `dlopen`, callbacks, ABI |
 | `cgb-audio` | lib | cpal output + SPSC ring buffer (int16 stereo) |
 | `cgb-input` | lib | keyboard bindings + gilrs gamepads → button masks |
-| `cgb-library` | lib | SQLite library, settings, save states, `.srm`, cores manifest |
 
 The app's own layout is documented in [`../src`](../src): `app/` (state, frame
 loop, feature handlers), `ui/` (views built from a pure `ViewModel`),
@@ -28,7 +30,7 @@ cgb-libretro::CoreHost::run_frame()
    ├── video callback → Frame { width, height, rgba }  ─→ app updates TextureId
    └── audio callback → Vec<i16> stereo                ─→ cgb-audio ring buffer → cpal
 cgb-input::InputState → cgb-libretro::CoreHost::set_buttons(port, mask)
-cgb-library::Paths → CoreHost::{new, load_game}
+cgb_paths::Paths → CoreHost::{new, load_game}
 app::ui::ViewModel ← app::app projects core/library state
 ```
 

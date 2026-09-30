@@ -1,0 +1,12 @@
+[package]
+name = "cgb-paths"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cgb-systems.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+dirs.workspace = true

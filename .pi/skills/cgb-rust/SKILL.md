@@ -26,7 +26,9 @@ crates/cgb-systems/src/       纯领域：机种、CoreSpec、选核、joypad id
 crates/cgb-libretro/src/      ffi.rs / loader.rs / host.rs（libretro frontend）
 crates/cgb-audio/src/lib.rs   cpal + ringbuf
 crates/cgb-input/src/lib.rs   键盘绑定 + gilrs
-crates/cgb-library/src/       paths / settings / library / saves / cores（自定义核心清单）
+crates/cgb-paths/src/         paths（目录布局）+ settings（设置 JSON）
+crates/cgb-cores/src/         cores（cores.json 清单）/ catalog（buildbot）/ download
+crates/cgb-library/src/       library（SQLite 库）/ import / saves / cheats / png_codec
 cores/cores.json              核心清单
 cores/<name>/build.sh         每个核心的原生构建（产出到 cores/dist/）
 ```
@@ -38,12 +40,14 @@ igui 的源码可看相邻 `../igui/crates/`，只读需要的模块。
 ## 1. 依赖方向（不许反向）
 
 ```
-cgb-app (root, src/) → { cgb-libretro, cgb-audio, cgb-input, cgb-library, cgb-systems }
+cgb-app (root, src/) → { cgb-libretro, cgb-audio, cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems }
 src/ui (app 内模块)   → cgb-systems, igui_*
 cgb-libretro          → cgb-systems, libloading
 cgb-input             → cgb-systems, gilrs, igui_core
 cgb-audio             → cpal, ringbuf
-cgb-library           → rusqlite, serde
+cgb-paths             → cgb-systems, serde, dirs
+cgb-cores             → cgb-systems, serde, ureq, zip
+cgb-library           → cgb-paths, cgb-systems, rusqlite, png
 cgb-systems           → 无
 ```
 
@@ -66,7 +70,7 @@ cargo bench --bench ui                 # UI 帧管线基准
 
 **核心清单是数据（不改 Rust）**：所有核心都在单一 `cores/cores.json` 里，每行
 `key` / `name` / `system` / `dylib`（+ 可选 `sample_rate` / `fps`）；`key` 每机种唯一。
-清单解析在 `cgb-library/src/cores.rs::load_cores`；选核在
+清单解析在 `cgb-cores/src/cores.rs::load_cores`；选核在
 `src/app/{mod,cores}.rs::{load_core_manifest, resolve_core, find_module}` 与
 `cgb-systems::choose_core`。设置持久化按 key 字符串（`Settings::core_key`）。
 

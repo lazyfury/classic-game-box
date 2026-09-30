@@ -38,12 +38,15 @@ use crate::ui::{
     ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, ThemeChoice, Ui,
     ViewModel, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
 };
+use cgb_cores::{
+    cache_path, download_core_with_progress, load_cores, register_downloaded, registry_path,
+    update_catalog, write_catalog, Catalog, Platform, DEFAULT_SOURCE,
+};
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{
-    cache_path, collect_games, decode_png, download_core_with_progress, encode_png, import_roms,
-    load_cores, register_downloaded, registry_path, seed_dir, seed_dir_recursive, update_catalog,
-    write_catalog, Catalog, Game, ImportReport, Library, Paths, Platform, Settings, DEFAULT_SOURCE,
+    collect_games, decode_png, encode_png, import_roms, Game, ImportReport, Library,
 };
+use cgb_paths::{seed_dir, seed_dir_recursive, Paths, Settings};
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
 
 use crate::cli::{Args, CoreOverride};
