@@ -26,7 +26,7 @@ impl super::App {
             .map(|shot| ScreenshotRow {
                 id: shot.id,
                 game_id: shot.game_id,
-                game: names.get(&shot.game_id).cloned().unwrap_or_default(),
+                game_name: names.get(&shot.game_id).cloned().unwrap_or_default(),
                 created_at: shot.created_at,
                 is_cover: covers.get(&shot.game_id).copied().flatten() == Some(shot.id),
                 thumb: self

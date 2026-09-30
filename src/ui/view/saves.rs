@@ -10,7 +10,7 @@ use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle};
 use crate::ui::frame::crop_fit;
 use crate::ui::model::{save_slot_label, Action, SaveSlotRow, ViewModel};
 
-use super::components::format_when;
+use super::format::format_when;
 use super::Page;
 use super::ViewBridge;
 

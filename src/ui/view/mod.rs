@@ -59,6 +59,7 @@ use crate::ui::model::{Action, Section, StatusKind, ViewModel};
 
 mod cheats;
 mod components;
+mod format;
 mod library;
 pub mod menus;
 mod play;
@@ -82,11 +83,11 @@ const RAIL_WIDTH: f32 = 64.0;
 /// The middle column's width limits in logical pixels. The resize handle
 /// clamps the shared width cell to this range, and the app clamps the saved
 /// width to it on startup.
-pub const MIDDLE_MIN_WIDTH: f32 = 300.0;
-pub const MIDDLE_MAX_WIDTH: f32 = 640.0;
+pub const CONTENT_MIN_WIDTH: f32 = 300.0;
+pub const CONTENT_MAX_WIDTH: f32 = 640.0;
 
 /// The middle column's width before the player drags the divider.
-pub const MIDDLE_DEFAULT_WIDTH: f32 = 320.0;
+pub const CONTENT_DEFAULT_WIDTH: f32 = 320.0;
 
 /// The library / screenshots grid column limits. The count follows the middle
 /// column's width, so a wider pane shows more cards per row.
@@ -120,27 +121,6 @@ const SHOT_HEIGHT: f32 = 180.0;
 /// The card controls' icon size, and the square tap target around them.
 const CARD_ICON: f32 = 12.0;
 const CARD_ICON_BUTTON: f32 = 16.0;
-
-/// Colors painted over game artwork (covers, screenshots), not over a theme
-/// surface. They are deliberately independent of light/dark: the scrim is dark
-/// and the labels light so they stay legible against arbitrary imagery.
-/// Centralised so the badge and the controls cannot drift apart.
-mod media {
-    use igui::igui_core::Color;
-
-    /// A translucent dark scrim behind labels on artwork.
-    pub const SCRIM: Color = Color::new(0.0, 0.0, 0.0, 0.4);
-    /// The small surface behind a console badge on a cover.
-    pub const BADGE: Color = Color::new(0.11, 0.11, 0.13, 0.72);
-    /// Primary ink on artwork.
-    pub const ON_MEDIA: Color = Color::new(1.0, 1.0, 1.0, 0.92);
-    /// Secondary ink on artwork (the control icons and badge label).
-    pub const ON_MEDIA_MUTED: Color = Color::new(1.0, 1.0, 1.0, 0.85);
-    /// Hover fill for a control sitting on artwork.
-    pub const ON_MEDIA_HOVER: Color = Color::new(1.0, 1.0, 1.0, 0.16);
-    /// Dark ink for a light artwork placeholder.
-    pub const ON_MEDIA_DARK: Color = Color::new(0.07, 0.07, 0.09, 0.92);
-}
 
 /// Where view callbacks deposit what the user did. The app drains it once per
 /// frame (see the igui UI guide's "state lives in cells" rule).
@@ -209,7 +189,7 @@ impl ViewBridge {
 pub struct ViewMount {
     /// The shared width cell the resize handle writes and the middle panel
     /// reads; the caller owns it so the width survives a rebuild.
-    pub middle_width: Rc<Cell<f32>>,
+    pub content_width: Rc<Cell<f32>>,
     /// The resize handle's mounted node, re-armed after a rebuild drops the
     /// tree's pointer capture (a column-count change rebuilds mid-drag).
     pub resize_handle: NodeRef,
@@ -223,10 +203,10 @@ pub struct ViewMount {
 
 impl ViewMount {
     /// A fresh mount with the middle column clamped to the allowed width.
-    pub fn new(middle_width: f32) -> Self {
+    pub fn new(content_width: f32) -> Self {
         Self {
-            middle_width: Rc::new(Cell::new(
-                middle_width.clamp(MIDDLE_MIN_WIDTH, MIDDLE_MAX_WIDTH),
+            content_width: Rc::new(Cell::new(
+                content_width.clamp(CONTENT_MIN_WIDTH, CONTENT_MAX_WIDTH),
             )),
             resize_handle: NodeRef::new(),
             mounted_rows: Cell::new((0, 0)),
@@ -277,7 +257,7 @@ pub fn build(
     let mut scroll = None;
     // The resize handle points at the middle panel, so bind a slot before the
     // panel is built and read it into the handle.
-    let middle_ref = NodeRef::new();
+    let content_ref = NodeRef::new();
     // The layout root places its direct children by anchors, so the vertical
     // stack is one level down: the root's single child is a column, and *its*
     // children (header / columns / status) are the flex items.
@@ -294,11 +274,11 @@ pub fn build(
                 .mouse_filter(MouseFilter::Ignore)
                 .child(rail(theme, model, actions))
                 .child(
-                    middle(theme, model, actions, &mut scroll, &mount.middle_width)
-                        .ref_(&middle_ref),
+                    content_column(theme, model, actions, &mut scroll, &mount.content_width)
+                        .ref_(&content_ref),
                 )
                 .child(
-                    resize_handle(theme, &mount.middle_width, middle_ref)
+                    resize_handle(theme, &mount.content_width, content_ref)
                         .ref_(&mount.resize_handle),
                 )
                 .child(play_column(theme, model, actions, &mount.info_label)),
@@ -396,14 +376,14 @@ fn rail_item(
     )
 }
 
-/// The middle column: a resizable panel holding the current page. Its width
+/// The content column: a resizable panel holding the current page. Its width
 /// comes from the shared cell the resize handle drives.
-fn middle(
+fn content_column(
     theme: &'static dyn Theme,
     model: &ViewModel,
     actions: &ViewBridge,
     scroll: &mut Option<ScrollViewState>,
-    middle_width: &Rc<Cell<f32>>,
+    content_width: &Rc<Cell<f32>>,
 ) -> Panel {
     let page = match model.section {
         Section::Library => library_page(theme, model, actions),
@@ -416,7 +396,7 @@ fn middle(
     Panel::new()
         .color(theme.palette().surface_raised)
         .flat()
-        .basis(SizeBasis::Px(middle_width.get()))
+        .basis(SizeBasis::Px(content_width.get()))
         .shrink(0.0)
         .clip(true)
         .mouse_filter(MouseFilter::Ignore)
@@ -430,14 +410,14 @@ fn middle(
 /// reads the cell back to persist the width.
 fn resize_handle(
     theme: &'static dyn Theme,
-    middle_width: &Rc<Cell<f32>>,
+    content_width: &Rc<Cell<f32>>,
     target: NodeRef,
 ) -> ResizeHandle {
     ResizeHandle::vertical(theme)
         .target(target)
-        .width(middle_width.clone())
-        .min(MIDDLE_MIN_WIDTH)
-        .max(MIDDLE_MAX_WIDTH)
+        .width(content_width.clone())
+        .min(CONTENT_MIN_WIDTH)
+        .max(CONTENT_MAX_WIDTH)
         .color(theme.palette().border)
 }
 

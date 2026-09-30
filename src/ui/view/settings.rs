@@ -8,7 +8,7 @@ use igui::igui_core::Edges;
 use igui::igui_theme::{space, Theme, Tone};
 use igui::igui_ui::{Align, Justify, MouseFilter};
 
-use crate::ui::model::{Action, EditKind, MsaaKind, ShaderKind, ViewModel};
+use crate::ui::model::{Action, EditTarget, MsaaKind, ShaderKind, ViewModel};
 use crate::ui::theme::ThemeChoice;
 
 use super::components::{chip, chip_group, text_field};
@@ -22,7 +22,7 @@ use super::ViewBridge;
 fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Card {
     let mut search = Row::new().align(Align::Center).gap(space::XS);
     if let Some(edit) = &model.editing {
-        if edit.kind == EditKind::CatalogSearch {
+        if *edit == EditTarget::CatalogSearch {
             let done = actions.clone();
             search = search
                 .child(text_field(theme, actions, "核心名称 / 机种…").grow(1.0))
@@ -96,7 +96,7 @@ fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBrid
                         .max_lines(1)
                         .ellipsis(true),
                 )
-                .child(Text::caption(entry.system.as_str(), theme).tone(Tone::Muted));
+                .child(Text::caption(entry.system_key.as_str(), theme).tone(Tone::Muted));
             if !entry.supported {
                 any_unsupported = true;
                 item = item.child(Text::caption("暂不支持", theme).tone(Tone::Subtle));

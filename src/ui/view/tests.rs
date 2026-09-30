@@ -6,10 +6,12 @@
 use super::*;
 
 use super::components::*;
+use super::format::*;
 use super::library::*;
 
+use crate::ui::color::cover_color;
 use crate::ui::model::{
-    BindingRow, CheatRow, Confirm, CoreRow, EditKind, EditState, GameRow, MsaaKind, SaveSlotRow,
+    BindingRow, CheatRow, Confirm, CoreRow, EditTarget, GameRow, MsaaKind, SaveSlotRow,
     ScreenshotRow, ShaderKind, SortKey, SystemCount, TextureHandle,
 };
 use crate::ui::theme::ThemeChoice;
@@ -23,7 +25,7 @@ use igui::igui_theme::{default_theme, Mode};
 /// mounted tree so a test can also route input at it.
 fn laid_out(model: &ViewModel, actions: &ViewBridge) -> (SceneTree, igui::igui_render::DrawList) {
     let theme = default_theme(Mode::Dark);
-    let mount = ViewMount::new(model.middle_width);
+    let mount = ViewMount::new(model.content_width);
     let (mut tree, mut scroll) = build(theme, model, actions, &mount);
     let viewport = igui::igui_core::ViewportSize::new(Size::new(1100.0, 760.0));
     igui::igui_ui::layout(&mut tree, viewport);
@@ -465,7 +467,7 @@ fn one_shot() -> ScreenshotRow {
     ScreenshotRow {
         id: 7,
         game_id: 0,
-        game: "Game 0".to_string(),
+        game_name: "Game 0".to_string(),
         created_at: 0,
         is_cover: true,
         thumb: Some(TextureHandle {
@@ -600,10 +602,7 @@ fn the_edit_bar_shows_the_field_and_commits() {
     let actions = ViewBridge::default();
     actions.set_edit(Rc::new(RefCell::new(TextEdit::new("New Name"))));
     let model = ViewModel {
-        editing: Some(EditState {
-            game_id: 0,
-            kind: EditKind::Name,
-        }),
+        editing: Some(EditTarget::GameName(0)),
         ..ViewModel::default()
     };
     let (mut tree, list) = laid_out(&model, &actions);
@@ -638,10 +637,7 @@ fn the_edit_field_focuses_and_accepts_text() {
     let actions = ViewBridge::default();
     actions.set_edit(Rc::new(RefCell::new(TextEdit::new("ab"))));
     let model = ViewModel {
-        editing: Some(EditState {
-            game_id: 0,
-            kind: EditKind::Name,
-        }),
+        editing: Some(EditTarget::GameName(0)),
         ..ViewModel::default()
     };
     let (mut tree, list) = laid_out(&model, &actions);
@@ -684,10 +680,7 @@ fn the_search_bar_starts_and_reflects_the_query() {
     let actions = ViewBridge::default();
     actions.set_edit(Rc::new(RefCell::new(TextEdit::new("mario"))));
     let model = ViewModel {
-        editing: Some(EditState {
-            game_id: -1,
-            kind: EditKind::Search,
-        }),
+        editing: Some(EditTarget::LibrarySearch),
         ..ViewModel::default()
     };
     let (_, list) = laid_out(&model, &actions);
@@ -847,7 +840,7 @@ fn the_play_column_emits_a_draw_image() {
         ..ViewModel::default()
     };
 
-    let mount = ViewMount::new(model.middle_width);
+    let mount = ViewMount::new(model.content_width);
     let (mut tree, _) = build(theme, &model, &actions, &mount);
     igui::igui_ui::layout(
         &mut tree,
@@ -1073,9 +1066,9 @@ fn the_settings_page_switches_the_theme_and_appearance() {
 /// The number of grid columns steps 2 / 3 / 4 as the middle column widens,
 /// and never leaves that range.
 #[test]
-fn library_columns_steps_with_the_middle_width() {
-    assert_eq!(library_columns(MIDDLE_MIN_WIDTH), MIN_LIBRARY_COLUMNS);
-    assert_eq!(library_columns(MIDDLE_MAX_WIDTH), MAX_LIBRARY_COLUMNS);
+fn library_columns_steps_with_the_content_width() {
+    assert_eq!(library_columns(CONTENT_MIN_WIDTH), MIN_LIBRARY_COLUMNS);
+    assert_eq!(library_columns(CONTENT_MAX_WIDTH), MAX_LIBRARY_COLUMNS);
     assert!(
         (MIN_LIBRARY_COLUMNS..=MAX_LIBRARY_COLUMNS).contains(&library_columns(400.0)),
         "a mid width picks a valid count"
@@ -1211,7 +1204,7 @@ fn the_settings_page_scrolls_when_it_overflows() {
         bindings,
         ..ViewModel::default()
     };
-    let mount = ViewMount::new(model.middle_width);
+    let mount = ViewMount::new(model.content_width);
     let (mut tree, mut scroll) = build(theme, &model, &actions, &mount);
     let viewport = igui::igui_core::ViewportSize::new(Size::new(1100.0, 760.0));
     igui::igui_ui::layout(&mut tree, viewport);

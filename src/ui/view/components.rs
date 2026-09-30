@@ -11,7 +11,9 @@ use igui::igui_ui::{Align, Justify, SurfaceStyle, Track};
 use crate::ui::icons::{Icon as SvgIcon, IconName};
 use crate::ui::model::ViewModel;
 
-use super::{media, ViewBridge, CARD_ICON, CARD_ICON_BUTTON};
+use crate::ui::color::media;
+
+use super::{ViewBridge, CARD_ICON, CARD_ICON_BUTTON};
 
 /// A chip: a small single-choice control for a toolbar, ghost at rest and
 /// softly filled in the accent when selected. Always mini, so callers do not
@@ -203,22 +205,4 @@ pub(super) fn virtual_grid<C: Component + 'static>(
         column = column.child(spacer(bottom));
     }
     column
-}
-
-/// A short "how long ago" for a screenshot caption.
-pub(super) fn format_when(created_ms: i64) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as i64)
-        .unwrap_or(0);
-    let seconds = ((now - created_ms) / 1000).max(0);
-    if seconds < 60 {
-        "刚刚".to_string()
-    } else if seconds < 3600 {
-        format!("{} 分钟前", seconds / 60)
-    } else if seconds < 86_400 {
-        format!("{} 小时前", seconds / 3600)
-    } else {
-        format!("{} 天前", seconds / 86_400)
-    }
 }

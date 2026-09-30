@@ -57,26 +57,18 @@ impl SafeArea {
     };
 }
 
-/// What an in-progress text edit is for.
+/// What an in-progress text edit is for. The game variants carry the game id,
+/// so a search (which has no game) can never be mistaken for a rename.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EditKind {
-    /// The game's display name.
-    Name,
-    /// The game's tags, comma-separated in the field.
-    Tags,
+pub enum EditTarget {
+    /// The display name of the game with this id.
+    GameName(i64),
+    /// The tags of the game with this id, comma-separated in the field.
+    GameTags(i64),
     /// The library search query.
-    Search,
+    LibrarySearch,
     /// The downloadable-core catalog search query.
     CatalogSearch,
-}
-
-/// An in-progress text edit. The app owns the keyboard while this is set and
-/// commits or cancels it; the view mounts an `igui` `TextInput` from the shared
-/// editing state the app seeded into [`ViewBridge`](crate::ui::ViewBridge).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EditState {
-    pub game_id: i64,
-    pub kind: EditKind,
 }
 
 /// A post-process preset for the game picture.
@@ -293,7 +285,7 @@ pub struct ScreenshotRow {
     pub id: i64,
     pub game_id: i64,
     /// The game's display name, for the caption.
-    pub game: String,
+    pub game_name: String,
     pub created_at: i64,
     /// Whether this picture is its game's cover.
     pub is_cover: bool,
@@ -380,8 +372,9 @@ pub struct CatalogRow {
     pub name: String,
     /// The display name from `libretro-core-info`.
     pub display_name: String,
-    /// The core-info `systemid` (`super_nes`, `mame`, …).
-    pub system: String,
+    /// The core-info `systemid` (`super_nes`, `mame`, …), as a string key
+    /// rather than a [`SystemId`] (the core may not be supported yet).
+    pub system_key: String,
     /// Whether a module with this name is already in the cores directory.
     pub downloaded: bool,
     /// Whether this app models the core's console. An unsupported core can be
@@ -487,7 +480,7 @@ pub struct ViewModel {
     /// The screenshots ticked for a batch delete.
     pub selected_screenshots: Vec<i64>,
     /// An in-progress rename or tag edit, shown in a bar above the grid.
-    pub editing: Option<EditState>,
+    pub editing: Option<EditTarget>,
     /// How many games the library holds, before any search or system filter.
     pub total_games: usize,
     /// The console the library is filtered to, or `None` for all of them.
@@ -516,7 +509,7 @@ pub struct ViewModel {
     /// The middle column's initial width in logical pixels. The live width is
     /// owned by the UI (the resize handle's shared cell); this seeds it at
     /// construction.
-    pub middle_width: f32,
+    pub content_width: f32,
     /// The library / screenshots grid column count. The app steps it 2 / 3 / 4
     /// from the middle width (see [`library_columns`](crate::ui::library_columns)).
     pub grid_columns: usize,
@@ -593,7 +586,7 @@ impl Default for ViewModel {
             theme_choice: ThemeChoice::default(),
             light: false,
             core_options: Vec::new(),
-            middle_width: crate::ui::view::MIDDLE_DEFAULT_WIDTH,
+            content_width: crate::ui::view::CONTENT_DEFAULT_WIDTH,
             grid_columns: 2,
             catalog: Vec::new(),
             catalog_query: String::new(),

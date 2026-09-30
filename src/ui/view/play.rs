@@ -11,7 +11,7 @@ use crate::ui::frame::FrameImage;
 use crate::ui::icons::{Icon as SvgIcon, IconName};
 use crate::ui::model::{Action, Confirm, ScreenshotRow, ViewModel};
 
-use super::components::format_when;
+use super::format::format_when;
 use super::ViewBridge;
 
 /// The console column, on the right and always mounted. While a screenshot is
@@ -151,7 +151,7 @@ pub(super) fn preview_column(
         .align(Align::Center)
         .gap(space::SM)
         .child(
-            Text::subheading(shot.game.as_str(), theme)
+            Text::subheading(shot.game_name.as_str(), theme)
                 .grow(1.0)
                 .max_lines(1)
                 .ellipsis(true),

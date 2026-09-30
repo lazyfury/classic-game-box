@@ -14,7 +14,8 @@ use crate::ui::frame::crop_fit;
 use crate::ui::icons::{Icon as SvgIcon, IconName};
 use crate::ui::model::{Action, Confirm, ScreenshotRow, ViewModel};
 
-use super::components::{format_when, grid_viewport, icon_button, virtual_grid, window_for};
+use super::components::{grid_viewport, icon_button, virtual_grid, window_for};
+use super::format::format_when;
 use super::Page;
 use super::ViewBridge;
 use super::{CARD_ICON, CARD_ICON_BUTTON, PLACEHOLDER_HEIGHT, SHOT_HEIGHT};
@@ -183,7 +184,7 @@ pub(super) fn shot_card(
         })
         .child(thumbnail(theme, shot, model.screenshot_select, actions))
         .child(
-            Text::small(shot.game.as_str(), theme)
+            Text::small(shot.game_name.as_str(), theme)
                 .max_lines(1)
                 .ellipsis(true),
         )

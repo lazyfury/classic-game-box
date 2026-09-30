@@ -21,7 +21,7 @@ impl super::App {
                 .map(|entry| CatalogRow {
                     name: entry.name.clone(),
                     display_name: entry.display_name.clone(),
-                    system: entry.system.clone(),
+                    system_key: entry.system.clone(),
                     downloaded: platform.is_some_and(|platform| {
                         cores_dir.join(entry.module_file(platform)).is_file()
                     }),

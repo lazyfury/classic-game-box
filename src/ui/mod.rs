@@ -8,6 +8,7 @@
 //! See `docs/architecture/quill-native-migration.md` §7 and the igui
 //! `docs/ui-guide.md` for the frame loop this wraps.
 
+mod color;
 mod focus;
 mod frame;
 mod icons;
@@ -19,13 +20,13 @@ pub use frame::{centered_fit, contain_fit, crop_fit, FrameImage};
 pub use icons::{clear_textures, rasterize_icon, set_texture, Icon, IconName};
 pub use model::{
     save_slot_label, Action, BindingRow, CatalogRow, CheatRow, Confirm, CoreOptionRow, CoreRow,
-    EditKind, EditState, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
-    ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, TextureHandle, ViewModel,
+    EditTarget, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow, ScreenshotRow,
+    Section, ShaderKind, SortKey, StatusKind, SystemCount, TextureHandle, ViewModel,
 };
 pub use theme::{game_theme, ThemeChoice};
 pub use view::{
-    grid_window, library_columns, ViewBridge, MAX_LIBRARY_COLUMNS, MIDDLE_DEFAULT_WIDTH,
-    MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH, MIN_LIBRARY_COLUMNS,
+    grid_window, library_columns, ViewBridge, CONTENT_DEFAULT_WIDTH, CONTENT_MAX_WIDTH,
+    CONTENT_MIN_WIDTH, MAX_LIBRARY_COLUMNS, MIN_LIBRARY_COLUMNS,
 };
 
 use igui::igui_components::{NodeRef, OverlayId, Overlays, ScrollViewState};
@@ -54,10 +55,10 @@ pub struct Ui {
     /// The middle column's scroll state (the library grid, the screenshots
     /// grid or the settings bodies); `None` when the page has nothing to
     /// scroll.
-    middle_scroll: Option<ScrollViewState>,
-    /// Which page `middle_scroll` belongs to. A rebuild only carries the
+    content_scroll: Option<ScrollViewState>,
+    /// Which page `content_scroll` belongs to. A rebuild only carries the
     /// offset over while the page is unchanged.
-    middle_section: Section,
+    content_section: Section,
     /// The offset to restore on the next layout, set by a rebuild. It is
     /// applied *after* the first sync, once the content height is known.
     scroll_target: Option<f32>,
@@ -73,8 +74,8 @@ pub struct Ui {
 impl Ui {
     /// Build a fresh tree from the model.
     pub fn new(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Self {
-        let mount = view::ViewMount::new(model.middle_width);
-        let (tree, middle_scroll) = view::build(theme, model, actions, &mount);
+        let mount = view::ViewMount::new(model.content_width);
+        let (tree, content_scroll) = view::build(theme, model, actions, &mount);
         let tips = resolve_tips(actions.take_tips());
         Self {
             tree,
@@ -82,8 +83,8 @@ impl Ui {
             overlays: Overlays::new(theme),
             tips,
             open_tip: None,
-            middle_scroll,
-            middle_section: model.section,
+            content_scroll,
+            content_section: model.section,
             scroll_target: None,
             repaint: true,
             mount,
@@ -101,14 +102,14 @@ impl Ui {
     /// on the resize handle is re-armed on the new tree. That keeps the drag
     /// alive when a rebuild is triggered mid-drag by a grid column change.
     pub fn rebuild(&mut self, theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) {
-        let previous = (self.middle_section == model.section)
-            .then(|| self.middle_scroll.as_ref().map(ScrollViewState::offset))
+        let previous = (self.content_section == model.section)
+            .then(|| self.content_scroll.as_ref().map(ScrollViewState::offset))
             .flatten();
         let dragging = igui::igui_ui::gui_state_of(&self.tree).and_then(|state| state.dragging);
         let drag_last = igui::igui_ui::gui_state_of(&self.tree).map(|state| state.drag_last);
         let was_resizing = dragging.is_some() && dragging == self.mount.resize_handle.get();
 
-        let (tree, middle_scroll) = view::build(theme, model, actions, &self.mount);
+        let (tree, content_scroll) = view::build(theme, model, actions, &self.mount);
         let retheme = !std::ptr::eq(self.theme, theme);
         self.tree = tree;
         self.theme = theme;
@@ -122,13 +123,13 @@ impl Ui {
         self.overlays.close_all();
         self.open_tip = None;
         self.tips = resolve_tips(actions.take_tips());
-        self.scroll_target = if middle_scroll.is_some() {
+        self.scroll_target = if content_scroll.is_some() {
             previous
         } else {
             None
         };
-        self.middle_scroll = middle_scroll;
-        self.middle_section = model.section;
+        self.content_scroll = content_scroll;
+        self.content_section = model.section;
         self.repaint = true;
         if was_resizing {
             self.rearm_resize_drag(drag_last);
@@ -181,8 +182,8 @@ impl Ui {
     }
 
     /// The middle column's live width, for the host to persist after a drag.
-    pub fn middle_width(&self) -> f32 {
-        self.mount.middle_width.get()
+    pub fn content_width(&self) -> f32 {
+        self.mount.content_width.get()
     }
 
     /// Whether the virtualized grid's mounted rows still cover `model`'s
@@ -199,7 +200,7 @@ impl Ui {
     /// The middle column's scroll offset, for the host to feed back into the
     /// model so the view can mount only the visible rows.
     pub fn scroll_offset(&self) -> f32 {
-        self.middle_scroll
+        self.content_scroll
             .as_ref()
             .map(ScrollViewState::offset)
             .unwrap_or(0.0)
@@ -207,7 +208,7 @@ impl Ui {
 
     /// The middle column's viewport height, or `0` before the first layout.
     pub fn scroll_viewport(&self) -> f32 {
-        self.middle_scroll
+        self.content_scroll
             .as_ref()
             .map(ScrollViewState::viewport_height)
             .unwrap_or(0.0)
@@ -240,7 +241,7 @@ impl Ui {
     pub fn layout(&mut self, viewport: ViewportSize) {
         igui::igui_ui::layout(&mut self.tree, viewport);
         self.tree.update();
-        if let Some(scroll) = self.middle_scroll.as_mut() {
+        if let Some(scroll) = self.content_scroll.as_mut() {
             let mut changed = scroll.sync(&mut self.tree);
             if let Some(target) = self.scroll_target.take() {
                 scroll.scroll_to(target);
@@ -499,10 +500,7 @@ mod tests {
             igui::igui_ui::TextEdit::new("ab"),
         )));
         let model = ViewModel {
-            editing: Some(EditState {
-                game_id: 0,
-                kind: EditKind::Name,
-            }),
+            editing: Some(EditTarget::GameName(0)),
             ..ViewModel::default()
         };
         let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
@@ -537,17 +535,17 @@ mod tests {
 
         let mut ui = Ui::new(theme, &model, &actions);
         ui.layout(viewport);
-        ui.middle_scroll
+        ui.content_scroll
             .as_ref()
             .expect("the library scrolls")
             .scroll_to(120.0);
         ui.layout(viewport);
-        let before = ui.middle_scroll.as_ref().unwrap().offset();
+        let before = ui.content_scroll.as_ref().unwrap().offset();
         assert!(before > 0.0, "the grid scrolled: {before}");
 
         ui.rebuild(theme, &model, &actions);
         ui.layout(viewport);
-        let after = ui.middle_scroll.as_ref().unwrap().offset();
+        let after = ui.content_scroll.as_ref().unwrap().offset();
         assert_eq!(after, before, "the offset survives the rebuild");
     }
 
@@ -584,15 +582,15 @@ mod tests {
 
         let mut ui = Ui::new(theme, &model, &actions);
         ui.layout(viewport);
-        ui.middle_scroll.as_ref().unwrap().scroll_to(120.0);
+        ui.content_scroll.as_ref().unwrap().scroll_to(120.0);
         ui.layout(viewport);
-        assert!(ui.middle_scroll.as_ref().unwrap().offset() > 0.0);
+        assert!(ui.content_scroll.as_ref().unwrap().offset() > 0.0);
 
         model.section = Section::Settings;
         ui.rebuild(theme, &model, &actions);
         ui.layout(viewport);
         assert_eq!(
-            ui.middle_scroll.as_ref().map(ScrollViewState::offset),
+            ui.content_scroll.as_ref().map(ScrollViewState::offset),
             Some(0.0),
             "the settings page starts at the top"
         );
@@ -638,7 +636,7 @@ mod tests {
         let mut ui = Ui::new(theme, &model, &actions);
         ui.layout(viewport);
         // The 6px gutter sits at the middle column's right edge.
-        let start = Vec2::new(64.0 + model.middle_width + 3.0, 400.0);
+        let start = Vec2::new(64.0 + model.content_width + 3.0, 400.0);
         let end = start + Vec2::new(40.0, 0.0);
         ui.route_input(&InputEvent::PointerDown {
             position: start,
@@ -650,19 +648,19 @@ mod tests {
             button: PointerButton::Left,
         });
         ui.layout(viewport);
-        let widened = model.middle_width + 40.0;
+        let widened = model.content_width + 40.0;
         assert!(
-            (ui.middle_width() - widened).abs() < 1e-3,
+            (ui.content_width() - widened).abs() < 1e-3,
             "the drag widened the column: {}",
-            ui.middle_width()
+            ui.content_width()
         );
 
         ui.rebuild(theme, &model, &actions);
         ui.layout(viewport);
         assert!(
-            (ui.middle_width() - widened).abs() < 1e-3,
+            (ui.content_width() - widened).abs() < 1e-3,
             "the width survives a rebuild: {}",
-            ui.middle_width()
+            ui.content_width()
         );
     }
 
@@ -677,7 +675,7 @@ mod tests {
 
         let mut ui = Ui::new(theme, &model, &actions);
         ui.layout(viewport);
-        let start = Vec2::new(64.0 + model.middle_width + 3.0, 400.0);
+        let start = Vec2::new(64.0 + model.content_width + 3.0, 400.0);
         ui.route_input(&InputEvent::PointerDown {
             position: start,
             button: PointerButton::Left,
@@ -695,9 +693,9 @@ mod tests {
             button: PointerButton::Left,
         });
         assert!(
-            (ui.middle_width() - (model.middle_width + 60.0)).abs() < 1e-3,
+            (ui.content_width() - (model.content_width + 60.0)).abs() < 1e-3,
             "the drag continued after the rebuild: {}",
-            ui.middle_width()
+            ui.content_width()
         );
     }
 

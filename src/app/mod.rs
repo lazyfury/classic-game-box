@@ -34,10 +34,10 @@ use winit::window::{Fullscreen, Window};
 
 use crate::ui::{
     library_columns, save_slot_label, Action, BindingRow, CatalogRow, Confirm, CoreOptionRow,
-    CoreRow, EditKind, EditState, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
+    CoreRow, EditTarget, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
     ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, TextureHandle,
-    ThemeChoice, Ui, ViewBridge, ViewModel, MIDDLE_DEFAULT_WIDTH, MIDDLE_MAX_WIDTH,
-    MIDDLE_MIN_WIDTH,
+    ThemeChoice, Ui, ViewBridge, ViewModel, CONTENT_DEFAULT_WIDTH, CONTENT_MAX_WIDTH,
+    CONTENT_MIN_WIDTH,
 };
 use cgb_cores::{
     cache_path, download_core_with_progress, load_cores, register_downloaded, registry_path,
@@ -457,12 +457,12 @@ impl App {
         let light = settings.light;
         let shader = ShaderKind::from_key(&settings.shader);
         let msaa = MsaaKind::from_key(&settings.msaa);
-        let middle_width = if settings.middle_width > 0.0 {
+        let content_width = if settings.content_width > 0.0 {
             settings
-                .middle_width
-                .clamp(MIDDLE_MIN_WIDTH, MIDDLE_MAX_WIDTH)
+                .content_width
+                .clamp(CONTENT_MIN_WIDTH, CONTENT_MAX_WIDTH)
         } else {
-            MIDDLE_DEFAULT_WIDTH
+            CONTENT_DEFAULT_WIDTH
         };
         let library = Library::open(&paths.library_db).ok();
         let cores = load_core_manifest(&paths);
@@ -473,8 +473,8 @@ impl App {
         let theme = theme_choice.theme(mode);
         let model = ViewModel {
             core_name: "—".to_string(),
-            middle_width,
-            grid_columns: library_columns(middle_width),
+            content_width,
+            grid_columns: library_columns(content_width),
             theme_choice,
             light,
             ..ViewModel::default()
@@ -593,24 +593,24 @@ impl AppLogic for App {
         self.feed(event);
         // A search filters as it is typed: read the field back and rebuild the
         // rows when the query changed.
-        if let Some(kind) = self.model.editing.as_ref().map(|edit| edit.kind) {
+        if let Some(target) = self.model.editing {
             let text = self.actions.edit_text();
-            match kind {
-                EditKind::Search => {
+            match target {
+                EditTarget::LibrarySearch => {
                     if text != self.model.search {
                         self.model.search = text;
                         self.rebuild_game_rows();
                         self.dirty = true;
                     }
                 }
-                EditKind::CatalogSearch => {
+                EditTarget::CatalogSearch => {
                     if text != self.model.catalog_query {
                         self.model.catalog_query = text;
                         self.rebuild_catalog();
                         self.dirty = true;
                     }
                 }
-                EditKind::Name | EditKind::Tags => {}
+                EditTarget::GameName(_) | EditTarget::GameTags(_) => {}
             }
         }
         EventResult::Handled

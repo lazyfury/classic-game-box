@@ -12,15 +12,17 @@ use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle};
 
 use crate::ui::frame::crop_fit;
 use crate::ui::icons::{Icon as SvgIcon, IconName};
-use crate::ui::model::{Action, Confirm, EditKind, EditState, GameRow, SortKey, ViewModel};
+use crate::ui::model::{Action, Confirm, EditTarget, GameRow, SortKey, ViewModel};
 
 use super::components::{
     chip, chip_bar, chip_group, compact_button, grid_viewport, icon_button, text_field,
     virtual_grid, window_for,
 };
+use super::format::{format_duration, format_size};
 use super::Page;
 use super::ViewBridge;
-use super::{media, CARD_HEIGHT, CARD_ICON, CARD_ICON_BUTTON, PLACEHOLDER_HEIGHT};
+use super::{CARD_HEIGHT, CARD_ICON, CARD_ICON_BUTTON, PLACEHOLDER_HEIGHT};
+use crate::ui::color::{cover_color, cover_ink, media};
 
 pub(super) fn library_page(
     theme: &'static dyn Theme,
@@ -46,7 +48,7 @@ pub(super) fn library_page(
     column = column.child(Divider::horizontal(theme));
     column = column.child(search_bar(theme, model, actions));
     if let Some(edit) = &model.editing {
-        if matches!(edit.kind, EditKind::Name | EditKind::Tags) {
+        if matches!(edit, EditTarget::GameName(_) | EditTarget::GameTags(_)) {
             column = column.child(edit_bar(theme, edit, actions));
         }
     }
@@ -153,7 +155,7 @@ pub(super) fn search_bar(
 ) -> Row {
     let mut row = Row::new().align(Align::Center).gap(space::XS);
     if let Some(edit) = &model.editing {
-        if edit.kind == EditKind::Search {
+        if *edit == EditTarget::LibrarySearch {
             let done = actions.clone();
             let clear = actions.clone();
             return row
@@ -205,14 +207,14 @@ pub(super) fn search_bar(
 /// The rename / tags edit bar: a text field, the caret, and save / cancel.
 pub(super) fn edit_bar(
     theme: &'static dyn Theme,
-    edit: &EditState,
+    edit: &EditTarget,
     actions: &ViewBridge,
 ) -> Column {
-    let label = match edit.kind {
-        EditKind::Name => "改名",
-        EditKind::Tags => "标签（用逗号分隔）",
-        EditKind::Search => "搜索",
-        EditKind::CatalogSearch => "搜索核心",
+    let label = match edit {
+        EditTarget::GameName(_) => "改名",
+        EditTarget::GameTags(_) => "标签（用逗号分隔）",
+        EditTarget::LibrarySearch => "搜索",
+        EditTarget::CatalogSearch => "搜索核心",
     };
     let save = actions.clone();
     let cancel = actions.clone();
@@ -524,77 +526,4 @@ pub(super) fn meta_label(game: &GameRow) -> String {
         parts.push("未玩过".to_string());
     }
     parts.join(" · ")
-}
-
-/// Bytes into the short string a card has room for.
-pub(super) fn format_size(bytes: u64) -> String {
-    const KIB: u64 = 1024;
-    const MIB: u64 = 1024 * 1024;
-    if bytes < KIB {
-        format!("{bytes} B")
-    } else if bytes < MIB {
-        format!("{} KB", (bytes as f64 / KIB as f64).round() as u64)
-    } else {
-        format!("{:.1} MB", bytes as f64 / MIB as f64)
-    }
-}
-
-/// A total play time in the units an interface has room for.
-pub(super) fn format_duration(seconds: i64) -> String {
-    let whole = seconds.max(0);
-    if whole < 60 {
-        return format!("{whole} 秒");
-    }
-    let minutes = whole / 60;
-    if minutes < 60 {
-        return format!("{minutes} 分");
-    }
-    let hours = minutes / 60;
-    let rest = minutes % 60;
-    if hours >= 100 || rest == 0 {
-        format!("{hours} 时")
-    } else {
-        format!("{hours} 时 {rest} 分")
-    }
-}
-
-/// A stable, readable cover colour for a ROM path: hash it to a hue with a
-/// fixed saturation and value, so the whole grid stays legible against light
-/// text. FNV-1a, because it is short and stable across runs.
-pub(super) fn cover_color(path: &str) -> Color {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in path.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hsv((hash % 360) as f32, 0.45, 0.45)
-}
-
-/// Ink that stays legible on a cover color: dark on a light hue, light on a
-/// dark one.
-pub(super) fn cover_ink(color: Color) -> Color {
-    let [r, g, b, _] = color.to_rgba8();
-    let luminance = (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32) / 255.0;
-    if luminance > 0.55 {
-        media::ON_MEDIA_DARK
-    } else {
-        media::ON_MEDIA
-    }
-}
-
-/// HSV (h in degrees) to an RGB [`Color`]. Only used for cover hues.
-pub(super) fn hsv(hue: f32, saturation: f32, value: f32) -> Color {
-    let chroma = value * saturation;
-    let h = hue / 60.0;
-    let x = chroma * (1.0 - (h % 2.0 - 1.0).abs());
-    let (r, g, b) = match h as u32 {
-        0 => (chroma, x, 0.0),
-        1 => (x, chroma, 0.0),
-        2 => (0.0, chroma, x),
-        3 => (0.0, x, chroma),
-        4 => (x, 0.0, chroma),
-        _ => (chroma, 0.0, x),
-    };
-    let m = value - chroma;
-    Color::rgb(r + m, g + m, b + m)
 }

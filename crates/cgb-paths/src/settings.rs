@@ -62,7 +62,8 @@ pub struct Settings {
     /// Remembered core options, keyed by `"<core key>:<option key>"`.
     pub core_options: BTreeMap<String, String>,
     /// The middle column's width in logical pixels (0 means the default).
-    pub middle_width: f32,
+    #[serde(alias = "middle_width")]
+    pub content_width: f32,
 }
 
 impl Settings {
@@ -157,6 +158,15 @@ mod tests {
         // …and the list is gone once the settings are saved again.
         let out = serde_json::to_string(&settings).expect("serialize");
         assert!(!out.contains("library_dirs"));
+    }
+
+    #[test]
+    fn the_content_width_reads_the_old_middle_width_key() {
+        // A settings file written before the field was renamed to
+        // `content_width` still loads its dragged split.
+        let old: Settings =
+            serde_json::from_str("{\"middle_width\":420.0}").expect("old settings parse");
+        assert_eq!(old.content_width, 420.0);
     }
 
     #[test]

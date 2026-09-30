@@ -99,14 +99,14 @@ impl super::App {
         // The resize handle owns the middle width. Feed the live value back so
         // the grid's column count follows it, and persist the width when the
         // drag ends.
-        let middle_width = self.ui.middle_width();
-        if middle_width != self.model.middle_width {
-            self.model.middle_width = middle_width;
+        let content_width = self.ui.content_width();
+        if content_width != self.model.content_width {
+            self.model.content_width = content_width;
         }
         let released = matches!(event, InputEvent::PointerUp { .. });
         self.sync_grid_columns(released);
-        if released && middle_width != self.settings.middle_width {
-            self.settings.middle_width = middle_width;
+        if released && content_width != self.settings.content_width {
+            self.settings.content_width = content_width;
             let _ = self.settings.save(&self.paths.settings_json);
         }
         // A wheel or scrollbar move changes the offset. Feed it back so the
@@ -134,7 +134,7 @@ impl super::App {
             return;
         }
         self.last_columns_check = now;
-        let columns = library_columns(self.ui.middle_width());
+        let columns = library_columns(self.ui.content_width());
         if columns != self.model.grid_columns {
             self.model.grid_columns = columns;
             self.dirty = true;
@@ -250,7 +250,7 @@ impl super::App {
                     self.rebuild_game_rows();
                 }
                 Action::SelectCore(index) => self.select_core(index),
-                Action::StartCatalogSearch => self.start_edit(-1, EditKind::CatalogSearch),
+                Action::StartCatalogSearch => self.start_edit(EditTarget::CatalogSearch),
                 Action::ClearCatalogSearch => self.clear_catalog_search(),
                 Action::RefreshCatalog => self.refresh_catalog(),
                 Action::DownloadCore(index) => {
@@ -271,8 +271,8 @@ impl super::App {
                     opened_overlay = true;
                 }
                 Action::ConfirmDelete => self.confirm_delete(),
-                Action::StartRename(id) => self.start_edit(id, EditKind::Name),
-                Action::StartTagEdit(id) => self.start_edit(id, EditKind::Tags),
+                Action::StartRename(id) => self.start_edit(EditTarget::GameName(id)),
+                Action::StartTagEdit(id) => self.start_edit(EditTarget::GameTags(id)),
                 Action::StartSearch => self.start_search(),
                 Action::ClearSearch => self.clear_search(),
                 Action::CommitEdit => self.commit_edit(),
@@ -364,33 +364,34 @@ impl super::App {
         self.ui.request_repaint();
     }
 
-    /// Begin editing a game's name or tags; the app seeds the shared edit state
-    /// the view mounts a `TextInput` from.
-    pub(super) fn start_edit(&mut self, game_id: i64, kind: EditKind) {
-        // Searches are not tied to a game; rename / tag edits are.
-        let text = match kind {
-            EditKind::Search => self.model.search.clone(),
-            EditKind::CatalogSearch => self.model.catalog_query.clone(),
-            EditKind::Name | EditKind::Tags => {
-                let Some(game) = self.game_source.iter().find(|game| game.id == game_id) else {
+    /// Begin a text edit (a rename, a tag edit or a search); the app seeds the
+    /// shared edit state the view mounts a `TextInput` from.
+    pub(super) fn start_edit(&mut self, target: EditTarget) {
+        let text = match target {
+            EditTarget::LibrarySearch => self.model.search.clone(),
+            EditTarget::CatalogSearch => self.model.catalog_query.clone(),
+            EditTarget::GameName(id) | EditTarget::GameTags(id) => {
+                let Some(game) = self.game_source.iter().find(|game| game.id == id) else {
                     return;
                 };
-                match kind {
-                    EditKind::Name => game.name.clone(),
-                    EditKind::Tags => game.tags.join(", "),
-                    EditKind::Search | EditKind::CatalogSearch => unreachable!("handled above"),
+                match target {
+                    EditTarget::GameName(_) => game.name.clone(),
+                    EditTarget::GameTags(_) => game.tags.join(", "),
+                    EditTarget::LibrarySearch | EditTarget::CatalogSearch => {
+                        unreachable!("handled above")
+                    }
                 }
             }
         };
         self.actions
             .set_edit(Rc::new(RefCell::new(TextEdit::new(text))));
-        self.model.editing = Some(EditState { game_id, kind });
+        self.model.editing = Some(target);
         self.dirty = true;
     }
 
     /// Begin typing a library search; the app takes the keyboard.
     pub(super) fn start_search(&mut self) {
-        self.start_edit(-1, EditKind::Search);
+        self.start_edit(EditTarget::LibrarySearch);
     }
 
     /// Clear the search and leave any edit.
@@ -404,15 +405,14 @@ impl super::App {
 
     /// Discard the pending edit. A search edit also clears the query.
     pub(super) fn cancel_edit(&mut self) {
-        let kind = self.model.editing.as_ref().map(|edit| edit.kind);
-        self.model.editing = None;
+        let target = self.model.editing.take();
         self.actions.clear_edit();
-        match kind {
-            Some(EditKind::Search) => {
+        match target {
+            Some(EditTarget::LibrarySearch) => {
                 self.model.search.clear();
                 self.rebuild_game_rows();
             }
-            Some(EditKind::CatalogSearch) => {
+            Some(EditTarget::CatalogSearch) => {
                 self.model.catalog_query.clear();
                 self.rebuild_catalog();
             }
@@ -423,85 +423,83 @@ impl super::App {
 
     /// Commit the pending edit to the database and the in-memory rows.
     pub(super) fn commit_edit(&mut self) {
-        let Some(edit) = self.model.editing.take() else {
+        let Some(target) = self.model.editing.take() else {
             return;
         };
         let text = self.actions.edit_text();
         self.actions.clear_edit();
-        // A search is applied as it is typed; committing just closes it.
-        if edit.kind == EditKind::Search {
-            let message = if self.model.search.is_empty() {
-                String::new()
-            } else {
-                format!("搜索：{}", self.model.search)
-            };
-            self.model.set_status(message, StatusKind::Info);
-            self.dirty = true;
-            return;
-        }
-        if edit.kind == EditKind::CatalogSearch {
-            let message = if self.model.catalog_query.is_empty() {
-                String::new()
-            } else {
-                format!("搜索核心：{}", self.model.catalog_query)
-            };
-            self.model.set_status(message, StatusKind::Info);
-            self.dirty = true;
-            return;
-        }
-        let Some(path) = self
-            .game_source
-            .iter()
-            .find(|game| game.id == edit.game_id)
-            .map(|game| game.path.clone())
-        else {
-            return;
-        };
-        match edit.kind {
-            EditKind::Name => {
-                let name = text.trim().to_string();
-                if name.is_empty() {
-                    self.model
-                        .set_status("名字不能为空".to_string(), StatusKind::Error);
-                    self.dirty = true;
+        match target {
+            // A search is applied as it is typed; committing just closes it.
+            EditTarget::LibrarySearch => {
+                let message = if self.model.search.is_empty() {
+                    String::new()
+                } else {
+                    format!("搜索：{}", self.model.search)
+                };
+                self.model.set_status(message, StatusKind::Info);
+            }
+            EditTarget::CatalogSearch => {
+                let message = if self.model.catalog_query.is_empty() {
+                    String::new()
+                } else {
+                    format!("搜索核心：{}", self.model.catalog_query)
+                };
+                self.model.set_status(message, StatusKind::Info);
+            }
+            EditTarget::GameName(game_id) | EditTarget::GameTags(game_id) => {
+                let Some(path) = self
+                    .game_source
+                    .iter()
+                    .find(|game| game.id == game_id)
+                    .map(|game| game.path.clone())
+                else {
                     return;
+                };
+                match target {
+                    EditTarget::GameName(_) => {
+                        let name = text.trim().to_string();
+                        if name.is_empty() {
+                            self.model
+                                .set_status("名字不能为空".to_string(), StatusKind::Error);
+                            self.dirty = true;
+                            return;
+                        }
+                        if let Some(library) = &self.library {
+                            let _ = library.rename(&path, &name);
+                        }
+                        if let Some(game) =
+                            self.game_source.iter_mut().find(|game| game.id == game_id)
+                        {
+                            game.name = name.clone();
+                        }
+                        self.model
+                            .set_status(format!("已改名为：{name}"), StatusKind::Success);
+                    }
+                    EditTarget::GameTags(_) => {
+                        let tags: Vec<String> = text
+                            .split([',', '，', ' '])
+                            .map(str::trim)
+                            .filter(|tag| !tag.is_empty())
+                            .map(str::to_string)
+                            .collect();
+                        if let Some(library) = &self.library {
+                            let _ = library.set_tags(&path, &tags);
+                        }
+                        if let Some(game) =
+                            self.game_source.iter_mut().find(|game| game.id == game_id)
+                        {
+                            game.tags = tags.clone();
+                        }
+                        self.model.set_status(
+                            format!("已更新标签（{} 个）", tags.len()),
+                            StatusKind::Success,
+                        );
+                    }
+                    EditTarget::LibrarySearch | EditTarget::CatalogSearch => {
+                        unreachable!("handled above")
+                    }
                 }
-                if let Some(library) = &self.library {
-                    let _ = library.rename(&path, &name);
-                }
-                if let Some(game) = self
-                    .game_source
-                    .iter_mut()
-                    .find(|game| game.id == edit.game_id)
-                {
-                    game.name = name.clone();
-                }
-                self.model
-                    .set_status(format!("已改名为：{name}"), StatusKind::Success);
             }
-            EditKind::Tags => {
-                let tags: Vec<String> = text
-                    .split([',', '，', ' '])
-                    .map(str::trim)
-                    .filter(|tag| !tag.is_empty())
-                    .map(str::to_string)
-                    .collect();
-                if let Some(library) = &self.library {
-                    let _ = library.set_tags(&path, &tags);
-                }
-                if let Some(game) = self
-                    .game_source
-                    .iter_mut()
-                    .find(|game| game.id == edit.game_id)
-                {
-                    game.tags = tags.clone();
-                }
-                self.model.set_status(
-                    format!("已更新标签（{} 个）", tags.len()),
-                    StatusKind::Success,
-                );
-            }
-            EditKind::Search | EditKind::CatalogSearch => {}
         }
         self.rebuild_game_rows();
         self.dirty = true;
