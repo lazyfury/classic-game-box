@@ -5,7 +5,7 @@ use cgb_systems::SystemId;
 use igui::igui_core::{NodeId, Vec2};
 use igui::igui_render::TextureId;
 
-use crate::theme::ThemeChoice;
+use crate::ui::theme::ThemeChoice;
 
 /// Which page the middle column is showing. The console is the right column
 /// and is always there, so it is not a section.
@@ -72,7 +72,7 @@ pub enum EditKind {
 
 /// An in-progress text edit. The app owns the keyboard while this is set and
 /// commits or cancels it; the view mounts an `igui` `TextInput` from the shared
-/// editing state the app seeded into [`Actions`](crate::Actions).
+/// editing state the app seeded into [`Actions`](crate::ui::Actions).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EditState {
     pub game_id: i64,
@@ -507,7 +507,7 @@ pub struct ViewModel {
     /// construction.
     pub middle_width: f32,
     /// The library / screenshots grid column count. The app steps it 2 / 3 / 4
-    /// from the middle width (see [`library_columns`](crate::library_columns)).
+    /// from the middle width (see [`library_columns`](crate::ui::library_columns)).
     pub grid_columns: usize,
     /// The downloadable-core catalog, filtered by [`catalog_query`](Self::catalog_query).
     pub catalog: Vec<CatalogRow>,

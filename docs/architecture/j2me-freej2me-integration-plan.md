@@ -54,7 +54,7 @@ SystemId::J2me (.jar/.kjx)
 | Java 程序 | `cores/dist/freej2me_plus/freej2me_plus-lr.jar` |
 | 精简 JRE | `cores/dist/freej2me_plus/runtime/`（`jlink`） |
 
-app 启动时（`crates/cgb-app/src/app.rs`）：
+app 启动时（`src/app/mod.rs`）：
 
 - `j2me_dir()`：打包后在 `Resources/freej2me_plus/`，开发时看
   `cores/dist/freej2me_plus/`。

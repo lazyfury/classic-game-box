@@ -12,9 +12,9 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::ui::{rasterize_icon, IconName};
 use cgb_library::{encode_png, load_cores, DiskGame, Library, Paths, Settings};
 use cgb_systems::SystemId;
-use cgb_ui::{rasterize_icon, IconName};
 
 use crate::app::resource_dir;
 
@@ -182,7 +182,7 @@ fn check_icons(_paths: &Paths) -> Result<(), String> {
 /// no window (the `igui` recording route), and asserts a semantic anchor so the
 /// check is not just "it drew something".
 fn check_render(_paths: &Paths) -> Result<(), String> {
-    use cgb_ui::{game_theme, Actions, Ui, ViewModel};
+    use crate::ui::{game_theme, Actions, Ui, ViewModel};
     use igui::igui_core::{Size, ViewportSize};
     use igui::igui_profile::{inspect, FrameCounters, FrameStats, Severity, StageTimes};
     use igui::igui_render::{DrawCommand, PaintContext};
@@ -231,8 +231,8 @@ fn check_render(_paths: &Paths) -> Result<(), String> {
 }
 
 /// A minimal library row for the render check.
-fn sample_game(index: usize) -> cgb_ui::GameRow {
-    cgb_ui::GameRow {
+fn sample_game(index: usize) -> crate::ui::GameRow {
+    crate::ui::GameRow {
         id: index as i64,
         name: format!("Game {index}"),
         file_name: format!("game{index}.nes"),

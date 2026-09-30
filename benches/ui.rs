@@ -1,13 +1,13 @@
-//! CPU benchmarks for the `cgb-ui` frame pipeline.
+//! CPU benchmarks for the app's `ui` frame pipeline.
 //!
 //! Every benchmark is named `<group>/<scenario>/<size>` so `--filter` can pick
 //! a slice:
 //!
 //! ```bash
-//! cargo bench -p cgb-ui
-//! cargo bench -p cgb-ui -- --filter ui/scroll
-//! cargo bench -p cgb-ui -- --save-baseline benches/baseline.txt
-//! cargo bench -p cgb-ui -- --baseline benches/baseline.txt
+//! cargo bench --bench ui
+//! cargo bench --bench ui -- --filter ui/scroll
+//! cargo bench --bench ui -- --save-baseline benches/baseline.txt
+//! cargo bench --bench ui -- --baseline benches/baseline.txt
 //! ```
 //!
 //! `--baseline` exits with code 1 when a benchmark regresses past `--threshold`,
@@ -19,8 +19,8 @@
 //! only mounts the visible rows, so the per-frame cost should stay flat as the
 //! library grows; the benchmark is what proves it (or exposes it).
 
+use cgb_app::ui::{Actions, CoreRow, GameRow, Section, Ui, ViewModel};
 use cgb_systems::SystemId;
-use cgb_ui::{Actions, CoreRow, GameRow, Section, Ui, ViewModel};
 use igui::igui_bench::{black_box, finish, BenchRunner, RunConfig};
 use igui::igui_core::{Size, ViewportSize};
 use igui::igui_render::PaintContext;

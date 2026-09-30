@@ -9,8 +9,8 @@ use igui::igui_theme::radius::MD;
 use igui::igui_theme::{radius, space, Theme, Tone};
 use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle};
 
-use crate::frame::cover_fit;
-use crate::model::{Action, SaveSlotRow, ViewModel};
+use crate::ui::frame::cover_fit;
+use crate::ui::model::{Action, SaveSlotRow, ViewModel};
 
 use super::components::format_when;
 use super::Actions;

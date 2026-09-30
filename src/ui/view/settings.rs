@@ -8,8 +8,8 @@ use igui::igui_core::Edges;
 use igui::igui_theme::{space, Theme, Tone};
 use igui::igui_ui::{Align, Justify, MouseFilter};
 
-use crate::model::{Action, EditKind, MsaaKind, ShaderKind, ViewModel};
-use crate::theme::ThemeChoice;
+use crate::ui::model::{Action, EditKind, MsaaKind, ShaderKind, ViewModel};
+use crate::ui::theme::ThemeChoice;
 
 use super::components::{chip, chip_group, text_field};
 use super::Actions;

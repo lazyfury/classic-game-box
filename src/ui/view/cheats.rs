@@ -9,7 +9,7 @@ use igui::igui_theme::radius::MD;
 use igui::igui_theme::{space, Theme, Tone};
 use igui::igui_ui::{Align, MouseFilter};
 
-use crate::model::{Action, CheatRow, ViewModel};
+use crate::ui::model::{Action, CheatRow, ViewModel};
 
 use super::Actions;
 

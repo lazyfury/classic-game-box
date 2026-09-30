@@ -10,9 +10,13 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 
 ## 现状
 
-- 分支 `quill-native`。
+- **布局**：应用是**根包** `cgb-app`（bin `classic-game-box`），代码在根 `src/`；
+  UI 是应用内 `src/ui` 模块，应用逻辑按功能拆在 `src/app/{library,screenshots,saves,
+  cheats,settings,cores,input,textures,window,project,helpers}.rs`（参照 `../archiver`）。
+  引擎/设备仍是独立子 crate：`crates/{cgb-systems,cgb-libretro,cgb-audio,cgb-input,cgb-library}`。
+- 分支 `refactor/app-root`（合并后可回 `main`）。
 - **Q0 完成**：计划、目录结构、Rust 工作区骨架、`cargo check/test/clippy` 全绿。
-- **Q1 完成**：Mesen 原生 arm64 编译 + dlopen + 出画面（`cgb-ui::frame::FrameImage`）+ 键盘。
+- **Q1 完成**：Mesen 原生 arm64 编译 + dlopen + 出画面（`ui::frame::FrameImage`）+ 键盘。
 - **Q2 进行中**：音频（cpal）+ gilrs 手柄已接线，`.srm` 电池存档与即时存档槽
   （`Session::{save,load}_state`，F5/F6 与 F1–F3/Shift+F1–F3），待人眼验收“能玩、能存读”。
 - **Q3 完成**：库模型重建——DB 是模型（`games` + `tags`/`game_tags` + `screenshots`），
@@ -123,11 +127,12 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
    里声明的，含 Mesen、mGBA、nestopia 与 legacy 的 `custom_nes_core`）；
    不使用 `fc_*` 私有扩展（`custom_nes_core` 会导出该扩展，但被忽略）。
    ABI 头是 `cores/libretro/libretro.h`；**不要整读**（≈8700 行），`rg` 定位再看。
-4. **依赖方向单向**：`cgb-app → {cgb-ui, cgb-libretro, cgb-audio, cgb-input,
-   cgb-library, cgb-systems}`；`cgb-ui` 不认识 libretro；`cgb-libretro` 不认识 UI
-   与音频设备（只暴露 `Frame` / `Vec<i16>`）。`cgb-systems` 无依赖。
+4. **依赖方向单向**：`cgb-app`（根包，`src/`）→ `{cgb-libretro, cgb-audio,
+   cgb-input, cgb-library, cgb-systems}`；应用内的 `src/ui` 不认识 libretro；
+   `cgb-libretro` 不认识 UI 与音频设备（只暴露 `Frame` / `Vec<i16>`）。
+   `cgb-systems` 无依赖。`crates/` 里的子 crate 不得反向依赖根 app。
 5. **igui 的边界**：`igui_core` / `igui_scene` / `igui_ui` / `igui_components`
-   不得依赖 `web_sys`/`wgpu`/DOM。`cgb-ui` 只用 `igui_*` 的公开 API。
+   不得依赖 `web_sys`/`wgpu`/DOM。应用内 `src/ui` 只用 `igui_*` 的公开 API。
 6. **不写截图 / 录屏测试。** 用 `igui_backend_recording` 录 `DrawList` +
    `igui_profile::inspect`，或 core 侧假 frontend 单测。UI 好不好看由人看。
 7. **不改 `legacy/`**，除非明确要求；它是历史存档。
@@ -165,10 +170,10 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/ico
 | crate 职责与依赖 | `crates/README.md` |
 | libretro frontend（dlopen / 回调 / 视频音频输入存档） | `crates/cgb-libretro/src/host.rs` |
 | 机种 / CoreSpec 选核、joypad id | `crates/cgb-systems/src/` |
-| UI 视图与帧循环 | `crates/cgb-ui/src/`、`crates/cgb-app/src/app.rs`（`AppLogic` + `run` 的插件组装） |
+| UI 视图与帧循环 | `src/ui/`（视图 + `ViewModel`）、`src/app/`（`App` + `AppLogic` + `run` 的插件组装） |
 | 原生 core 构建 / 加核心流程 | `cores/README.md`、`cores/build.sh.example`、`cores/*/build.sh` |
-| J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`crates/cgb-app/src/app.rs`（`j2me_dir` / `prepend_path`） |
-| 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
+| J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
+| 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`src/cli.rs` |
 | 旧 Electron/C++/wasm 栈 | `legacy/`（只读） |
 
 ## 已知缺口（先记录，不擅自补）
@@ -187,7 +192,7 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/ico
   收触摸指针，宿主**均未接**（joypad 可用，手机键盘已映射到 16 键）。宿主的
   `GET_RUMBLE_INTERFACE` 只给一个 no-op（不真震动），仅为避免核心空指针崩溃。
 - igui 仍没有**标准 Image 内容类型**（上游 Stage 33 删了 `Widget`，改用
-  `ControlContent`）：`cgb-ui/src/frame.rs` 的 `FrameImage` 仍用 `Component` +
+  `ControlContent`）：`src/ui/frame.rs` 的 `FrameImage` 仍用 `Component` +
   `Spec::foreground` 自绘 `DrawImage`。上游若有 image 内容类型，可考虑替换本地组件。
 - **中文输入法（IME）** 已接：改名 / 搜索 / 标签用 `igui_components::TextInput`
   （自带 caret / 选区 / IME 预编辑），窗口由 `igui_winit::ImePlugin` 驱动，候选窗按

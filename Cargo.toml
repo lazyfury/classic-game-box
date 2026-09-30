@@ -1,14 +1,27 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/cgb-app",
-    "crates/cgb-ui",
     "crates/cgb-libretro",
     "crates/cgb-systems",
     "crates/cgb-audio",
     "crates/cgb-input",
     "crates/cgb-library",
 ]
+
+# ---------------------------------------------------------------------------
+# The app package. It is the workspace root (the layout mirrors `../archiver`):
+# the `classic-game-box` binary is a thin CLI over the library in `src/`.
+# ---------------------------------------------------------------------------
+[package]
+name = "cgb-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "classic-game-box"
+path = "src/main.rs"
 
 [workspace.package]
 version = "0.2.0"
@@ -25,7 +38,7 @@ repository = "https://github.com/lazyfury/classic-game-box"
 # crates are not in the facade and are declared directly from the same source:
 #   * `igui_svg`   — icon vector fallback (no `svg` facade feature exists);
 #   * `igui_winit` — the window / input / IME / clipboard platform plugins;
-#   * `igui_core`  — for `cgb-input`, which must stay UI-free (dependency rule).
+#   * `igui_core`  — for `cgb-input` (which must stay UI-free) and the in-app `ui`.
 # Bump the pin with e.g.
 #   `cargo update -p igui -p igui_svg -p igui_winit -p igui_core`.
 # ---------------------------------------------------------------------------
@@ -43,7 +56,6 @@ cgb-libretro = { path = "crates/cgb-libretro" }
 cgb-audio = { path = "crates/cgb-audio" }
 cgb-input = { path = "crates/cgb-input" }
 cgb-library = { path = "crates/cgb-library" }
-cgb-ui = { path = "crates/cgb-ui" }
 
 # ---------------------------------------------------------------------------
 # Platform / host dependencies.
@@ -69,6 +81,41 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 rfd = { version = "0.15", default-features = false }
 winit = "0.30"
 thiserror = "2"
+
+# ---------------------------------------------------------------------------
+# The app's dependencies (the root package). Internal crates and platform/host
+# deps resolve through `[workspace.dependencies]` above.
+# ---------------------------------------------------------------------------
+[dependencies]
+cgb-systems.workspace = true
+cgb-libretro.workspace = true
+cgb-audio.workspace = true
+cgb-input.workspace = true
+cgb-library.workspace = true
+
+# The `igui` facade: `ui` (drawing / components), `app` (the plugin runtime),
+# `wgpu` (the native backend), `profile` (frame inspection), `recording` and
+# `headless` (the `--selfcheck` presenter). The view lives in `src/ui`.
+igui = { workspace = true, features = ["ui", "app", "wgpu", "profile", "recording", "headless"] }
+# Not covered by any facade feature. `igui_scene` / `igui_core` are also
+# required by igui's `impl_scene_child!` macro, which expands to bare
+# `igui_scene::` / `igui_core::` paths (no `$crate`).
+igui_svg.workspace = true
+igui_scene.workspace = true
+igui_core.workspace = true
+# Window / input / IME / text-metrics / clipboard platform plugins.
+igui_winit.workspace = true
+
+winit.workspace = true
+rfd.workspace = true
+
+# The headless UI benchmark (`benches/ui.rs`) uses igui's measurement harness.
+[dev-dependencies]
+igui = { workspace = true, features = ["bench"] }
+
+[[bench]]
+name = "ui"
+harness = false
 
 [profile.release]
 opt-level = "s"

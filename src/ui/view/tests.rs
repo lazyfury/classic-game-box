@@ -8,11 +8,11 @@ use super::*;
 use super::components::*;
 use super::library::*;
 
-use crate::model::{
+use crate::ui::model::{
     BindingRow, CheatRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow, MsaaKind,
     SaveSlotRow, ScreenshotRow, ShaderKind, SortKey, SystemCount,
 };
-use crate::theme::ThemeChoice;
+use crate::ui::theme::ThemeChoice;
 use cgb_systems::SystemId;
 use igui::igui_components::{Component, Flex};
 use igui::igui_core::{InputEvent, PointerButton, Size, Vec2};
@@ -1004,7 +1004,7 @@ fn the_settings_core_options_cycle() {
     let actions = Actions::default();
     let model = ViewModel {
         section: Section::Settings,
-        core_options: vec![crate::model::CoreOptionRow {
+        core_options: vec![crate::ui::model::CoreOptionRow {
             key: "region".to_string(),
             label: "Region".to_string(),
             values: vec![

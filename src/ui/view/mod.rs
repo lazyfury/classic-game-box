@@ -54,8 +54,8 @@ use igui::igui_scene::{SceneChild, SceneTree};
 use igui::igui_theme::{radius, space, Theme, Tone};
 use igui::igui_ui::{Align, MouseFilter, SizeBasis, SurfaceStyle, TextEdit};
 
-use crate::icons::{Icon as SvgIcon, IconName};
-use crate::model::{Action, Section, StatusKind, ViewModel};
+use crate::ui::icons::{Icon as SvgIcon, IconName};
+use crate::ui::model::{Action, Section, StatusKind, ViewModel};
 
 mod cheats;
 mod components;
@@ -143,7 +143,7 @@ mod media {
 ///
 /// It also carries the tooltip text the current tree registered: the view
 /// cannot open an overlay (the host owns the overlay layer), so it records
-/// `control → tooltip` here and [`crate::Ui`] opens the tip after layout.
+/// `control → tooltip` here and [`crate::ui::Ui`] opens the tip after layout.
 #[derive(Clone, Default)]
 pub struct Actions {
     queue: Rc<RefCell<Vec<Action>>>,
@@ -403,7 +403,7 @@ fn resize_handle(
 /// The inclusive row range the active virtualized grid mounts for the model's
 /// current scroll offset and viewport.
 ///
-/// The app compares this (via [`Ui::grid_window_covers`](crate::Ui::grid_window_covers))
+/// The app compares this (via [`Ui::grid_window_covers`](crate::ui::Ui::grid_window_covers))
 /// to the range already in the tree, so scrolling inside the mounted window is a
 /// plain repaint instead of a rebuild.
 pub fn grid_window(model: &ViewModel) -> (usize, usize) {

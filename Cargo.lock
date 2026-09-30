@@ -360,8 +360,10 @@ dependencies = [
  "cgb-library",
  "cgb-libretro",
  "cgb-systems",
- "cgb-ui",
  "igui",
+ "igui_core",
+ "igui_scene",
+ "igui_svg",
  "igui_winit",
  "rfd",
  "winit",
@@ -414,17 +416,6 @@ dependencies = [
 [[package]]
 name = "cgb-systems"
 version = "0.2.0"
-
-[[package]]
-name = "cgb-ui"
-version = "0.2.0"
-dependencies = [
- "cgb-systems",
- "igui",
- "igui_core",
- "igui_scene",
- "igui_svg",
-]
 
 [[package]]
 name = "clang-sys"

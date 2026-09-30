@@ -12,7 +12,7 @@ macOS 上的经典游戏机模拟器。**打开就能玩**：把 ROM 拖进窗�
 
 | | |
 |---|---|
-| 🎨 **界面** | Rust + [igui](https://github.com/lazyfury/igui)（`crates/cgb-ui`），原生窗口，wgpu 上屏 |
+| 🎨 **界面** | Rust + [igui](https://github.com/lazyfury/igui)（应用内 `src/ui`），原生窗口，wgpu 上屏 |
 | 🧩 **核心** | 标准 libretro：**Mesen**（NES）、**mGBA**（GB / GBC / GBA） |
 | 🔌 **兼容层** | `crates/cgb-libretro` 直接 `dlopen` 原生 `.dylib`，实现 libretro frontend |
 | 🔊 **音频** | `crates/cgb-audio`：cpal 输出 + 无锁环形队列 |
@@ -32,9 +32,9 @@ GitHub **git 依赖**引入（`Cargo.lock` 固定 commit），无需相邻 check
 ./scripts/build-cores.sh
 #    → cores/dist/mesen_libretro.dylib
 
-# 2. 构建并运行
-cargo run -p cgb-app                          # 打开库界面
-cargo run -p cgb-app -- --rom mario.nes       # 直接开始
+# 2. 构建并运行（根包即应用，`cargo run` 即可）
+cargo run                                     # 打开库界面
+cargo run -- --rom mario.nes                  # 直接开始
 ```
 
 每个阶段的门槛：

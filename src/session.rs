@@ -8,6 +8,7 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
+use crate::ui::FrameHandle;
 use cgb_audio::AudioOutput;
 use cgb_input::InputState;
 use cgb_library::{
@@ -16,7 +17,6 @@ use cgb_library::{
 };
 use cgb_libretro::CoreHost;
 use cgb_systems::{CoreSpec, SystemId, RETRO_DEVICE_JOYPAD};
-use cgb_ui::FrameHandle;
 use igui::igui_backend_wgpu::{TextureEffect, TextureFilter, WgpuBackend};
 use igui::igui_render::TextureId;
 

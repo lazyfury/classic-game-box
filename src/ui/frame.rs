@@ -69,7 +69,7 @@ pub fn cover_fit(frame: (u32, u32), area: Rect) -> Rect {
 
 /// A leaf component that paints a registered framebuffer texture.
 ///
-/// Give it the texture handle from [`FrameHandle`](crate::FrameHandle) and let
+/// Give it the texture handle from [`FrameHandle`](crate::ui::FrameHandle) and let
 /// it grow; at paint time it computes the fitted destination inside whatever
 /// rectangle the layout assigned and emits one `DrawImage`.
 pub struct FrameImage {

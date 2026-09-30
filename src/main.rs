@@ -9,11 +9,7 @@
 //!
 //! The window host lives in [`app`]; one running game is a [`session`].
 
-mod app;
-mod cli;
-mod cores_cli;
-mod selfcheck;
-mod session;
+use cgb_app::{app, cli, cores_cli, selfcheck};
 
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();

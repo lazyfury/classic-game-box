@@ -56,12 +56,12 @@
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│ cgb-app   (bin: classic-game-box)                              │
-│   winit EventLoop(WaitUntil, 按 core fps) → wgpu surface 上屏  │
+│ cgb-app   (根包, bin: classic-game-box, src/)                  │
+│   igui_app 插件运行时 → wgpu surface 上屏                       │
 │   拥有：窗口、surface、帧循环、把各 crate 接线                 │
 ├───────────────┬───────────────┬───────────────┬───────────────┤
-│ cgb-ui        │ cgb-libretro  │ cgb-audio     │ cgb-input     │
-│ quill 视图    │ dlopen + 回调 │ cpal + 队列   │ 键盘 + gilrs  │
+│ src/ui (模块) │ cgb-libretro  │ cgb-audio     │ cgb-input     │
+│ igui 视图     │ dlopen + 回调 │ cpal + 队列   │ 键盘 + gilrs  │
 │ (无平台依赖)  │ libloading    │               │               │
 ├───────────────┴───────────────┴───────────────┴───────────────┤
 │ cgb-library (SQLite 库 / 设置 / 存档槽 / .srm)                 │
@@ -76,16 +76,16 @@
 依赖方向只有一条，不允许反向：
 
 ```
-cgb-app  →  { cgb-ui, cgb-libretro, cgb-audio, cgb-input, cgb-library, cgb-systems }
-cgb-ui        →  cgb-systems, igui(facade)+igui_svg+igui_core+igui_scene
-cgb-libretro  →  cgb-systems, libloading
-cgb-input     →  cgb-systems, gilrs
-cgb-audio     →  (cpal)
-cgb-library   →  rusqlite
-cgb-systems   →  (无)
+cgb-app (root)  →  { cgb-libretro, cgb-audio, cgb-input, cgb-library, cgb-systems }
+src/ui (app 内) →  cgb-systems, igui(facade)+igui_svg+igui_core+igui_scene
+cgb-libretro    →  cgb-systems, libloading
+cgb-input       →  cgb-systems, gilrs
+cgb-audio       →  (cpal)
+cgb-library     →  rusqlite
+cgb-systems     →  (无)
 ```
 
-`cgb-ui` **不认识 libretro**：它只吃一个纯数据 `ViewModel`，由 `cgb-app` 从 core 状态投影出来。
+应用内的 `src/ui` **不认识 libretro**：它只吃一个纯数据 `ViewModel`，由 `src/app` 从 core 状态投影出来。
 这样 UI 可以在 recording backend 上无头测试。
 
 ---
@@ -96,9 +96,11 @@ cgb-systems   →  (无)
 # before（main）
 packages/fc-core  packages/fc-libretro  wasm/  electron/  tools/  cmake/  CMakeLists.txt
 
-# after（quill-native）
-Cargo.toml                  # Rust workspace
-crates/                     # 新前端，全部 Rust
+# after（原生，app 为根包）
+Cargo.toml                  # Rust workspace + 根包 cgb-app
+src/                        # 应用：main/lib、app/(功能模块)、ui/(视图)、session、cli …
+benches/                    # UI CPU 基准（原 cgb-ui/benches）
+crates/                     # 引擎/设备子 crate（cgb-systems/libretro/audio/input/library）
 cores/                      # Mesen / mGBA 原生 dylib 构建脚本 + patches
 scripts/                    # build-cores.sh / dev.sh
 assets/                     # 图标等
@@ -119,8 +121,8 @@ legacy/                     # 旧栈整体搬家，只读参考，不参与构�
 
 | crate | 类型 | 职责 | 关键依赖 |
 |---|---|---|---|
-| `cgb-app` | bin | `igui_app` 插件运行时（winit/wgpu/输入/IME/剪贴板）+ `AppLogic` 帧循环、接线 | igui, igui_winit, 全部内部 crate |
-| `cgb-ui` | lib | igui 视图：侧栏、库列表、播放页、设置页、存档 | igui (facade), igui_svg, igui_core, igui_scene, cgb-systems |
+| `cgb-app` | 根包 bin | `igui_app` 插件运行时（winit/wgpu/输入/IME/剪贴板）+ `AppLogic` 帧循环、接线；应用代码在 `src/`，UI 在 `src/ui` | igui, igui_winit, 全部内部 crate |
+| `src/ui` | app 内模块 | igui 视图：侧栏、库列表、播放页、设置页、存档 | igui (facade), igui_svg, igui_core, igui_scene, cgb-systems |
 | `cgb-libretro` | lib | libretro frontend：dlopen、回调、ABI 类型 | libloading, cgb-systems |
 | `cgb-systems` | lib | 纯领域：SystemId、CoreSpec、选核、joypad id | 无 |
 | `cgb-audio` | lib | cpal 输出 + 无锁样本队列（int16 stereo） | cpal, ringbuf |
@@ -178,10 +180,10 @@ dlopen(dylib)
   GBA 240×160、GB 160×144，都要动态处理，不能写死。
 - quill 侧：`WgpuBackend::{register_texture, update_texture}` + `TextureFilter::Nearest`
   + `DrawImage`（缩放由宿主算 destination）。
-- **Q1 已接（过渡方案）**：`igui_ui::Widget` 仍无 image 变体，但 `cgb-ui` 用 quill
+- **Q1 已接（过渡方案）**：`igui_ui::Widget` 仍无 image 变体，但 `src/ui` 用 quill
   的公开扩展点自建了叶组件 `frame::FrameImage`（实现 `igui_components::Component`，
   在 `foreground` 装饰器里发 `DrawImage`，与 `Divider` 同一条路）。它按
-  [`contain_fit`](../../crates/cgb-ui/src/frame.rs) 按比例放大到**撑满较短的一边**、
+  [`contain_fit`](../../src/ui/frame.rs) 按比例放大到**撑满较短的一边**、
   较长的一边居中留黑边（非整数缩放；像素会略不均匀，换取画面尽量大）。
   **仍待做（属于 quill）**：`Widget::Image` + `igui_components::Image` 才是上游正解，
   这样任何 view 都能画图；本地组件只是不阻塞 Q1。
@@ -281,7 +283,7 @@ cargo run -p cgb-app -- --rom mario.nes --core ./x_libretro.dylib    # 直接指
 
 ---
 
-## 7. 最小闭环 UI（`cgb-ui`）
+## 7. 最小闭环 UI（`src/ui`）
 
 三列布局，参考旧 Electron 前端（`legacy/electron/src/renderer/App.tsx`）：
 
@@ -313,15 +315,15 @@ Esc 退出。这不是纯审美：库网格一屏就能给每帧加两三千条 
 预览截图时右栏显示大图。删除游戏或截图前有确认条。窗口在 macOS 用 full-size content view，
 header 预留安全区（标题栏高度 + 红绿灯宽度）。
 
-游戏库用 `igui_components::Grid`，列数随中栏宽度 2/3/4 级（`cgb_ui::library_columns`；中栏由
+游戏库用 `igui_components::Grid`，列数随中栏宽度 2/3/4 级（`ui::library_columns`；中栏由
 `igui_components::ResizeHandle` 拖动，宽度存在共享的 `Rc<Cell<f32>>`，拖动不重建树）。列数变化
 由 `cgb-app` 节流触发重建；重建会重新接上正在进行的拖动（`Ui::rebuild` 的 re-arm），所以拖动
-不会被列数切换打断。网格**只挂可见行**：`cgb-ui` 按 `ScrollViewState` 的 offset/viewport 算出行
+不会被列数切换打断。网格**只挂可见行**：`src/ui` 按 `ScrollViewState` 的 offset/viewport 算出行
 窗口（`visible_rows`），上下用 `spacer` 撑出完整内容高度，行高固定（`CARD_HEIGHT`）。滚动状态
-（`ScrollViewState`）由 `cgb-ui::Ui` 持有：`Ui::layout` 在 layout 后 `sync`，偏移变动时再 layout
+（`ScrollViewState`）由 `ui::Ui` 持有：`Ui::layout` 在 layout 后 `sync`，偏移变动时再 layout
 一次；重建时用 `scroll_target` 恢复 offset（点击卡片不会跳回顶部）。
 
-**画面**：`cgb-ui` 的 `frame::FrameImage`（见 §5.3）在 `foreground` 装饰器里发
+**画面**：`src/ui` 的 `frame::FrameImage`（见 §5.3）在 `foreground` 装饰器里发
 `DrawImage`；卡片图标光栅化成纹理，每帧一条 `DrawImage`。上游 `Image` 组件仍是待补项。
 
 **已做**：改名 / 标签编辑 / 搜索用 `igui_components::TextInput`（自带 caret / 选区 /
@@ -345,7 +347,7 @@ ControlFlow::WaitUntil(now + frame_budget)
 - **DrawList 复用**：只在 `dirty` / 输入 / resize / 滚动时重建 DrawList；否则复用上一帧的
   list 重新 `submit`（游戏纹理是原地更新的），运行游戏时不重排不重绘。
 - **可见行虚拟化**：库/截图网格只挂视口内的行（见 §7），滚动一步的成本取决于视口而非游戏数。
-  **滚动只在跨行/越出已挂载窗口时才重建**：`cgb-ui::grid_window` 给出模型当前 scroll 应挂的行区间，
+  **滚动只在跨行/越出已挂载窗口时才重建**：`ui::grid_window` 给出模型当前 scroll 应挂的行区间，
   `Ui::grid_window_covers` 判断它是否仍在树里；在窗口内的滚动只是 `ScrollView` 平移已挂内容 +
   重绘（`cgb-app::feed`/`render` 据此决定是否 `dirty`），跨出去才重建。
 - 图标光栅化成纹理，每帧一条 `DrawImage`（矢量描边是 `submit` 的主要成本）。
@@ -364,13 +366,13 @@ ControlFlow::WaitUntil(now + frame_budget)
 
 ### 8.2 benchmark
 
-`crates/cgb-ui/benches/ui.rs` 用 `igui_bench` 跑 CPU 帧管线（`cargo bench -p cgb-ui`）：
+`benches/ui.rs` 用 `igui_bench` 跑 CPU 帧管线（`cargo bench --bench ui`）：
 
 ```bash
-cargo bench -p cgb-ui                 # 全量
-cargo bench -p cgb-ui -- --filter ui/scroll
-cargo bench -p cgb-ui -- --save-baseline benches/baseline.txt   # 存档基线
-cargo bench -p cgb-ui -- --baseline benches/baseline.txt        # 回归门（超阈值退出码 1）
+cargo bench --bench ui                 # 全量
+cargo bench --bench ui -- --filter ui/scroll
+cargo bench --bench ui -- --save-baseline benches/baseline.txt   # 存档基线
+cargo bench --bench ui -- --baseline benches/baseline.txt        # 回归门（超阈值退出码 1）
 ```
 
 场景：`ui/build|rebuild|relayout|build_layout_once|layout|paint|repaint|frame|scroll/library/{n}` 与
@@ -393,7 +395,7 @@ cargo bench -p cgb-ui -- --baseline benches/baseline.txt        # 回归门（�
 | **Q0** ✅ | 计划 + 结构 + 脚手架 | `cargo check --workspace` 通过 |
 | **Q1** | Mesen spike：原生 arm64 编译 + dlopen + 出画面 + 键盘 | ✅ 编译/ABI/dlopen/键盘齐，画面经 `frame::FrameImage` 上屏，待人眼确认 |
 | **Q2** | 音频（cpal）+ gilrs 手柄 + 存档槽 + `.srm` | 🚧 音频/手柄/`.srm`/即时存取已接线，待人眼试听与存读验收 |
-| **Q3** ✅ | `cgb-ui` 最小闭环 + 库（SQLite）+ 打开目录对话框 | 从库列表选游戏进入游玩；库模型含元数据/标签/截图/封面 |
+| **Q3** ✅ | `src/ui` 最小闭环 + 库（SQLite）+ 打开目录对话框 | 从库列表选游戏进入游玩；库模型含元数据/标签/截图/封面 |
 | **Q4** | mGBA 接入（原生）+ 机种路由 + 动态分辨率/帧率/输入描述 | 🚧 上游 mGBA 已构建并过 host（RGB565）；`.gba` 整机与输入描述待做 |
 | **Q5** ✅ | 打包 `.app`、无头自检、发版脚本 | `.app` + zip（`scripts/release.sh`）；`--selfcheck` 绿（paths/library/settings/cores/icons） |
 
@@ -405,7 +407,7 @@ cargo bench -p cgb-ui -- --baseline benches/baseline.txt        # 回归门（�
 2. **TextInput / IME**——已解决：改名 / 搜索 / 标签用 `igui_components::TextInput`，
    窗口由 `igui_winit::ImePlugin` 驱动；音频手柄本就是自建。
 3. **每帧 XRGB8888/RGB565→RGBA 转换** 有 CPU 成本；量大再给后端加纹理格式。
-3b. **Image 组件**——`cgb-ui::frame::FrameImage`（`Component` + `Spec::foreground`）仍
+3b. **Image 组件**——`ui::frame::FrameImage`（`Component` + `Spec::foreground`）仍
    自绘 `DrawImage`；上游若有标准 image 内容类型可替换。
 4. **帧循环**——已解决：`cgb-app` 跑在 `igui_app` 运行时上，`AppLogic::needs_frame` +
    `Session::advance(dt)` 的时间累积；§8 的 `WaitUntil` 自建不再需要。

@@ -14,7 +14,7 @@
 #
 # The app seeds the jar into the writable `<app data>/system` directory (where
 # the core looks for it) and prepends `runtime/bin` to PATH, so no system Java
-# is required. See `crates/cgb-app/src/app.rs` (`j2me_dir`, `prepend_path`).
+# is required. See `src/app/mod.rs` (`j2me_dir`, `prepend_path`).
 #
 # Output: cores/dist/freej2me_plus_libretro.dylib (+ the bundle dir above).
 # Manifest: the `freej2me_plus` row in cores/cores.json.

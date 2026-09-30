@@ -189,7 +189,7 @@ synthetic key repeat (upstream fires `keyRepeated` every frame, i.e. ~60/s, so a
 held direction races). The outputs land in `cores/dist/freej2me_plus/`
 (`freej2me_plus-lr.jar` + `runtime/`); the app seeds the jar into the writable
 system dir and puts `runtime/bin` on `PATH` so the core finds `java`. See
-`crates/cgb-app/src/app.rs` (`j2me_dir`, `prepend_path`).
+`src/app/mod.rs` (`j2me_dir`, `prepend_path`).
 
 `./scripts/build-cores.sh` runs every `cores/*/build.sh` in name order;
 `--skip-mgba` skips the cmake build.

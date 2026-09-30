@@ -32,6 +32,12 @@ use igui_winit::{
 use winit::event::WindowEvent;
 use winit::window::{Fullscreen, Window};
 
+use crate::ui::{
+    library_columns, Action, Actions, BindingRow, CatalogRow, Confirm, CoreOptionRow, CoreRow,
+    EditKind, EditState, FrameHandle, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
+    ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, ThemeChoice, Ui,
+    ViewModel, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
+};
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{
     cache_path, collect_games, decode_png, download_core_with_progress, encode_png, import_roms,
@@ -39,12 +45,6 @@ use cgb_library::{
     write_catalog, Catalog, Game, ImportReport, Library, Paths, Platform, Settings, DEFAULT_SOURCE,
 };
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
-use cgb_ui::{
-    library_columns, Action, Actions, BindingRow, CatalogRow, Confirm, CoreOptionRow, CoreRow,
-    EditKind, EditState, FrameHandle, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
-    ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, ThemeChoice, Ui,
-    ViewModel, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
-};
 
 use crate::cli::{Args, CoreOverride};
 use crate::session::Session;
@@ -666,8 +666,9 @@ impl App {
             return;
         };
         let mut backend = backend.borrow_mut();
-        for (index, name) in cgb_ui::IconName::ALL.into_iter().enumerate() {
-            let Some((width, height, rgba)) = cgb_ui::rasterize_icon(name, ICON_TEXTURE_PX) else {
+        for (index, name) in crate::ui::IconName::ALL.into_iter().enumerate() {
+            let Some((width, height, rgba)) = crate::ui::rasterize_icon(name, ICON_TEXTURE_PX)
+            else {
                 continue;
             };
             let texture = TextureId::new(ICON_TEXTURE_BASE + index as u32);
@@ -675,7 +676,7 @@ impl App {
                 .register_texture(texture, width, height, &rgba)
                 .is_ok()
             {
-                cgb_ui::set_texture(
+                crate::ui::set_texture(
                     name,
                     FrameHandle {
                         texture,
@@ -1023,7 +1024,7 @@ impl App {
         self.model.cheats = self
             .cheats
             .iter()
-            .map(|cheat| cgb_ui::CheatRow {
+            .map(|cheat| crate::ui::CheatRow {
                 desc: cheat.desc.clone(),
                 code: cheat.code.clone(),
                 enabled: cheat.enabled,

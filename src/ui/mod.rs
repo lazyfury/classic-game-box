@@ -1,7 +1,7 @@
 //! The UI: quill views built from a pure [`ViewModel`].
 //!
-//! `cgb-ui` is the only crate with a window-shaped API, and it still does not
-//! know about libretro or the platform. The app projects core state into a
+//! This `ui` module is the only window-shaped part of the app, and it still
+//! does not know about libretro or the platform. The app projects core state into a
 //! [`ViewModel`], builds the tree, drains [`Action`]s, and never reaches into
 //! the tree from a callback.
 //!

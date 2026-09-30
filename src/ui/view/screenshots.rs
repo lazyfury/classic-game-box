@@ -11,9 +11,9 @@ use igui::igui_theme::radius::MD;
 use igui::igui_theme::{radius, space, Theme, Tone};
 use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle, Track};
 
-use crate::frame::cover_fit;
-use crate::icons::{Icon as SvgIcon, IconName};
-use crate::model::{Action, Confirm, ScreenshotRow, ViewModel};
+use crate::ui::frame::cover_fit;
+use crate::ui::icons::{Icon as SvgIcon, IconName};
+use crate::ui::model::{Action, Confirm, ScreenshotRow, ViewModel};
 
 use super::components::{format_when, grid_viewport, icon_button, spacer, window_for};
 use super::Actions;

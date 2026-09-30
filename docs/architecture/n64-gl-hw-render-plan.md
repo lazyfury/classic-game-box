@@ -48,7 +48,7 @@ N64 核心（Mupen64Plus-Next）走 libretro 的硬件渲染：它要 frontend �
 - 视频唯一出口是 `Frame { width, height, rgba }` + `take_frame()`；`session.rs:187` 用
   `backend.update_texture` 上传，分辨率变化时会重建纹理（`session.rs:187-195`）。
 - `ffi.rs` 里没有任何 `retro_hw_render_*` 类型或 `RETRO_HW_FRAME_BUFFER_VALID` 常量。
-- crate 不依赖 OpenGL；`cgb-ui` 不认识 libretro（依赖规则不变）。
+- crate 不依赖 OpenGL；`src/ui` 不认识 libretro（依赖规则不变）。
 
 macOS GL 事实：
 

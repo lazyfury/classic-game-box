@@ -8,8 +8,8 @@ use igui::igui_scene::SceneTree;
 use igui::igui_theme::{radius, space, Theme, Tone};
 use igui::igui_ui::{Align, Justify, SurfaceStyle};
 
-use crate::icons::{Icon as SvgIcon, IconName};
-use crate::model::ViewModel;
+use crate::ui::icons::{Icon as SvgIcon, IconName};
+use crate::ui::model::ViewModel;
 
 use super::{media, Actions, CARD_ICON, CARD_ICON_BUTTON};
 

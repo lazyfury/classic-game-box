@@ -11,9 +11,9 @@ use igui::igui_theme::radius::MD;
 use igui::igui_theme::{radius, space, Theme, Tone};
 use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle, Track};
 
-use crate::frame::cover_fit;
-use crate::icons::{Icon as SvgIcon, IconName};
-use crate::model::{Action, Confirm, EditKind, EditState, GameRow, SortKey, ViewModel};
+use crate::ui::frame::cover_fit;
+use crate::ui::icons::{Icon as SvgIcon, IconName};
+use crate::ui::model::{Action, Confirm, EditKind, EditState, GameRow, SortKey, ViewModel};
 
 use super::components::{
     chip, chip_bar, chip_group, compact_button, grid_viewport, icon_button, spacer, text_field,

@@ -11,8 +11,8 @@
 
 use std::path::PathBuf;
 
+use crate::ui::ThemeChoice;
 use cgb_systems::CoreSpec;
-use cgb_ui::ThemeChoice;
 
 /// Everything the process was asked to do at startup.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

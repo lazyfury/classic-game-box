@@ -7,9 +7,9 @@ use igui::igui_theme::radius::MD;
 use igui::igui_theme::{radius, space, Theme, Tone};
 use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle};
 
-use crate::frame::FrameImage;
-use crate::icons::{Icon as SvgIcon, IconName};
-use crate::model::{Action, Confirm, ScreenshotRow, ViewModel};
+use crate::ui::frame::FrameImage;
+use crate::ui::icons::{Icon as SvgIcon, IconName};
+use crate::ui::model::{Action, Confirm, ScreenshotRow, ViewModel};
 
 use super::components::format_when;
 use super::Actions;
