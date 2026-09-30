@@ -8,7 +8,7 @@ members = [
     "crates/cgb-paths",
     "crates/cgb-cores",
     "crates/cgb-library",
-    "crates/cgb-ffi",
+    "macos/rust",
 ]
 
 # ---------------------------------------------------------------------------

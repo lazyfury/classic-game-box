@@ -1,0 +1,20 @@
+[package]
+name = "cgb-mac"
+description = "Embedded macOS host for cgb-app: a Swift-provided CAMetalLayer + the igui runtime."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "cgb_mac"
+# A C library the Swift package links (`staticlib`), and a dylib for testing
+# the ABI from a C harness without the Swift toolchain.
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+# The whole app (UI + emulator), without the bundled `winit` host.
+cgb-app = { path = "../..", default-features = false }
+# The plugin runtime + native backend the host assembles. `igui_core` /
+# `igui_render` / `igui_ui` come through the facade's features.
+igui = { workspace = true, features = ["ui", "app", "wgpu", "profile"] }

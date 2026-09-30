@@ -276,7 +276,10 @@ struct FullscreenTransition {
 }
 
 /// The application state, driven as an [`AppLogic`] by the `igui_app` runtime.
-struct App {
+///
+/// Public (with private fields) so an embedded platform host can build it and
+/// hand it to the runtime as the logic.
+pub struct App {
     /// The wgpu backend, published by `WgpuPlugin`; `None` until the first
     /// resume creates the window and the surface.
     backend: Option<SharedBackend>,

@@ -393,16 +393,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cgb-ffi"
-version = "0.2.0"
-dependencies = [
- "cgb-audio",
- "cgb-libretro",
- "cgb-paths",
- "cgb-systems",
-]
-
-[[package]]
 name = "cgb-input"
 version = "0.2.0"
 dependencies = [
@@ -430,6 +420,14 @@ dependencies = [
  "cgb-systems",
  "libloading",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "cgb-mac"
+version = "0.2.0"
+dependencies = [
+ "cgb-app",
+ "igui",
 ]
 
 [[package]]
