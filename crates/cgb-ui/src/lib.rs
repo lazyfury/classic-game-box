@@ -31,11 +31,11 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use igui::igui_components::{Menu, MenuItem, NodeRef, OverlayId, Overlays, ScrollViewState};
-use igui::igui_core::{InputEvent, NodeId, Vec2, ViewportSize};
+use igui::igui_core::{Cursor, InputEvent, NodeId, Vec2, ViewportSize};
 use igui::igui_render::PaintContext;
 use igui::igui_scene::SceneTree;
 use igui::igui_theme::Theme;
-use igui::igui_ui::{Control, DragPhase, TextMeasurer};
+use igui::igui_ui::{hovered_cursor, Control, DragPhase, TextMeasurer};
 
 use cgb_systems::{SystemId, SYSTEMS};
 
@@ -412,6 +412,13 @@ impl Ui {
             tree.add_child(node, menu);
         });
         self.repaint = true;
+    }
+
+    /// The cursor the pointer should show, based on the control it is over.
+    /// The host hands this to the window each frame (`AppLogic::cursor`); a
+    /// control that is clickable reports [`Cursor::Pointer`].
+    pub fn cursor(&self) -> Option<Cursor> {
+        Some(hovered_cursor(&self.tree))
     }
 
     /// Open the per-game console picker: every console the app knows, with the

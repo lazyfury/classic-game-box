@@ -662,6 +662,9 @@ pub enum Action {
         id: i64,
         system: SystemId,
     },
+    /// A single click on a card. The host turns two in quick succession into a
+    /// "play" (a card needs a double click; the play button uses [`Action::Play`]).
+    CardActivate(usize),
 }
 
 #[cfg(test)]

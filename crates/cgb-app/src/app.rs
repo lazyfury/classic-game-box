@@ -19,7 +19,7 @@ use igui::igui_app::{
     InitContext, PlatformEvent, PlatformObserver, Plugin,
 };
 use igui::igui_backend_wgpu::{FontConfig, FontMode, TextureEffect};
-use igui::igui_core::{InputEvent, Key, Modifiers, Rect, ViewportSize};
+use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, Rect, ViewportSize};
 use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, Severity, StageTimes};
 use igui::igui_render::{DrawList, PaintContext, TextureId};
 use igui::igui_theme::{Mode, Theme};
@@ -279,6 +279,9 @@ struct App {
     bindings: HashMap<SystemId, KeyboardBindings>,
     /// The console whose binding set the keyboard feeds right now.
     active_system: SystemId,
+    /// The last card single click (index, time), so two in quick succession
+    /// start the game — a card plays on double click, the play button on one.
+    card_click: Option<(usize, i64)>,
     /// Whether the rewind key is held (the game steps back each frame).
     rewinding: bool,
     /// The game-picture post-process preset.
@@ -469,6 +472,7 @@ impl App {
                 .map(|system| (*system, KeyboardBindings::default_bindings_for(*system)))
                 .collect(),
             active_system: SystemId::Nes,
+            card_click: None,
             rewinding: false,
             shader,
             msaa,
@@ -1771,6 +1775,7 @@ impl App {
                     opened_overlay = true;
                 }
                 Action::SetGameSystem { id, system } => self.set_game_system(id, system),
+                Action::CardActivate(index) => self.card_activate(index),
                 Action::Show(section) => {
                     let changed = self.model.section != section;
                     self.model.section = section;
@@ -2131,6 +2136,25 @@ impl App {
         self.model
             .set_status(format!("已设为 {}", system.name()), StatusKind::Success);
         self.dirty = true;
+    }
+
+    /// A single click on a card. Two on the same card within a short window are
+    /// a double click, which starts the game — the card itself no longer plays
+    /// on one click, so it cannot fight the context menu. The "立即游玩" button
+    /// is the deliberate one-click path.
+    fn card_activate(&mut self, index: usize) {
+        const DOUBLE_CLICK_MS: i64 = 400;
+        let now = now_millis();
+        let is_double = matches!(
+            self.card_click,
+            Some((last, at)) if last == index && now - at <= DOUBLE_CLICK_MS
+        );
+        if is_double {
+            self.card_click = None;
+            self.start_game(index);
+        } else {
+            self.card_click = Some((index, now));
+        }
     }
 
     /// Start a ROM by path: read it, pick a core, build a [`Session`].
@@ -2695,6 +2719,12 @@ impl AppLogic for App {
             }
         }
         EventResult::Handled
+    }
+
+    /// Hand the window the cursor for whatever the pointer is over, so a card
+    /// or button shows the pointing hand instead of the arrow.
+    fn cursor(&self) -> Option<Cursor> {
+        self.ui.cursor()
     }
 
     fn update(&mut self, ctx: &FrameContext<'_>) {

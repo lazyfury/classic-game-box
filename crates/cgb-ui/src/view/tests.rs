@@ -76,9 +76,10 @@ fn game_row(name: &str, path: &str) -> GameRow {
     }
 }
 
-/// A card is a click target: a press and release inside it starts the game.
+/// A card is a click target: one click asks the host to activate it (the host
+/// turns two in quick succession into a play; the play bar starts on one).
 #[test]
-fn clicking_a_card_plays_it() {
+fn clicking_a_card_asks_to_activate_it() {
     let actions = Actions::default();
     let model = ViewModel {
         games: vec![game_row("Game 0", "/roms/game0.nes")],
@@ -92,6 +93,34 @@ fn clicking_a_card_plays_it() {
         igui::igui_ui::is_interactive(&tree, hit),
         "the card is interactive"
     );
+    igui::igui_ui::handle_input(
+        &mut tree,
+        &InputEvent::PointerDown {
+            position: point,
+            button: PointerButton::Left,
+        },
+    );
+    igui::igui_ui::handle_input(
+        &mut tree,
+        &InputEvent::PointerUp {
+            position: point,
+            button: PointerButton::Left,
+        },
+    );
+    assert_eq!(actions.drain(), vec![Action::CardActivate(0)]);
+}
+
+/// The card's "立即游玩" bar starts the game on a single click, unlike the card
+/// itself (which needs a double click).
+#[test]
+fn clicking_the_play_bar_starts_the_game() {
+    let actions = Actions::default();
+    let model = ViewModel {
+        games: vec![game_row("Game 0", "/roms/game0.nes")],
+        ..ViewModel::default()
+    };
+    let (mut tree, list) = laid_out(&model, &actions);
+    let point = text_position(&list, "立即游玩");
     igui::igui_ui::handle_input(
         &mut tree,
         &InputEvent::PointerDown {
