@@ -1758,6 +1758,19 @@ impl App {
                     );
                     opened_overlay = true;
                 }
+                Action::OpenSystemMenu { id, position } => {
+                    let current = self
+                        .model
+                        .games
+                        .iter()
+                        .find(|game| game.id == id)
+                        .map(|game| game.system)
+                        .unwrap_or(SystemId::Nes);
+                    self.ui
+                        .open_system_menu(self.theme, id, current, position, &self.actions);
+                    opened_overlay = true;
+                }
+                Action::SetGameSystem { id, system } => self.set_game_system(id, system),
                 Action::Show(section) => {
                     let changed = self.model.section != section;
                     self.model.section = section;
@@ -2088,13 +2101,43 @@ impl App {
         };
         self.model.editing = None;
         self.model.selected = Some(index);
-        self.start_path(Path::new(&game.path));
+        self.start_path(Path::new(&game.path), game.system);
+    }
+
+    /// Remember which console a game runs as, overriding the one its extension
+    /// suggests. The library is the source of truth; the in-memory rows are
+    /// refreshed so the badge, tallies and system filter follow.
+    fn set_game_system(&mut self, id: i64, system: SystemId) {
+        let Some(path) = self
+            .game_source
+            .iter()
+            .find(|game| game.id == id)
+            .map(|game| game.path.clone())
+        else {
+            return;
+        };
+        if let Some(library) = &self.library {
+            if let Err(error) = library.set_system(&path, system) {
+                self.model
+                    .set_status(format!("设置机种失败：{error}"), StatusKind::Error);
+                self.dirty = true;
+                return;
+            }
+        }
+        if let Some(game) = self.game_source.iter_mut().find(|game| game.id == id) {
+            game.system = system;
+        }
+        self.rebuild_game_rows();
+        self.model
+            .set_status(format!("已设为 {}", system.name()), StatusKind::Success);
+        self.dirty = true;
     }
 
     /// Start a ROM by path: read it, pick a core, build a [`Session`].
-    fn start_path(&mut self, rom_path: &Path) {
-        // The keyboard now feeds this console's binding set.
-        self.active_system = system_for_path(&rom_path.to_string_lossy());
+    fn start_path(&mut self, rom_path: &Path, system: SystemId) {
+        // The keyboard now feeds this console's binding set. The system comes
+        // from the library row: a per-game pick can override the extension.
+        self.active_system = system;
         let data = match std::fs::read(rom_path) {
             Ok(data) => data,
             Err(error) => {
@@ -2105,7 +2148,7 @@ impl App {
             }
         };
 
-        let spec = match self.resolve_core(rom_path) {
+        let spec = match self.resolve_core(system) {
             Ok(spec) => spec,
             Err(status) => {
                 self.model.set_status(status, StatusKind::Info);
@@ -2221,9 +2264,7 @@ impl App {
     /// which wins over the manifest's first core for the console. A key is
     /// looked up in the merged manifests; a `--core <path>` module is used as
     /// given.
-    fn resolve_core(&self, rom_path: &Path) -> Result<CoreSpec, String> {
-        let path = rom_path.to_string_lossy();
-        let system = system_for_path(&path);
+    fn resolve_core(&self, system: SystemId) -> Result<CoreSpec, String> {
         let spec = match &self.core_override {
             Some(CoreOverride::Key(key)) => choose_core(&self.cores, system, Some(key))
                 .ok_or_else(|| {
@@ -2626,7 +2667,8 @@ impl AppLogic for App {
         self.rebuild_screenshot_rows();
         // A `--rom` on the command line starts eagerly, before the first frame.
         if let Some(pending) = self.pending_rom.take() {
-            self.start_path(&pending);
+            let system = system_for_path(&pending.to_string_lossy());
+            self.start_path(&pending, system);
         }
     }
 

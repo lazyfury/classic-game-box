@@ -470,6 +470,18 @@ impl Library {
         Ok(())
     }
 
+    /// Remember the console this game runs as, overriding the one its file
+    /// extension suggests (a `.chd` can be a PlayStation or a PSP disc). A
+    /// rescan never overwrites it: [`Library::sync`] refreshes only the file
+    /// name, size and mtime of a known path.
+    pub fn set_system(&self, path: &str, system: SystemId) -> Result<(), LibraryError> {
+        self.conn.execute(
+            "UPDATE games SET system = ?2 WHERE path = ?1",
+            params![path, system.key()],
+        )?;
+        Ok(())
+    }
+
     /// Record that a game was run: bump its count and stamp the time. Does
     /// nothing for a path that is not in the library (`--rom` can name any
     /// file on the machine).
@@ -1083,6 +1095,21 @@ mod tests {
         assert_eq!(game.file_name, "mario.nes", "the file name is backfilled");
         assert_eq!(game.size, 1024);
         assert!(!game.pinned);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn set_system_overrides_the_extension_and_survives_a_rescan() {
+        let root = temp_dir("system");
+        let library = Library::open(&root.join("library.db")).unwrap();
+        // `disk` reports NES; the player says this disc is a PSP game.
+        library.sync(&[disk("/roms/disc.chd")]).unwrap();
+        library.set_system("/roms/disc.chd", SystemId::Psp).unwrap();
+        assert_eq!(library.games().unwrap()[0].system, SystemId::Psp);
+
+        // A rescan refreshes metadata only; the console pick sticks.
+        library.sync(&[disk("/roms/disc.chd")]).unwrap();
+        assert_eq!(library.games().unwrap()[0].system, SystemId::Psp);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

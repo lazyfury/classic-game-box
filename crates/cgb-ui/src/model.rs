@@ -651,6 +651,17 @@ pub enum Action {
         system: SystemId,
         anchor: NodeId,
     },
+    /// Open the per-game console picker at `position` (from a card's menu).
+    OpenSystemMenu {
+        id: i64,
+        position: Vec2,
+    },
+    /// Run this game as `system`, overriding the system its file extension
+    /// suggests. Persisted in the library.
+    SetGameSystem {
+        id: i64,
+        system: SystemId,
+    },
 }
 
 #[cfg(test)]

@@ -37,7 +37,7 @@ use igui::igui_scene::SceneTree;
 use igui::igui_theme::Theme;
 use igui::igui_ui::{Control, DragPhase, TextMeasurer};
 
-use cgb_systems::SystemId;
+use cgb_systems::{SystemId, SYSTEMS};
 
 /// The mounted tree plus the frame-loop calls.
 pub struct Ui {
@@ -352,6 +352,13 @@ impl Ui {
             let menu = Menu::new(theme)
                 .item(item("开始游戏", Action::Play(index)))
                 .item(item("改名…", Action::StartRename(game_id)))
+                .item(item(
+                    "选择机种…",
+                    Action::OpenSystemMenu {
+                        id: game_id,
+                        position,
+                    },
+                ))
                 .item(item("标签…", Action::StartTagEdit(game_id)))
                 .item(item(
                     if pinned { "取消置顶" } else { "置顶" },
@@ -401,6 +408,42 @@ impl Ui {
                     MenuItem::new(label, theme)
                         .on_click(move |_tree, _id| actions.push(Action::SelectCore(index))),
                 );
+            }
+            tree.add_child(node, menu);
+        });
+        self.repaint = true;
+    }
+
+    /// Open the per-game console picker: every console the app knows, with the
+    /// current one ticked. Picking one overrides the system the file extension
+    /// suggests (a `.chd` can be a PlayStation or a PSP disc).
+    pub fn open_system_menu(
+        &mut self,
+        theme: &'static dyn Theme,
+        game_id: i64,
+        current: SystemId,
+        position: Vec2,
+        actions: &Actions,
+    ) {
+        // Replaces the card menu this was opened from.
+        self.overlays.close_all();
+        let actions = actions.clone();
+        self.overlays.menu_at(position, move |tree, node| {
+            let mut menu = Menu::new(theme);
+            for system in SYSTEMS {
+                let label = if *system == current {
+                    format!("{} ✓", system.name())
+                } else {
+                    system.name().to_string()
+                };
+                let actions = actions.clone();
+                let system = *system;
+                menu = menu.item(MenuItem::new(label, theme).on_click(move |_tree, _id| {
+                    actions.push(Action::SetGameSystem {
+                        id: game_id,
+                        system,
+                    })
+                }));
             }
             tree.add_child(node, menu);
         });
