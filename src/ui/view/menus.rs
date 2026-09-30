@@ -144,3 +144,18 @@ pub fn confirm_destructive(
     let actions = actions.clone();
     overlays.on_confirm(id, move || actions.push(on_confirm));
 }
+
+/// Open a modal confirmation that is not destructive (e.g. offering to
+/// download a core). Confirming runs `on_confirm`; Escape / clicking outside
+/// cancels.
+pub fn confirm_action(
+    overlays: &mut Overlays,
+    title: String,
+    message: String,
+    on_confirm: Action,
+    actions: &ViewBridge,
+) {
+    let id = overlays.confirm(title, message);
+    let actions = actions.clone();
+    overlays.on_confirm(id, move || actions.push(on_confirm));
+}

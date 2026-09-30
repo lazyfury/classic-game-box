@@ -2,7 +2,7 @@
 //! controls, and the virtualized grid of cover cards.
 
 use igui::igui_components::{
-    Button, Column, Component, Divider, EmptyState, Flex, NodeRef, Row, ScrollView, Text,
+    Button, Card, Column, Component, Divider, EmptyState, Flex, NodeRef, Row, ScrollView, Text,
 };
 use igui::igui_core::{Color, Cursor, Edges};
 use igui::igui_render::Paint;
@@ -44,6 +44,9 @@ pub(super) fn library_page(
             ),
     );
     column = column.child(stats_bar(theme, model, actions));
+    if let Some(card) = missing_cores_card(theme, model, actions) {
+        column = column.child(card);
+    }
     column = column.child(sort_bar(theme, model, actions));
     column = column.child(Divider::horizontal(theme));
     column = column.child(search_bar(theme, model, actions));
@@ -90,6 +93,51 @@ pub(super) fn library_page(
         tree: column,
         scroll,
     }
+}
+
+/// The "missing core" card: one row per console the library has games for but
+/// no available core serves, each with a one-click download of the core the
+/// app recommends. `None` when every console can run.
+fn missing_cores_card(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &ViewBridge,
+) -> Option<Card> {
+    if model.missing_cores.is_empty() {
+        return None;
+    }
+    let mut rows = Column::new().gap(space::XS);
+    for row in &model.missing_cores {
+        let system = row.system;
+        let core = row.core.clone();
+        let downloading = model.catalog_downloading.as_deref() == Some(core.as_str());
+        let button = if downloading {
+            Button::ghost("下载中…", theme).mini()
+        } else {
+            let actions = actions.clone();
+            Button::secondary("下载核心", theme)
+                .on_click(move |_tree, _id| actions.push(Action::DownloadRecommendedCore(system)))
+        };
+        rows = rows.child(
+            Row::new()
+                .align(Align::Center)
+                .gap(space::SM)
+                .child(Text::small(system.name(), theme).grow(1.0))
+                .child(Text::caption(format!("推荐 {core}"), theme).tone(Tone::Muted))
+                .child(button),
+        );
+    }
+    Some(
+        Card::new(theme)
+            .gap(space::SM)
+            .padding(Edges::all(space::SM))
+            .child(Text::subheading("缺少核心", theme))
+            .child(
+                Text::caption("库里的游戏还缺少这些机种的核心，下载后即可运行。", theme)
+                    .tone(Tone::Muted),
+            )
+            .child(rows),
+    )
 }
 
 /// The library's console filter: a chip per console present (with its count),

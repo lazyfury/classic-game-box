@@ -77,6 +77,10 @@ impl super::App {
     /// result and re-reads the manifest.
     pub(super) fn download_core(&mut self, name: &str) {
         if self.download_rx.is_some() {
+            // One download at a time; a "download all" prompt queues the rest.
+            if !self.download_queue.iter().any(|queued| queued == name) {
+                self.download_queue.push_back(name.to_string());
+            }
             return;
         }
         let Some(platform) = Platform::current() else {
@@ -135,6 +139,66 @@ impl super::App {
         self.dirty = true;
     }
 
+    /// Start the next queued core download, if the channel is free.
+    fn start_queued_download(&mut self) {
+        if self.download_rx.is_some() {
+            return;
+        }
+        if let Some(name) = self.download_queue.pop_front() {
+            self.download_core(&name);
+        }
+    }
+
+    /// Download the core recommended for a console (the library page's missing
+    /// core card).
+    pub(super) fn download_recommended_core(&mut self, system: SystemId) {
+        let shipped = load_shipped_cores(&self.paths);
+        let Some(name) = recommend_core(&shipped, &self.catalog, system) else {
+            self.model.set_status(
+                format!("{} 没有可下载的核心", system.name()),
+                StatusKind::Error,
+            );
+            self.dirty = true;
+            return;
+        };
+        self.download_core(&name);
+    }
+
+    /// Download every core the missing-core prompt listed.
+    pub(super) fn download_missing_cores(&mut self) {
+        let names: Vec<String> = self
+            .model
+            .missing_cores
+            .iter()
+            .map(|row| row.core.clone())
+            .collect();
+        for name in names {
+            self.download_core(&name);
+        }
+    }
+
+    /// Recompute the consoles the library needs but no available core serves.
+    /// Called when the library or the available cores change.
+    pub(super) fn rebuild_missing_cores(&mut self) {
+        let shipped = load_shipped_cores(&self.paths);
+        self.model.missing_cores =
+            missing_core_rows(&self.game_source, &self.cores, &shipped, &self.catalog);
+        self.dirty = true;
+    }
+
+    /// Open the "missing core" modal queued when games were added, once.
+    pub(super) fn maybe_open_core_prompt(&mut self) {
+        let Some(message) = self.pending_core_prompt.take() else {
+            return;
+        };
+        self.ui.confirm(
+            "缺少核心",
+            message,
+            Action::DownloadMissingCores,
+            &self.actions,
+        );
+    }
+
     /// Drain the background download's events. Called once per frame.
     pub(super) fn poll_downloads(&mut self) {
         let Some(rx) = self.download_rx.take() else {
@@ -189,9 +253,11 @@ impl super::App {
                 };
                 self.cores = load_core_manifest(&self.paths);
                 self.rebuild_settings_view();
+                self.rebuild_missing_cores();
                 self.model
                     .set_status(format!("核心 {name} 已就绪"), StatusKind::Success);
                 self.dirty = true;
+                self.start_queued_download();
             }
             DownloadEvent::Failed { name, error } => {
                 self.model.catalog_downloading = None;
@@ -200,6 +266,7 @@ impl super::App {
                 self.model
                     .set_status(format!("{name} 失败：{error}"), StatusKind::Error);
                 self.dirty = true;
+                self.start_queued_download();
             }
             DownloadEvent::CatalogRefreshed(catalog) => {
                 self.catalog = *catalog;
@@ -252,23 +319,6 @@ impl super::App {
     /// file name is searched in the packaged `cores/` dir, then the dev build
     /// output in `cores/dist` (see `cores/README.md`).
     pub(super) fn find_module(&self, module: &Path) -> PathBuf {
-        if module.is_absolute() || module.is_file() {
-            return module.to_path_buf();
-        }
-        let packaged = self.paths.cores.join(module);
-        if packaged.is_file() {
-            return packaged;
-        }
-        if let Some(resources) = resource_dir() {
-            let bundled = resources.join("cores").join(module);
-            if bundled.is_file() {
-                return bundled;
-            }
-        }
-        let dev = Path::new("cores/dist").join(module);
-        if dev.is_file() {
-            return dev;
-        }
-        packaged
+        resolve_module(&self.paths, module)
     }
 }

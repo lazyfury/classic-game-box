@@ -4,6 +4,11 @@
 # package the .app and zip it under dist/.
 #
 #     ./scripts/release.sh
+#     ./scripts/release.sh --minimal    # bundle only the redistributable set
+#     ./scripts/release.sh --only mesen,mgba
+#
+# `--minimal` / `--only` are forwarded to package-macos.sh; see
+# scripts/core-profiles.sh and cores/README.md.
 #
 # The version comes from the workspace `Cargo.toml` (`[workspace.package]
 # version`) and is written into `packaging/Info.plist` before packaging, so the
@@ -44,7 +49,7 @@ echo "==> 写入 Info.plist 版本"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$PLIST"
 
 echo "==> 打包"
-"$ROOT/scripts/package-macos.sh"
+"$ROOT/scripts/package-macos.sh" "$@"
 
 APP="$DIST/Classic Game Box.app"
 if [ ! -d "$APP" ]; then

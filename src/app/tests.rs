@@ -142,6 +142,8 @@ fn the_manifest_is_read_from_the_packaged_cores_dir() {
         r#"{ "cores": [ { "key": "x", "system": "nes", "dylib": "x.dylib" } ] }"#,
     )
     .expect("write manifest");
+    // The loader only offers cores whose module exists, so give `x` one.
+    std::fs::write(paths.cores.join("x.dylib"), b"").expect("write module");
 
     let cores = load_core_manifest(&paths);
     assert!(cores.iter().any(|core| core.key == "x"));
@@ -166,6 +168,9 @@ fn a_downloaded_core_is_merged_into_the_manifest() {
             ] }"#,
         )
         .expect("write registry");
+    // Both rows resolve to a module, so the loader keeps them.
+    std::fs::write(paths.cores.join("snes9x_libretro.dylib"), b"").expect("write snes9x module");
+    std::fs::write(paths.cores.join("bsnes_libretro.dylib"), b"").expect("write bsnes module");
 
     let cores = load_core_manifest(&paths);
     // The new core is offered for its console…
@@ -181,4 +186,99 @@ fn a_downloaded_core_is_merged_into_the_manifest() {
         1
     );
     let _ = std::fs::remove_dir_all(&paths.root);
+}
+
+#[test]
+fn a_core_whose_module_is_missing_is_not_offered() {
+    let paths = temp_paths("missing-module");
+    std::fs::write(
+        paths.cores.join("cores.json"),
+        r#"{ "cores": [
+            { "key": "here", "system": "nes", "dylib": "here.dylib" },
+            { "key": "gone", "system": "gba", "dylib": "gone.dylib" }
+        ] }"#,
+    )
+    .expect("write manifest");
+    std::fs::write(paths.cores.join("here.dylib"), b"").expect("write module");
+
+    let cores = load_core_manifest(&paths);
+    assert!(cores.iter().any(|core| core.key == "here"));
+    assert!(!cores.iter().any(|core| core.key == "gone"));
+    let _ = std::fs::remove_dir_all(&paths.root);
+}
+
+fn spec(key: &str, system: SystemId) -> CoreSpec {
+    CoreSpec {
+        key: key.to_string(),
+        name: key.to_string(),
+        system,
+        module: PathBuf::from(format!("{key}_libretro.dylib")),
+        sample_rate: 0,
+        frame_seconds: 1.0 / 60.0,
+        option_defaults: Default::default(),
+    }
+}
+
+fn catalog(entries: &[(&str, &str)]) -> Catalog {
+    Catalog {
+        generated: String::new(),
+        source: String::new(),
+        cores: entries
+            .iter()
+            .map(|(name, system)| cgb_cores::CatalogEntry {
+                name: name.to_string(),
+                display_name: name.to_string(),
+                system: system.to_string(),
+                extensions: String::new(),
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn recommend_core_prefers_the_manifest_choice_then_the_catalog() {
+    let catalog = catalog(&[("snes9x", "super_nes"), ("bsnes", "super_nes")]);
+    let shipped = vec![
+        spec("bsnes", SystemId::Snes),
+        spec("snes9x", SystemId::Snes),
+    ];
+    // The manifest's first downloadable core wins.
+    assert_eq!(
+        recommend_core(&shipped, &catalog, SystemId::Snes),
+        Some("bsnes".to_string())
+    );
+    // A console the manifest does not name falls back to the catalog.
+    assert_eq!(
+        recommend_core(&[], &catalog, SystemId::Snes),
+        Some("snes9x".to_string())
+    );
+    // Nothing downloadable serves it.
+    assert_eq!(recommend_core(&[], &catalog, SystemId::J2me), None);
+}
+
+#[test]
+fn missing_core_rows_lists_consoles_without_an_available_core() {
+    let catalog = catalog(&[("snes9x", "super_nes"), ("mgba", "game_boy_advance")]);
+    let shipped = vec![spec("snes9x", SystemId::Snes), spec("mgba", SystemId::Gba)];
+    // Only NES has an available core; SNES and GBA are missing.
+    let available = vec![spec("mesen", SystemId::Nes)];
+    let mut snes = db_game("snes", 1, false);
+    snes.system = SystemId::Snes;
+    let mut gba = db_game("gba", 1, false);
+    gba.system = SystemId::Gba;
+    let games = vec![snes, gba, db_game("nes", 1, false)];
+
+    assert_eq!(
+        missing_core_rows(&games, &available, &shipped, &catalog),
+        vec![
+            MissingCoreRow {
+                system: SystemId::Snes,
+                core: "snes9x".to_string(),
+            },
+            MissingCoreRow {
+                system: SystemId::Gba,
+                core: "mgba".to_string(),
+            },
+        ]
+    );
 }

@@ -383,6 +383,15 @@ pub struct CatalogRow {
     pub supported: bool,
 }
 
+/// A console the library has games for, but no available core serves. The
+/// library page offers to download `core` for it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MissingCoreRow {
+    pub system: SystemId,
+    /// The downloadable core's catalog name (what the app would fetch).
+    pub core: String,
+}
+
 /// One joypad button and the keys bound to it, for the settings page.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BindingRow {
@@ -525,6 +534,10 @@ pub struct ViewModel {
     pub catalog_status: String,
     /// Download progress in `0.0..=1.0`; `None` when the total is unknown.
     pub catalog_progress: Option<f32>,
+    /// Consoles the library has games for but no available core serves, each
+    /// with the core the app would download. Drives the library page's
+    /// "missing core" card; empty when nothing is missing.
+    pub missing_cores: Vec<MissingCoreRow>,
 }
 
 impl ViewModel {
@@ -594,6 +607,7 @@ impl Default for ViewModel {
             catalog_downloading: None,
             catalog_status: String::new(),
             catalog_progress: None,
+            missing_cores: Vec::new(),
         }
     }
 }
@@ -637,6 +651,11 @@ pub enum Action {
     RefreshCatalog,
     /// Download the catalog core at this `catalog` index.
     DownloadCore(usize),
+    /// Download the core recommended for this console (the library page's
+    /// "missing core" card).
+    DownloadRecommendedCore(SystemId),
+    /// Download every core the "missing core" prompt listed.
+    DownloadMissingCores,
     /// Pin or unpin the game at this library index.
     TogglePin(usize),
     /// Ask to delete something destructive; the app opens a confirmation dialog.

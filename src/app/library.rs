@@ -43,6 +43,7 @@ impl super::App {
         self.refresh_screenshot_textures();
         self.rebuild_game_rows();
         self.rebuild_screenshot_rows();
+        self.rebuild_missing_cores();
     }
 
     /// Rebuild the view from the database without rescanning the ROM folders.
@@ -134,9 +135,34 @@ impl super::App {
         }
         let report = import_roms(&self.paths.roms, &files);
         self.reload_library();
+        self.queue_missing_core_prompt(&report.copied);
         if !report.is_empty() || !switched {
             self.model
                 .set_status(import_status(&report), StatusKind::Info);
+        }
+    }
+
+    /// If a just-added ROM needs a console with no available core, queue the
+    /// "download a core?" prompt for the next frame. Opening it here would be
+    /// undone by the action dispatch that follows (`handle_actions` closes
+    /// overlays it did not open).
+    fn queue_missing_core_prompt(&mut self, added: &[PathBuf]) {
+        let added_systems: Vec<SystemId> = added
+            .iter()
+            .map(|path| system_for_path(&path.to_string_lossy()))
+            .collect();
+        let names: Vec<String> = self
+            .model
+            .missing_cores
+            .iter()
+            .filter(|row| added_systems.contains(&row.system))
+            .map(|row| row.system.name().to_string())
+            .collect();
+        if !names.is_empty() {
+            self.pending_core_prompt = Some(format!(
+                "新增的游戏需要 {} 的核心，现在下载吗？",
+                names.join("、")
+            ));
         }
     }
 

@@ -259,6 +259,8 @@ impl super::App {
                         self.download_core(&name);
                     }
                 }
+                Action::DownloadRecommendedCore(system) => self.download_recommended_core(system),
+                Action::DownloadMissingCores => self.download_missing_cores(),
                 Action::TogglePin(index) => self.toggle_pin(index),
                 Action::RequestDelete(confirm) => {
                     self.pending_confirm = Some(confirm);

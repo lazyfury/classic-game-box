@@ -20,10 +20,34 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 | `freej2me_plus` | J2ME (Java ME) | `TASEmulators/freej2me-plus` | `dist/freej2me_plus_libretro.dylib` | ✅ arm64, boots a JVM and returns 240×320 frames |
 
 ```bash
-./scripts/build-cores.sh              # every cores/*/build.sh, in name order
-./scripts/build-cores.sh --skip-mgba  # skip mGBA when cmake is unavailable
-./cores/mesen/build.sh                # build one core at a time
+./scripts/build-cores.sh                    # every cores/*/build.sh, in name order
+./scripts/build-cores.sh --minimal          # only the redistributable set
+./scripts/build-cores.sh --only mesen,mgba  # an explicit list
+./scripts/build-cores.sh --skip-mgba        # skip mGBA when cmake is unavailable
+./cores/mesen/build.sh                      # build one core at a time
 ```
+
+## Bundled set vs. downloaded cores
+
+Not every core needs to be shipped. `scripts/package-macos.sh` (and
+`scripts/release.sh`) take the same `--minimal` / `--only` selection as
+`build-cores.sh`: only the selected dylibs are copied into the bundle. The
+**full `cores.json` still ships**; at load the app drops rows whose module is
+absent (`resolve_module` in `src/app/helpers.rs`), so it never offers a core it
+cannot run, and keeps the rest so the library page can recommend a download.
+Cores left out are fetched at runtime from the libretro buildbot (settings page
+→ 下载核心, or `--download-core`); the downloaded rows land in
+`<app data>/cores/downloaded.json` and are merged with the bundled manifest at
+startup. When the library has games for a console with no available core, the
+library page shows a “缺少核心” card (and adding such games prompts once) with a
+one-click download of the recommended core.
+
+The **minimal** set is `mesen`, `mgba`, `custom_nes_core`, `freej2me_plus` (see
+`scripts/core-profiles.sh`): the permissive/own cores plus the two the buildbot
+has no macOS arm64 build for (`custom_nes_core`, `freej2me_plus`). The
+non-commercial cores (`snes9x`, `genesis_plus_gx`, `picodrive`, `fbneo`) are
+**not** in it — they cannot be sold, so they ship as downloads instead of being
+redistributed. Everything else can go either way.
 
 `libretro/libretro.h` is the vendored ABI contract (the same header
 `crates/cgb-libretro` binds by hand).

@@ -20,8 +20,8 @@ pub use frame::{centered_fit, contain_fit, crop_fit, FrameImage};
 pub use icons::{clear_textures, rasterize_icon, set_texture, Icon, IconName};
 pub use model::{
     save_slot_label, Action, BindingRow, CatalogRow, CheatRow, Confirm, CoreOptionRow, CoreRow,
-    EditTarget, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow, ScreenshotRow,
-    Section, ShaderKind, SortKey, StatusKind, SystemCount, TextureHandle, ViewModel,
+    EditTarget, GameRow, InputDescriptorRow, MissingCoreRow, MsaaKind, SafeArea, SaveSlotRow,
+    ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, TextureHandle, ViewModel,
 };
 pub use theme::{game_theme, ThemeChoice};
 pub use view::{
@@ -365,6 +365,26 @@ impl Ui {
         actions: &ViewBridge,
     ) {
         view::menus::confirm_destructive(
+            &mut self.overlays,
+            title.into(),
+            message.into(),
+            on_confirm,
+            actions,
+        );
+        self.repaint = true;
+    }
+
+    /// Open a modal confirmation that is not destructive (e.g. offering to
+    /// download a core). Confirming runs `on_confirm`; Escape / clicking
+    /// outside cancels.
+    pub fn confirm(
+        &mut self,
+        title: impl Into<String>,
+        message: impl Into<String>,
+        on_confirm: Action,
+        actions: &ViewBridge,
+    ) {
+        view::menus::confirm_action(
             &mut self.overlays,
             title.into(),
             message.into(),

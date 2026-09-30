@@ -8,7 +8,7 @@
 //! §8.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver};
@@ -34,10 +34,10 @@ use winit::window::{Fullscreen, Window};
 
 use crate::ui::{
     library_columns, save_slot_label, Action, BindingRow, CatalogRow, Confirm, CoreOptionRow,
-    CoreRow, EditTarget, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
-    ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, TextureHandle,
-    ThemeChoice, Ui, ViewBridge, ViewModel, CONTENT_DEFAULT_WIDTH, CONTENT_MAX_WIDTH,
-    CONTENT_MIN_WIDTH,
+    CoreRow, EditTarget, GameRow, InputDescriptorRow, MissingCoreRow, MsaaKind, SafeArea,
+    SaveSlotRow, ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount,
+    TextureHandle, ThemeChoice, Ui, ViewBridge, ViewModel, CONTENT_DEFAULT_WIDTH,
+    CONTENT_MAX_WIDTH, CONTENT_MIN_WIDTH,
 };
 use cgb_cores::{
     cache_path, download_core_with_progress, load_cores, register_downloaded, registry_path,
@@ -341,6 +341,13 @@ struct App {
     catalog: Catalog,
     /// A background download / catalog refresh in flight, with its events.
     download_rx: Option<Receiver<DownloadEvent>>,
+    /// Cores queued behind the one downloading (a download-all prompt can ask
+    /// for several at once).
+    download_queue: VecDeque<String>,
+    /// A "missing core" message to show as a modal once the current event is
+    /// handled. Set when games are added, opened from `update` so the action
+    /// dispatch does not immediately close it.
+    pending_core_prompt: Option<String>,
     /// Keyboard modifiers, so save-state hotkeys can tell save from load.
     modifiers: Modifiers,
     /// Files dropped onto the window since the last frame. The winit runner
@@ -534,6 +541,8 @@ impl App {
             cores,
             catalog,
             download_rx: None,
+            download_queue: VecDeque::new(),
+            pending_core_prompt: None,
             modifiers: Modifiers::NONE,
             pending_drops: Rc::new(RefCell::new(Vec::new())),
             last_viewport: None,
@@ -624,6 +633,7 @@ impl AppLogic for App {
 
     fn update(&mut self, ctx: &FrameContext<'_>) {
         self.poll_downloads();
+        self.maybe_open_core_prompt();
         self.advance_frame(ctx.delta());
     }
 

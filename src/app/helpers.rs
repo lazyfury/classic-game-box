@@ -57,7 +57,86 @@ pub(crate) fn load_core_manifest(paths: &Paths) -> Vec<CoreSpec> {
             }
         }
     }
+    // Only offer a core whose module is actually present: a checkout that built
+    // `--minimal` still has the full `cores.json`, and a packaged app may ship a
+    // subset. This resolves through the same search order `find_module` uses, so
+    // anything kept here loads.
+    cores.retain(|core| resolve_module(paths, &core.module).is_file());
     cores
+}
+
+/// Resolve a manifest `module` (a bare file name or a path) the way the app
+/// loads it: an absolute or already-existing path is used as given, else the
+/// file is searched in `<app data>/cores`, the bundle's `Resources/cores`, then
+/// the checkout's `cores/dist`. Returns the first hit, or the packaged path
+/// when none exists (so callers can test `is_file`).
+pub(crate) fn resolve_module(paths: &Paths, module: &Path) -> PathBuf {
+    if module.is_absolute() || module.is_file() {
+        return module.to_path_buf();
+    }
+    let packaged = paths.cores.join(module);
+    if packaged.is_file() {
+        return packaged;
+    }
+    if let Some(resources) = resource_dir() {
+        let bundled = resources.join("cores").join(module);
+        if bundled.is_file() {
+            return bundled;
+        }
+    }
+    let dev = Path::new("cores/dist").join(module);
+    if dev.is_file() {
+        return dev;
+    }
+    packaged
+}
+
+/// The downloadable core to recommend for a console: the shipped manifest's
+/// preferred (first) core that the catalog can fetch, else the first catalog
+/// core that serves the console. `None` when nothing downloadable serves it
+/// (e.g. a console only the bundled / self-built cores cover, like J2ME).
+pub(crate) fn recommend_core(
+    shipped: &[CoreSpec],
+    catalog: &Catalog,
+    system: SystemId,
+) -> Option<String> {
+    if let Some(key) = shipped
+        .iter()
+        .filter(|core| core.system == system)
+        .map(|core| core.key.as_str())
+        .find(|key| catalog.get(key).is_some())
+    {
+        return Some(key.to_string());
+    }
+    catalog
+        .cores
+        .iter()
+        .find(|entry| SystemId::parse_key(&entry.system) == Some(system))
+        .map(|entry| entry.name.clone())
+}
+
+/// The consoles a set of games needs but no available core serves, in
+/// first-seen order, each with the core to download. A console with no
+/// downloadable core is left out (there is nothing to offer).
+pub(crate) fn missing_core_rows(
+    games: &[Game],
+    available: &[CoreSpec],
+    shipped: &[CoreSpec],
+    catalog: &Catalog,
+) -> Vec<MissingCoreRow> {
+    let mut systems: Vec<SystemId> = Vec::new();
+    for game in games {
+        if !systems.contains(&game.system) {
+            systems.push(game.system);
+        }
+    }
+    systems
+        .into_iter()
+        .filter(|system| !available.iter().any(|core| core.system == *system))
+        .filter_map(|system| {
+            recommend_core(shipped, catalog, system).map(|core| MissingCoreRow { system, core })
+        })
+        .collect()
 }
 
 /// The cores shipped with the app (packaged app-data copy, bundled Resources,
