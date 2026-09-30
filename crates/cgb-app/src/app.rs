@@ -1344,6 +1344,7 @@ impl App {
                     downloaded: platform.is_some_and(|platform| {
                         cores_dir.join(entry.module_file(platform)).is_file()
                     }),
+                    supported: SystemId::parse_key(&entry.system).is_some(),
                 })
                 .collect()
         };
@@ -1387,6 +1388,7 @@ impl App {
         self.download_rx = Some(rx);
         self.model.catalog_status = "正在刷新下载源…".to_string();
         self.model.catalog_progress = None;
+        self.model.set_status("正在刷新下载源…", StatusKind::Info);
         self.dirty = true;
     }
 
@@ -1447,6 +1449,8 @@ impl App {
         self.model.catalog_downloading = Some(entry.name.clone());
         self.model.catalog_status = format!("正在下载 {}…", entry.name);
         self.model.catalog_progress = Some(0.0);
+        self.model
+            .set_status(format!("正在下载 {}…", entry.name), StatusKind::Info);
         self.dirty = true;
     }
 
@@ -1479,9 +1483,19 @@ impl App {
     fn on_download_event(&mut self, event: DownloadEvent) {
         match event {
             DownloadEvent::Progress { received, total } => {
-                self.model.catalog_progress = total
+                let progress = total
                     .filter(|total| *total > 0)
                     .map(|total| (received as f32 / total as f32).clamp(0.0, 1.0));
+                self.model.catalog_progress = progress;
+                // Mirror the progress into the footer, so it is visible even
+                // when the settings card has scrolled away.
+                if let Some(name) = self.model.catalog_downloading.clone() {
+                    let text = match progress {
+                        Some(progress) => format!("正在下载 {name}… {:.0}%", progress * 100.0),
+                        None => format!("正在下载 {name}…"),
+                    };
+                    self.model.set_status(text, StatusKind::Info);
+                }
                 self.dirty = true;
             }
             DownloadEvent::Done { name, registered } => {

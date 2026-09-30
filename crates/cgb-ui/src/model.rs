@@ -373,6 +373,10 @@ pub struct CatalogRow {
     pub system: String,
     /// Whether a module with this name is already in the cores directory.
     pub downloaded: bool,
+    /// Whether this app models the core's console. An unsupported core can be
+    /// downloaded but never registered or run, so the list says so instead of
+    /// offering a button.
+    pub supported: bool,
 }
 
 /// One joypad button and the keys bound to it, for the settings page.

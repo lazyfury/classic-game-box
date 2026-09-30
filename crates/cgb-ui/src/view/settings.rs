@@ -84,28 +84,32 @@ fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions)
             .tone(Tone::Muted),
         );
     } else {
-        for (index, row) in model.catalog.iter().enumerate() {
-            let download = actions.clone();
-            let button = if row.downloaded {
-                Button::ghost("已下载", theme).mini()
+        let mut any_unsupported = false;
+        for (index, entry) in model.catalog.iter().enumerate() {
+            let mut item = Row::new()
+                .align(Align::Center)
+                .gap(space::SM)
+                .child(
+                    Text::small(entry.display_name.as_str(), theme)
+                        .grow(1.0)
+                        .max_lines(1)
+                        .ellipsis(true),
+                )
+                .child(Text::caption(entry.system.as_str(), theme).tone(Tone::Muted));
+            if !entry.supported {
+                any_unsupported = true;
+                item = item.child(Text::caption("暂不支持", theme).tone(Tone::Subtle));
+            } else if entry.downloaded {
+                item = item.child(Button::ghost("已下载", theme).mini());
             } else {
-                Button::secondary("下载", theme)
-                    .mini()
-                    .on_click(move |_tree, _id| download.push(Action::DownloadCore(index)))
-            };
-            list = list.child(
-                Row::new()
-                    .align(Align::Center)
-                    .gap(space::SM)
-                    .child(
-                        Text::small(row.display_name.as_str(), theme)
-                            .grow(1.0)
-                            .max_lines(1)
-                            .ellipsis(true),
-                    )
-                    .child(Text::caption(row.system.as_str(), theme).tone(Tone::Muted))
-                    .child(button),
-            );
+                let download = actions.clone();
+                item = item.child(
+                    Button::secondary("下载", theme)
+                        .mini()
+                        .on_click(move |_tree, _id| download.push(Action::DownloadCore(index))),
+                );
+            }
+            list = list.child(item);
         }
         list = list.child(
             Text::caption(
@@ -118,6 +122,15 @@ fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions)
             )
             .tone(Tone::Muted),
         );
+        if any_unsupported {
+            list = list.child(
+                Text::caption(
+                    "「暂不支持」= 该机种本应用尚未支持，下载后也无法使用。",
+                    theme,
+                )
+                .tone(Tone::Subtle),
+            );
+        }
     }
 
     Card::new(theme)
