@@ -265,6 +265,36 @@ fn cores_run_through_the_host() {
         eprintln!("skip: {} not built", psp.display());
     }
 
+    // Beetle PSX HW is hardware-rendered and disc-based: there is no synthetic
+    // PS1 image to boot, so prove it opens and declares the content it wants.
+    let ps1 = dist_core("mednafen_psx_hw_libretro.dylib");
+    if ps1.is_file() {
+        let dir = std::env::temp_dir();
+        let host = CoreHost::new(&ps1, &dir, &dir).expect("open mednafen_psx_hw");
+        let info = host.system_info();
+        assert!(
+            info.library_name.contains("Beetle PSX"),
+            "{}",
+            info.library_name
+        );
+        for ext in ["cue", "chd", "pbp", "iso"] {
+            assert!(
+                info.valid_extensions.iter().any(|e| e == ext),
+                "mednafen_psx_hw does not declare .{ext}: {:?}",
+                info.valid_extensions
+            );
+        }
+        assert!(info.need_fullpath, "beetle psx reads the disc itself");
+        eprintln!(
+            "mednafen_psx_hw_libretro.dylib: {} ({:?})",
+            info.library_name, info.valid_extensions
+        );
+        drop(host);
+        tested += 1;
+    } else {
+        eprintln!("skip: {} not built", ps1.display());
+    }
+
     // FreeJ2ME-Plus runs the game in a child Java VM, so there is no synthetic
     // game to load. Prove the core opens, declares the J2ME content it wants,
     // and — the reason the host speaks core options v2 — parses its options.

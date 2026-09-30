@@ -130,6 +130,14 @@
       "fps": 59.94
     },
     {
+      "key": "mednafen_psx_hw",
+      "name": "Beetle PSX HW",
+      "system": "ps1",
+      "dylib": "mednafen_psx_hw_libretro.dylib",
+      "sample_rate": 44100,
+      "fps": 59.826
+    },
+    {
       "key": "freej2me_plus",
       "name": "FreeJ2ME-Plus",
       "system": "j2me",

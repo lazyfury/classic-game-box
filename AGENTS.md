@@ -42,7 +42,7 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   改名 / 搜索 / 标签编辑用上游 `igui_components::TextInput`（自带 caret/选区/IME 预编辑）。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
   （mesen / mgba / nestopia / custom_nes_core / fbneo / genesis_plus_gx / picodrive /
-  parallel_n64 / ppsspp / freej2me_plus）；
+  parallel_n64 / ppsspp / mednafen_psx_hw / freej2me_plus）；
   `--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
   Sega 系（genesis / sms / gg / sg1000）有两个核心：Genesis Plus GX 与轻量的
@@ -72,6 +72,12 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   **注意**：`CoreHost::drop` 必须先调核心的 `context_destroy()` 再
   `retro_unload_game()`（RetroArch 同序）；PPSSPP 在 `retro_unload_game` 里
   `delete ctx`，反序会空指针崩溃。
+- **PS1 硬件加速（GL 路径）**：`SystemId::PlayStation`（`.cue/.ccd/.toc/.m3u/.img`）→
+  **Beetle PSX HW**（`libretro/beetle-psx-libretro`，源码构建 `HAVE_OPENGL=1`）。
+  请求 `OPENGL_CORE 3.3`，复用同一条离屏 GL 路径。BIOS 可选（HLE/OpenBIOS；
+  真实 BIOS 放 `<system>/scph550x.bin`）。PS1 关闭倒带（state 大）。`.iso/.chd/.pbp`
+  与 PSP 冲突，仍归 PSP；单游戏用卡片右键的**「选择机种…」**覆盖（存在库
+  `games.system`，`Library::set_system`，rescan 不覆盖）。
 - **J2ME（Java ME）**：`SystemId::J2me`（`.jar`/`.kjx`）→ **FreeJ2ME-Plus**
   （`TASEmulators/freej2me-plus`）。它的 libretro 模块只是 C shim，用
   `fork/exec` 起一个 Java VM（`freej2me_plus-lr.jar`）走 stdin/stdout 管道；

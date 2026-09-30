@@ -27,6 +27,8 @@ pub enum SystemId {
     N64,
     /// PlayStation Portable. Hardware-rendered (OpenGL) via PPSSPP.
     Psp,
+    /// Sony PlayStation. Hardware-rendered (OpenGL) via Beetle PSX HW.
+    PlayStation,
     /// J2ME (Java ME): the feature-phone games. A `.jar` MIDlet suite, run by
     /// a Java VM the core starts as a child process.
     J2me,
@@ -44,6 +46,7 @@ pub const SYSTEMS: &[SystemId] = &[
     SystemId::Arcade,
     SystemId::N64,
     SystemId::Psp,
+    SystemId::PlayStation,
     SystemId::J2me,
 ];
 
@@ -61,6 +64,7 @@ impl SystemId {
             SystemId::Arcade => "Arcade (MAME)",
             SystemId::N64 => "Nintendo 64",
             SystemId::Psp => "PlayStation Portable",
+            SystemId::PlayStation => "Sony PlayStation",
             SystemId::J2me => "J2ME (Java ME)",
         }
     }
@@ -79,6 +83,7 @@ impl SystemId {
             SystemId::Arcade => "ARC",
             SystemId::N64 => "N64",
             SystemId::Psp => "PSP",
+            SystemId::PlayStation => "PS1",
             SystemId::J2me => "J2ME",
         }
     }
@@ -100,6 +105,10 @@ impl SystemId {
             // PSP disc/eboot images and CHD-compressed dumps. No other console
             // here claims these yet; when one does, the scanner must disambiguate.
             SystemId::Psp => &["iso", "cso", "pbp", "chd"],
+            // The CD-image extensions only PS1 uses. `.iso`, `.chd`, `.pbp`
+            // are shared with PSP and stay there; a wrong guess is fixed per
+            // game from the card's "选择机种…" menu.
+            SystemId::PlayStation => &["cue", "ccd", "toc", "m3u", "img"],
             // `.jar` is a MIDlet suite; `.kjx` is a Keitai (i-appli) archive
             // the core also accepts. `.jad` (the descriptor) is not a game.
             SystemId::J2me => &["jar", "kjx"],
@@ -119,6 +128,7 @@ impl SystemId {
             SystemId::Arcade => "arcade",
             SystemId::N64 => "n64",
             SystemId::Psp => "psp",
+            SystemId::PlayStation => "ps1",
             SystemId::J2me => "j2me",
         }
     }
@@ -137,6 +147,7 @@ impl SystemId {
             "arcade" => Some(SystemId::Arcade),
             "n64" => Some(SystemId::N64),
             "psp" => Some(SystemId::Psp),
+            "ps1" | "psx" | "playstation" => Some(SystemId::PlayStation),
             "j2me" | "java" => Some(SystemId::J2me),
             _ => None,
         }
@@ -169,6 +180,7 @@ pub fn system_for_path(path: &str) -> SystemId {
         "zip" => SystemId::Arcade,
         "z64" | "n64" | "v64" => SystemId::N64,
         "iso" | "cso" | "pbp" | "chd" => SystemId::Psp,
+        "cue" | "ccd" | "toc" | "m3u" | "img" => SystemId::PlayStation,
         "jar" | "kjx" => SystemId::J2me,
         _ => SystemId::Nes,
     }
@@ -199,6 +211,11 @@ mod tests {
         assert_eq!(system_for_path("CRISIS.CSO"), SystemId::Psp);
         assert_eq!(system_for_path("homebrew.pbp"), SystemId::Psp);
         assert_eq!(system_for_path("dumped.chd"), SystemId::Psp);
+        assert_eq!(system_for_path("ff7.cue"), SystemId::PlayStation);
+        assert_eq!(system_for_path("FF7.CCD"), SystemId::PlayStation);
+        assert_eq!(system_for_path("disc.toc"), SystemId::PlayStation);
+        assert_eq!(system_for_path("set.m3u"), SystemId::PlayStation);
+        assert_eq!(system_for_path("track.img"), SystemId::PlayStation);
         assert_eq!(system_for_path("pileup.jar"), SystemId::J2me);
         assert_eq!(system_for_path("PILEUP.JAR"), SystemId::J2me);
         assert_eq!(system_for_path("keitai.kjx"), SystemId::J2me);
