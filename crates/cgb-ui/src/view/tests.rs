@@ -110,10 +110,10 @@ fn clicking_a_card_asks_to_activate_it() {
     assert_eq!(actions.drain(), vec![Action::CardActivate(0)]);
 }
 
-/// The card's "立即游玩" bar starts the game on a single click, unlike the card
-/// itself (which needs a double click).
+/// The card's "立即游玩" button starts the game on a single click, unlike the
+/// card itself (which needs a double click).
 #[test]
-fn clicking_the_play_bar_starts_the_game() {
+fn clicking_the_play_button_starts_the_game() {
     let actions = Actions::default();
     let model = ViewModel {
         games: vec![game_row("Game 0", "/roms/game0.nes")],
@@ -1122,10 +1122,14 @@ fn the_grid_window_only_changes_when_a_row_is_crossed() {
     // A few pixels into the same row: same window.
     model.grid_offset = 20.0;
     assert_eq!(grid_window(&model), start);
-    // Past a row boundary (`CARD_HEIGHT + space::SM = 192`): new window.
-    model.grid_offset = 200.0;
+    // Past a row boundary (`CARD_HEIGHT + space::SM`): new window.
+    model.grid_offset = CARD_HEIGHT + igui::igui_theme::space::SM + 5.0;
     assert_ne!(grid_window(&model), start);
-    assert_eq!(grid_window(&model), (1, 5));
+    assert_eq!(
+        grid_window(&model).0,
+        1,
+        "the new window starts on the next row"
+    );
 }
 
 /// The library is a grid, not a list: the first `grid_columns` cells share

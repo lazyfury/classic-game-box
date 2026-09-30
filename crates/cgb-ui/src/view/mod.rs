@@ -106,8 +106,9 @@ const PLACEHOLDER_HEIGHT: f32 = 112.0;
 
 /// A library card's fixed height. Uniform rows let the grid mount only the
 /// visible ones: the content is padded to this, and every card's text is one
-/// line, so it is never taller.
-const CARD_HEIGHT: f32 = 184.0;
+/// line, so it is never taller. Sized for the cover, the name, the meta line,
+/// an optional tags line and the bottom hint/play row.
+const CARD_HEIGHT: f32 = 202.0;
 
 /// A screenshot cell's fixed height, for the same virtualization.
 const SHOT_HEIGHT: f32 = 180.0;

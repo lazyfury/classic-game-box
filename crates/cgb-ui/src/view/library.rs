@@ -337,6 +337,15 @@ pub(super) fn game_card(
                 .ellipsis(true),
         );
     }
+    // The card's bottom row: a hint on the left, the one-click play button on
+    // the right. Both sit in the card's own flex column (no positioning).
+    card = card.child(
+        Row::new()
+            .align(Align::Center)
+            .justify(Justify::SpaceBetween)
+            .child(Text::caption("双击开始", theme).tone(Tone::Subtle))
+            .child(play_button(theme, index, actions)),
+    );
     card
 }
 
@@ -399,14 +408,10 @@ pub(super) fn cover(
         // paints before the children, so the badge and buttons stay on top; the
         // clip crops the overflow to the cell.
         Some(handle) => {
-            cover = cover
-                .clip(true)
-                .foreground(move |ctx, rect, _state| {
-                    let destination = cover_fit((handle.width, handle.height), rect);
-                    ctx.draw_image(handle.texture, destination, None, Paint::default());
-                })
-                // Pushes the play bar to the bottom of the cover.
-                .child(Flex::column().grow(1.0));
+            cover = cover.clip(true).foreground(move |ctx, rect, _state| {
+                let destination = cover_fit((handle.width, handle.height), rect);
+                ctx.draw_image(handle.texture, destination, None, Paint::default());
+            });
         }
         // No artwork: the name stands in for it, centred on the colour.
         None => {
@@ -425,13 +430,13 @@ pub(super) fn cover(
             );
         }
     }
-    cover.child(play_bar(theme, index, actions))
+    cover
 }
 
-/// The one-click "立即游玩" bar along the bottom of a card's cover. The card
-/// itself plays on a double click, so a single click cannot fight the context
-/// menu; this is the deliberate single-click start.
-fn play_bar(theme: &'static dyn Theme, index: usize, actions: &Actions) -> impl Component {
+/// The play button on a card's bottom-right: a single click starts the game.
+/// The card itself plays on a double click, so this is the deliberate
+/// one-click path; the hint beside it says as much.
+fn play_button(theme: &'static dyn Theme, index: usize, actions: &Actions) -> impl Component {
     let click = actions.clone();
     Row::new()
         .align(Align::Center)
@@ -440,20 +445,20 @@ fn play_bar(theme: &'static dyn Theme, index: usize, actions: &Actions) -> impl 
         .cursor(Cursor::Pointer)
         .padding(Edges {
             left: space::XS,
-            top: 2.0,
+            top: 1.0,
             right: space::XS,
-            bottom: 2.0,
+            bottom: 1.0,
         })
         .dynamic_background(move |state| {
             let fill = if state.hovered || state.pressed {
-                media::ON_MEDIA_HOVER
+                theme.palette().surface_hover
             } else {
-                media::SCRIM
+                Color::TRANSPARENT
             };
             SurfaceStyle::new(fill).radius(radius::SM)
         })
         .on_click(move |_tree, _id| click.push(Action::Play(index)))
-        .child(Text::caption("立即游玩", theme).color(media::ON_MEDIA))
+        .child(Text::caption("立即游玩", theme))
 }
 
 /// The console badge, top-left on the cover: the short name the console is
