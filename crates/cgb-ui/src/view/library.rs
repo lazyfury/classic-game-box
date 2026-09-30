@@ -336,7 +336,7 @@ pub(super) fn game_card(
                 .max_lines(1)
                 .ellipsis(true),
         );
-    }else{
+    } else {
         card = card.child(Text::caption("", theme).max_lines(1).ellipsis(true))
     }
     // The card's bottom row: a hint on the left, the one-click play button on
