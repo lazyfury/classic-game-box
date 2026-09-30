@@ -18,7 +18,8 @@ only: `NSWindow` + `CAMetalLayer` + a 60 Hz tick + AppKit event forwarding
 Working: library UI renders into Swift's layer; pointer (move/down/up/double-
 click/drag/wheel/leave), keyboard (named + character keys, text, modifiers),
 basic IME preedit/commit, dropped files (FFI only), resize, fullscreen
-(polled), gamepad (via `gilrs` inside `cgb-app`), audio (Rust `cpal`).
+(polled), gamepad (currently `gilrs` inside `cgb-app` — moving to Swift, see
+§G), audio (Rust `cpal`).
 
 ## A. Native-API parity (do first)
 
@@ -111,6 +112,115 @@ The `winit` host does a few things this host does not yet.
   (an `NSAlert`) so a GPU failure is visible.
 - **F3 · Event coalescing.** A live resize fires many `cgb_mac_resize` calls;
   coalesce to one surface reconfigure per tick if it shows up as jank.
+
+## G. Swift-native gamepad (decided interface)
+
+**Decision.** On this host the gamepad source is Swift, using Apple's
+`GameController` framework (`GCController`), not `gilrs`. Apple's own mapping
+is correct for the Xbox Wireless Controller over Bluetooth, which `gilrs`
+mislabels here; hot-plug and per-controller profiles also come for free. The
+embedded build must not construct `gilrs` at all.
+
+The seam mirrors the window: `cgb-app` takes gamepad state from a host-provided
+source when one is registered, and falls back to `gilrs` otherwise.
+
+### Rust
+
+- **G1 · `cgb-input`: a snapshot type.** Add
+
+  ```rust
+  pub struct GamepadSnapshot {
+      pub buttons: [u16; 2],           // per port, libretro joypad bitmask
+      pub analog: [[[i16; 2]; 2]; 2],  // [port][stick][axis]
+      pub connected: [bool; 2],
+  }
+  ```
+
+  with `set_button(port, JoypadButton, down)`, `set_analog(port, stick, axis,
+  i16)`, `connect(port, bool)` and `apply(&self, &mut InputState)` (sets the
+  gamepad mask and the sticks, leaving the keyboard source untouched). Add
+  `InputState::set_gamepad_mask(port, u16)` for the mask write.
+- **G2 · `cgb-app`: a gamepad source.** Add
+
+  ```rust
+  pub trait GamepadSource { fn poll(&mut self, state: &mut InputState); }
+  pub type SharedGamepad = Rc<RefCell<dyn GamepadSource>>;
+  ```
+
+  `App.gamepads` becomes `Option<Rc<RefCell<dyn GamepadSource>>>`. In
+  `App::init`, prefer `ctx.service::<SharedGamepad>()`; else (with the `gilrs`
+  feature) wrap `Gamepads`. Move `Gamepads::new()` out of `App::new` into
+  `init`. `step_gamepad` calls `poll` as today.
+- **G3 · gate `gilrs`.** Make `gilrs` optional in `cgb-input` (feature
+  `gilrs`), enabled by `cgb-app`'s `winit-host`. The embedded build then links
+  no `gilrs`.
+
+### C ABI (`cgb_mac.h`)
+
+```c
+/* libretro joypad ids, so Swift never hardcodes them. */
+enum { CGB_JOYPAD_B = 0, CGB_JOYPAD_Y = 1, CGB_JOYPAD_SELECT = 2,
+       CGB_JOYPAD_START = 3, CGB_JOYPAD_UP = 4, CGB_JOYPAD_DOWN = 5,
+       CGB_JOYPAD_LEFT = 6, CGB_JOYPAD_RIGHT = 7, CGB_JOYPAD_A = 8,
+       CGB_JOYPAD_X = 9, CGB_JOYPAD_L = 10, CGB_JOYPAD_R = 11,
+       CGB_JOYPAD_L2 = 12, CGB_JOYPAD_R2 = 13, CGB_JOYPAD_L3 = 14,
+       CGB_JOYPAD_R3 = 15 };
+
+/* Replace one port's snapshot. buttons: bit i = CGB_JOYPAD_* i.
+ * Axes are -32768..32767, libretro convention (Y positive is down). */
+void cgb_mac_gamepad_state(CgbMacApp *app, uint32_t port, uint32_t buttons,
+                           int16_t left_x, int16_t left_y,
+                           int16_t right_x, int16_t right_y);
+
+/* Mark a port connected/disconnected; disconnect clears it. */
+void cgb_mac_gamepad_connected(CgbMacApp *app, uint32_t port, bool connected);
+```
+
+`cgb_mac_gamepad_state` writes into the same `Rc<RefCell<GamepadSnapshot>>`
+the source applies; `connected` sets/clears the flag and zeroes that port.
+
+### Swift (`Gamepads.swift`)
+
+- `GCController.startWirelessControllerDiscovery(...)` at start; observe
+  `.GCControllerDidConnect` / `.GCControllerDidDisconnect`.
+- Assign controllers to ports in connection order (first two → 0/1); set
+  `controller.playerIndex`. On disconnect call
+  `cgb_mac_gamepad_connected(port, false)` and free the port.
+- Register `extendedGamepad.valueChangedHandler` (falling back to `gamepad` /
+  `microGamepad`); rebuild the bitmask + axes and call
+  `cgb_mac_gamepad_state(port, ...)` on every change.
+
+### Mapping (`GCController` → libretro)
+
+| `GCController` | libretro |
+|---|---|
+| `buttonA` | `B` (bottom / confirm) |
+| `buttonB` | `A` (right) |
+| `buttonX` | `Y` (left) |
+| `buttonY` | `X` (top) |
+| `leftShoulder` / `rightShoulder` | `L` / `R` |
+| `leftTrigger` / `rightTrigger` (> 0.5) | `L2` / `R2` |
+| `leftThumbstickButton` / `rightThumbstickButton` | `L3` / `R3` |
+| `dpad.up` / `.down` / `.left` / `.right` | `UP` / `DOWN` / `LEFT` / `RIGHT` |
+| `buttonMenu` | `START` |
+| `buttonOptions` | `SELECT` |
+| `leftThumbstick` | analog stick 0 (`x`, `y`) |
+| `rightThumbstick` | analog stick 1 (`x`, `y`) |
+
+- **Stick → D-pad parity.** As `gilrs` does, when a stick axis passes ±0.5
+  also set the matching D-pad bit, so a core that reads only buttons still
+  moves.
+- **Axis sign.** `GCController` Y is positive up; libretro wants positive down,
+  so negate Y.
+- **Two-port cap.** Controllers beyond the first two are ignored (two joypad
+  ports).
+
+### Testing
+
+- **G4.** Unit-test `GamepadSnapshot::apply` and the mask write in `cgb-input`.
+- **G5.** Manual: hot-plug an Xbox pad, check buttons / sticks / triggers;
+  unplug and confirm the port clears; confirm `gilrs` is absent from the
+  release binary (`nm` / `otool`).
 
 ## Open questions
 
