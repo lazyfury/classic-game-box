@@ -39,16 +39,11 @@
 .idea/
 *.swp
 
-# Legacy outputs (the old CMake / Emscripten / Electron trees moved to legacy/;
-# if anyone builds them in place, keep the junk out of git).
+# Legacy tree: only the custom FC/NES core sources remain; ignore any in-place
+# CMake build directories.
 /legacy/build/
 /legacy/build-*/
-/legacy/wasm/dist/
-/legacy/electron/node_modules/
-/legacy/electron/dist/
-/legacy/electron/dist-electron/
-/legacy/electron/release/
-/legacy/third_party/emsdk/
+/legacy/packages/*/build/
 frames/
 
 # GLideN64 shader cache written into the working directory by the N64 core.

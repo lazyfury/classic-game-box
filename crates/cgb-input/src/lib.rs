@@ -514,8 +514,8 @@ fn xbox_button(code: u32) -> Option<JoypadButton> {
 ///
 /// The bottom face button is the one printed "A" on most pads and the console's
 /// A is the right-hand one, so it is the **bottom** button that maps to libretro
-/// A (id 8) and the **right** one to B (id 0) — the same way the legacy front
-/// end did (`legacy/electron/src/renderer/gamepad.ts`).
+/// A (id 8) and the **right** one to B (id 0) — the same way the old front
+/// end's `gamepad.ts` did.
 fn button_of(button: gilrs::Button) -> Option<JoypadButton> {
     use gilrs::Button;
     use JoypadButton::*;

@@ -1,8 +1,8 @@
 # Classic Game Box — 工作约定（Rust 版）
 
 本仓库正在从 **Electron + WebAssembly + 自研核心** 迁移到 **原生 Rust + igui + libretro**。
-旧栈整体在 `legacy/`，只作参考，不参与构建。权威设计见
-[`docs/architecture/quill-native-migration.md`](docs/architecture/quill-native-migration.md)。
+自研 FC 核心的 C++ 源码在 `legacy/`（只作对照，不参与 Rust 构建；其余旧栈已清理）。
+权威设计见 [`docs/architecture/quill-native-migration.md`](docs/architecture/quill-native-migration.md)。
 
 UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上游），以 git 依赖固定到
 `v0.2.0` 的 commit；见 `Cargo.toml` 的 `igui` / `igui_svg` / `igui_winit` / `igui_core`。
@@ -136,7 +136,8 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
    不得依赖 `web_sys`/`wgpu`/DOM。应用内 `src/ui` 只用 `igui_*` 的公开 API。
 6. **不写截图 / 录屏测试。** 用 `igui_backend_recording` 录 `DrawList` +
    `igui_profile::inspect`，或 core 侧假 frontend 单测。UI 好不好看由人看。
-7. **不改 `legacy/`**，除非明确要求；它是历史存档。
+7. **`legacy/` 只读**：仅保留自研 FC 核心（`packages/fc-core` / `fc-libretro`）
+   作对照与 `custom_nes_core` 的来源；要改需明确要求。
 8. **不确定就问，不要猜。** 需求模糊、要动公共 API 或路线图时，先停下来问。
 9. **不擅自开工。** 只实现已确认的任务；顺手发现的问题只汇报，不动手。
 
@@ -167,7 +168,7 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/ico
 | 需要… | 看这里 |
 |---|---|
 | 迁移总设计、范围、里程碑、风险 | `docs/architecture/quill-native-migration.md` |
-| 旧架构的来龙去脉（为什么用 wasm、为什么现在不用） | `legacy/docs/architecture/libretro-migration.md` |
+| 旧架构的来龙去脉（为什么用 wasm、为什么现在不用） | `docs/architecture/libretro-migration.md` |
 | crate 职责与依赖 | `crates/README.md` |
 | libretro frontend（dlopen / 回调 / 视频音频输入存档） | `crates/cgb-libretro/src/host.rs` |
 | 机种 / CoreSpec 选核、joypad id | `crates/cgb-systems/src/` |
@@ -175,7 +176,7 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/ico
 | 原生 core 构建 / 加核心流程 | `cores/README.md`、`cores/build.sh.example`、`cores/*/build.sh` |
 | J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
 | 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`src/cli.rs` |
-| 旧 Electron/C++/wasm 栈 | `legacy/`（只读） |
+| 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `legacy/packages/fc-{core,libretro}`（只读） |
 
 ## 已知缺口（先记录，不擅自补）
 

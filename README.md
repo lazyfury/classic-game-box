@@ -4,7 +4,8 @@ macOS 上的经典游戏机模拟器。**打开就能玩**：把 ROM 拖进窗�
 
 > **迁移进行中。** 这个仓库正在从 Electron + WebAssembly + 自研 FC 核心，重写成
 > **原生 Rust（[igui](https://github.com/lazyfury/igui) UI + winit/wgpu）+ 标准 libretro 核心**。
-> 旧栈完整保留在 [`legacy/`](legacy/)，可继续构建与参考，但不再演进。
+> 旧栈已清理：只保留自研 FC 核心的 C++ 源码（[`legacy/`](legacy/)，为
+> `cores/custom_nes_core` 提供来源），Electron / wasm / tools 前端已删除。
 >
 > 权威设计：[`docs/architecture/quill-native-migration.md`](docs/architecture/quill-native-migration.md)。
 
@@ -56,10 +57,10 @@ cargo run -- --rom mario.nes                  # 直接开始
 | Q4 | mGBA 接入 + 机种路由 | |
 | Q5 | 打包 `.app`、无头自检 | |
 
-## 旧版（Electron）
+## 自研 FC 核心（legacy）
 
-`legacy/` 里是迁移前的完整实现：Electron + TypeScript 前端、自研 C++ FC 核心
-（`packages/fc-core`）、libretro 适配（`packages/fc-libretro`）、Emscripten
-wasm 构建（`legacy/wasm`），以及教学文档。它记录了大量 libretro 迁移的调研与
-踩坑（[`legacy/docs/architecture/libretro-migration.md`](legacy/docs/architecture/libretro-migration.md)），
-是本项目现在这套设计的重要依据。
+`legacy/` 只保留自研 C++ FC / NES 核心（`packages/fc-core`）与它的 libretro 适配
+（`packages/fc-libretro`），供 `cores/custom_nes_core/build.sh` 编译成 libretro 模块，
+作为对照与兼容性测试基准。旧的 Electron + TypeScript 前端、Emscripten wasm 构建与
+教学 tools 已删除。迁移的调研与踩坑见
+[`docs/architecture/libretro-migration.md`](docs/architecture/libretro-migration.md)。

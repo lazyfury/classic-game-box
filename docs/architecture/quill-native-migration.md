@@ -1,7 +1,7 @@
 # 迁移到 quill 原生前端 —— 调研与落地计划
 
 > 状态：**计划已落地，结构已建**（分支 `quill-native`）。本文件是这次重构的权威设计；
-> 代码骨架在 `crates/`、`cores/`，旧栈整体移到 `legacy/` 只作参考。
+> 代码骨架在 `src/`、`crates/`、`cores/`；旧栈已清理，只剩自研 FC 核心 C++ 源码。
 > 决策已确认：目标核心是 **Mesen**（不是构建系统 Meson），UI 先做**最小闭环**，
 > 手柄用 **gilrs**，自研核心保留在 `legacy/` 作对照。
 > 目标：用 Rust + [igui](https://github.com/lazyfury/igui) 重写前端，**只做 UI 与 libretro 兼容**，
@@ -18,7 +18,7 @@
 
 1. **Electron + WebAssembly 前端退役**。新前端是原生 Rust：`winit` + `wgpu` + quill。
 2. **自研模拟器退役**。`fc-core` / `fc-libretro` / custom ABI 扩展不再作为运行路径，
-   整体移到 `legacy/`（保留作教学与对照测试基准，不再构建进产品）。
+   整体移到 `legacy/`（仅保留自研 FC 核心源码作对照，不再构建进产品）。
 3. **libretro 仍是唯一契约**。新前端实现 libretro **frontend** 一侧（environment / video /
    audio / input / serialize / memory），只加载**标准** libretro core，不再有 `fc_*` 私有扩展。
 4. **原生 `.dylib` 直接 dlopen**。这是这次重构最大的红利：彻底绕开 wasm 沙箱、
@@ -105,12 +105,10 @@ cores/                      # Mesen / mGBA 原生 dylib 构建脚本 + patches
 scripts/                    # build-cores.sh / dev.sh
 assets/                     # 图标等
 docs/                       # 教学文档保留；architecture/ 放本计划
-legacy/                     # 旧栈整体搬家，只读参考，不参与构建
-  ├── packages/fc-core
-  ├── packages/fc-libretro
-  ├── wasm/  electron/  tools/  cmake/  CMakeLists.txt
-  ├── scripts/  .vscode/  README.md  AGENTS.md
-  └── .pi/skills/           # 旧的 fc-* 技能
+legacy/                     # 仅保留自研 FC 核心源码（只读，不参与 Rust 构建）
+  ├── packages/fc-core      # CPU / Bus / PPU / APU / Mapper / State
+  ├── packages/fc-libretro  # libretro 包装 + 内置 libretro.h
+  └── cmake/                # 包独立 CMake 构建所需（Version.cmake 等）
 ```
 
 **根目录以 Rust 为主**：顶层只有 Cargo 工作区、`cores/`、`scripts/`、`docs/`、`assets/`、`legacy/`。
@@ -285,7 +283,7 @@ cargo run -p cgb-app -- --rom mario.nes --core ./x_libretro.dylib    # 直接指
 
 ## 7. 最小闭环 UI（`src/ui`）
 
-三列布局，参考旧 Electron 前端（`legacy/electron/src/renderer/App.tsx`）：
+三列布局，沿用旧 Electron 前端的设计（旧栈已删除）：
 
 ```
 Flex::column()

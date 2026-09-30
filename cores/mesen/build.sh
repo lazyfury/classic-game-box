@@ -6,8 +6,8 @@
 #
 # Mesen is the NES core. It is a third-party project with its own libretro
 # Makefile and an `osx` platform target, so it is cloned and built on demand
-# instead of vendored. This replaces the old `legacy/wasm/mesen/build.sh`,
-# which built the same core for Emscripten.
+# instead of vendored. This replaces the old wasm/mesen build script, which
+# built the same core for Emscripten.
 #
 # The two wasm-only patches are deliberately absent: with a real filesystem
 # Mesen can open disksys.rom / MesenDB.txt itself, and native builds already

@@ -2,8 +2,8 @@
 //!
 //! The library is one folder: the ROMs, their metadata and their screenshots.
 //! A game that was merely *pointed at* would break the moment its file moved,
-//! so adding a game **copies** it in. This mirrors the legacy Electron front
-//! end (`legacy/electron/src/main/library.ts::Library.add`).
+//! so adding a game **copies** it in. This mirrors the old Electron front
+//! end's `Library.add`.
 //!
 //! The rules are deliberately conservative:
 //!
