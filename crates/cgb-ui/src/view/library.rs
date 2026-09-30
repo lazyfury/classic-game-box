@@ -308,7 +308,7 @@ pub(super) fn game_card(
             } else {
                 Color::TRANSPARENT
             };
-            SurfaceStyle::new(fill).radius(radius::MD)
+            SurfaceStyle::new(fill)
         })
         .cursor(Cursor::Pointer)
         .on_click(move |_tree, _id| click.push(Action::CardActivate(index)))
@@ -336,15 +336,15 @@ pub(super) fn game_card(
                 .max_lines(1)
                 .ellipsis(true),
         );
+    }else{
+        card = card.child(Text::caption("", theme).max_lines(1).ellipsis(true))
     }
     // The card's bottom row: a hint on the left, the one-click play button on
     // the right. Both sit in the card's own flex column (no positioning).
-    card = card.child(
+    card = card.child(Divider::horizontal(theme)).child(
         Row::new()
             .align(Align::Center)
-            .justify(Justify::SpaceBetween)
-            .child(Text::caption("双击开始", theme).tone(Tone::Subtle))
-            .child(play_button(theme, index, actions)),
+            .child(play_button(theme, index, actions).grow(1.0)),
     );
     card
 }
@@ -438,25 +438,8 @@ pub(super) fn cover(
 /// one-click path; the hint beside it says as much.
 fn play_button(theme: &'static dyn Theme, index: usize, actions: &Actions) -> impl Component {
     let click = actions.clone();
-    Row::new()
-        .align(Align::Center)
-        .justify(Justify::Center)
-        .gap(0.0)
+    Button::new("", theme)
         .cursor(Cursor::Pointer)
-        .padding(Edges {
-            left: space::XS,
-            top: 1.0,
-            right: space::XS,
-            bottom: 1.0,
-        })
-        .dynamic_background(move |state| {
-            let fill = if state.hovered || state.pressed {
-                theme.palette().surface_hover
-            } else {
-                Color::TRANSPARENT
-            };
-            SurfaceStyle::new(fill).radius(radius::SM)
-        })
         .on_click(move |_tree, _id| click.push(Action::Play(index)))
         .child(Text::caption("立即游玩", theme))
 }
