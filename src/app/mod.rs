@@ -1,7 +1,7 @@
 //! The `winit` + `wgpu` host: the frame loop and the wiring between the UI,
 //! the libretro core, the audio device and the gamepad.
 //!
-//! quill is event-driven by default; an emulator is not. While a game is
+//! igui is event-driven by default; an emulator is not. While a game is
 //! running the loop schedules a redraw at the core's frame rate
 //! (`ControlFlow::WaitUntil`); with no game, or when paused, it falls back to
 //! `Wait` and does no work. See `docs/architecture/quill-native-migration.md`
@@ -33,10 +33,11 @@ use winit::event::WindowEvent;
 use winit::window::{Fullscreen, Window};
 
 use crate::ui::{
-    library_columns, Action, Actions, BindingRow, CatalogRow, Confirm, CoreOptionRow, CoreRow,
-    EditKind, EditState, FrameHandle, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
-    ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, ThemeChoice, Ui,
-    ViewModel, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
+    library_columns, save_slot_label, Action, BindingRow, CatalogRow, Confirm, CoreOptionRow,
+    CoreRow, EditKind, EditState, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
+    ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, TextureHandle,
+    ThemeChoice, Ui, ViewBridge, ViewModel, MIDDLE_DEFAULT_WIDTH, MIDDLE_MAX_WIDTH,
+    MIDDLE_MIN_WIDTH,
 };
 use cgb_cores::{
     cache_path, download_core_with_progress, load_cores, register_downloaded, registry_path,
@@ -139,13 +140,13 @@ fn safe_area() -> SafeArea {
 /// A registered cover texture and the screenshot row it came from.
 struct CoverTexture {
     cover_id: i64,
-    handle: FrameHandle,
+    handle: TextureHandle,
 }
 
 /// A registered screenshot thumbnail and the file it came from.
 struct ScreenshotTexture {
     file: String,
-    handle: FrameHandle,
+    handle: TextureHandle,
 }
 
 /// Arcade BIOS bundled in the checkout (`assets/roms/<system>/system`). The
@@ -272,7 +273,7 @@ struct App {
     /// can switch them and the choice is remembered.
     theme_choice: ThemeChoice,
     light: bool,
-    actions: Actions,
+    actions: ViewBridge,
     model: ViewModel,
     ui: Ui,
     /// Set when the model changed and the tree must be rebuilt.
@@ -297,7 +298,7 @@ struct App {
     screenshot_textures: HashMap<i64, ScreenshotTexture>,
     /// Registered save-state thumbnails, keyed by slot, with the modified time
     /// they were uploaded for.
-    save_textures: HashMap<u8, (i64, FrameHandle)>,
+    save_textures: HashMap<u8, (i64, TextureHandle)>,
     /// The running game's cheats, and the `.cht` file they came from.
     cheats: Vec<cgb_library::Cheat>,
     cheat_path: Option<PathBuf>,
@@ -461,13 +462,13 @@ impl App {
                 .middle_width
                 .clamp(MIDDLE_MIN_WIDTH, MIDDLE_MAX_WIDTH)
         } else {
-            320.0
+            MIDDLE_DEFAULT_WIDTH
         };
         let library = Library::open(&paths.library_db).ok();
         let cores = load_core_manifest(&paths);
         let catalog = Catalog::load(&cache_path(&paths.cores));
 
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let mode = if light { Mode::Light } else { Mode::Dark };
         let theme = theme_choice.theme(mode);
         let model = ViewModel {

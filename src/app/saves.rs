@@ -8,7 +8,10 @@ impl super::App {
         self.flush_playtime();
         let (message, kind) = match self.session.as_ref() {
             Some(session) => match session.save_state(slot) {
-                Ok(()) => (format!("已存档（槽位 {}）", slot + 1), StatusKind::Success),
+                Ok(()) => (
+                    format!("已存档（{}）", save_slot_label(slot)),
+                    StatusKind::Success,
+                ),
                 Err(error) => (error, StatusKind::Error),
             },
             None => ("没有正在运行的游戏".to_string(), StatusKind::Info),
@@ -22,7 +25,10 @@ impl super::App {
     pub(super) fn load_from_slot(&mut self, slot: u8) {
         let (message, kind) = match self.session.as_ref() {
             Some(session) => match session.load_state(slot) {
-                Ok(()) => (format!("已读档（槽位 {}）", slot + 1), StatusKind::Success),
+                Ok(()) => (
+                    format!("已读档（{}）", save_slot_label(slot)),
+                    StatusKind::Success,
+                ),
                 Err(error) => (error, StatusKind::Error),
             },
             None => ("没有正在运行的游戏".to_string(), StatusKind::Info),
@@ -37,7 +43,7 @@ impl super::App {
             session.delete_save(slot);
         }
         self.model.set_status(
-            format!("已删除存档（槽位 {}）", slot + 1),
+            format!("已删除存档（{}）", save_slot_label(slot)),
             StatusKind::Success,
         );
         self.refresh_saves();
@@ -47,12 +53,12 @@ impl super::App {
     /// Rebuild the saves list for the running game and its core, uploading a
     /// thumbnail for any slot that changed.
     pub(super) fn refresh_saves(&mut self) {
-        self.model.saves.clear();
-        self.model.saves_supported = false;
+        self.model.save_states.clear();
+        self.model.save_states_supported = false;
         let Some(session) = self.session.as_ref() else {
             return;
         };
-        self.model.saves_supported = session.save_supported();
+        self.model.save_states_supported = session.save_supported();
         let slots = session.save_slots();
         for slot in &slots {
             let mut thumb = None;
@@ -76,7 +82,7 @@ impl super::App {
                                         slot.slot,
                                         (
                                             slot.modified_ms,
-                                            FrameHandle {
+                                            TextureHandle {
                                                 texture,
                                                 width,
                                                 height,
@@ -93,7 +99,7 @@ impl super::App {
                     .get(&slot.slot)
                     .map(|(_, handle)| *handle);
             }
-            self.model.saves.push(SaveSlotRow {
+            self.model.save_states.push(SaveSlotRow {
                 slot: slot.slot,
                 exists: slot.exists,
                 modified_ms: slot.modified_ms,

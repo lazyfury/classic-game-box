@@ -9,8 +9,8 @@ use super::components::*;
 use super::library::*;
 
 use crate::ui::model::{
-    BindingRow, CheatRow, Confirm, CoreRow, EditKind, EditState, FrameHandle, GameRow, MsaaKind,
-    SaveSlotRow, ScreenshotRow, ShaderKind, SortKey, SystemCount,
+    BindingRow, CheatRow, Confirm, CoreRow, EditKind, EditState, GameRow, MsaaKind, SaveSlotRow,
+    ScreenshotRow, ShaderKind, SortKey, SystemCount, TextureHandle,
 };
 use crate::ui::theme::ThemeChoice;
 use cgb_systems::SystemId;
@@ -21,18 +21,10 @@ use igui::igui_theme::{default_theme, Mode};
 
 /// Build, lay out (running the scroll sync) and paint the shell. Returns the
 /// mounted tree so a test can also route input at it.
-fn laid_out(model: &ViewModel, actions: &Actions) -> (SceneTree, igui::igui_render::DrawList) {
+fn laid_out(model: &ViewModel, actions: &ViewBridge) -> (SceneTree, igui::igui_render::DrawList) {
     let theme = default_theme(Mode::Dark);
-    let width = Rc::new(Cell::new(model.middle_width));
-    let (mut tree, mut scroll) = build(
-        theme,
-        model,
-        actions,
-        &width,
-        &NodeRef::new(),
-        &Cell::new((0, 0)),
-        &NodeRef::new(),
-    );
+    let mount = ViewMount::new(model.middle_width);
+    let (mut tree, mut scroll) = build(theme, model, actions, &mount);
     let viewport = igui::igui_core::ViewportSize::new(Size::new(1100.0, 760.0));
     igui::igui_ui::layout(&mut tree, viewport);
     tree.update();
@@ -80,7 +72,7 @@ fn game_row(name: &str, path: &str) -> GameRow {
 /// turns two in quick succession into a play; the play bar starts on one).
 #[test]
 fn clicking_a_card_asks_to_activate_it() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
         games: vec![game_row("Game 0", "/roms/game0.nes")],
         ..ViewModel::default()
@@ -114,7 +106,7 @@ fn clicking_a_card_asks_to_activate_it() {
 /// card itself (which needs a double click).
 #[test]
 fn clicking_the_play_button_starts_the_game() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
         games: vec![game_row("Game 0", "/roms/game0.nes")],
         ..ViewModel::default()
@@ -141,7 +133,7 @@ fn clicking_the_play_button_starts_the_game() {
 /// A right click on a card opens its context menu at the pointer.
 #[test]
 fn right_clicking_a_card_opens_its_context_menu() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = one_game();
     let (mut tree, list) = laid_out(&model, &actions);
     let point = text_position(&list, "Game 0");
@@ -166,7 +158,7 @@ fn right_clicking_a_card_opens_its_context_menu() {
 /// The card controls register the tooltips the host shows on hover.
 #[test]
 fn card_controls_register_tooltips() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let mut game = one_game_row();
     game.screenshots = 2;
     let (_tree, _list) = isolated_cover(&game, &actions);
@@ -187,7 +179,7 @@ fn card_controls_register_tooltips() {
 /// host can open the picker menu.
 #[test]
 fn the_core_picker_raises_an_action() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Settings,
         cores: vec![
@@ -240,7 +232,10 @@ fn one_game() -> ViewModel {
 
 /// Lay out a single card cover (no shell chrome around it), so its two
 /// icon buttons can be located by the lines their SVGs draw.
-fn isolated_cover(game: &GameRow, actions: &Actions) -> (SceneTree, igui::igui_render::DrawList) {
+fn isolated_cover(
+    game: &GameRow,
+    actions: &ViewBridge,
+) -> (SceneTree, igui::igui_render::DrawList) {
     let theme = default_theme(Mode::Dark);
     let mut tree = SceneTree::new();
     let root = tree.root();
@@ -313,7 +308,7 @@ fn one_game_row() -> GameRow {
 /// The pin icon is its own button and toggles the pin.
 #[test]
 fn clicking_pin_toggles_it() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let (mut tree, list) = isolated_cover(&one_game_row(), &actions);
     let centres = icon_centres(&list, 4);
     click(&mut tree, centres[2]);
@@ -323,7 +318,7 @@ fn clicking_pin_toggles_it() {
 /// The pencil and tag icons start a name / tag edit.
 #[test]
 fn clicking_rename_and_tag_start_edits() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let (mut tree, list) = isolated_cover(&one_game_row(), &actions);
     let centres = icon_centres(&list, 4);
     click(&mut tree, centres[0]);
@@ -336,7 +331,7 @@ fn clicking_rename_and_tag_start_edits() {
 /// game (the nearest callback wins over the card's play callback).
 #[test]
 fn clicking_delete_deletes_without_playing() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let (mut tree, list) = isolated_cover(&one_game_row(), &actions);
     let centres = icon_centres(&list, 4);
     click(&mut tree, centres[3]);
@@ -349,7 +344,7 @@ fn clicking_delete_deletes_without_playing() {
 /// The sort bar offers every key and the direction toggle.
 #[test]
 fn the_sort_bar_switches_the_key() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let (mut tree, list) = laid_out(&ViewModel::default(), &actions);
     let point = text_position(&list, "大小");
     click(&mut tree, point);
@@ -360,7 +355,7 @@ fn the_sort_bar_switches_the_key() {
 /// filters the library to that console.
 #[test]
 fn the_stats_bar_counts_each_console_and_filters() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
         total_games: 3,
         system_counts: vec![
@@ -429,7 +424,7 @@ fn tags_label_lists_a_few_words() {
 #[test]
 fn a_card_with_a_cover_draws_its_texture() {
     let mut game = game_row("Game 0", "/roms/game0.nes");
-    game.cover = Some(FrameHandle {
+    game.cover = Some(TextureHandle {
         texture: TextureId::new(0x1000),
         width: 256,
         height: 240,
@@ -473,7 +468,7 @@ fn one_shot() -> ScreenshotRow {
         game: "Game 0".to_string(),
         created_at: 0,
         is_cover: true,
-        thumb: Some(FrameHandle {
+        thumb: Some(TextureHandle {
             texture: TextureId::new(0x1_0000),
             width: 256,
             height: 240,
@@ -539,7 +534,7 @@ fn the_preview_column_shows_the_picture_and_its_index() {
 /// The card's screenshot count is its own button that opens the section.
 #[test]
 fn the_card_screenshot_count_opens_the_section() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let mut game = game_row("Game 0", "/roms/game0.nes");
     game.screenshots = 2;
     let model = ViewModel {
@@ -555,7 +550,7 @@ fn the_card_screenshot_count_opens_the_section() {
 /// The rail has a screenshots entry that switches the section.
 #[test]
 fn the_rail_offers_the_screenshots_section() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let (mut tree, list) = laid_out(&ViewModel::default(), &actions);
     let point = text_position(&list, "截图");
     click(&mut tree, point);
@@ -567,7 +562,7 @@ fn the_rail_offers_the_screenshots_section() {
 /// Clicking a card's delete control asks the host to confirm the delete.
 #[test]
 fn clicking_delete_asks_to_confirm() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let (mut tree, list) = isolated_cover(&one_game_row(), &actions);
     let centres = icon_centres(&list, 4);
     click(&mut tree, centres[3]);
@@ -582,7 +577,7 @@ fn clicking_delete_asks_to_confirm() {
 fn the_status_line_colours_by_severity() {
     let theme = default_theme(Mode::Dark);
     let colour = |model: &ViewModel| {
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let (_tree, list) = laid_out(model, &actions);
         list.commands().iter().find_map(|command| match command {
             DrawCommand::DrawText { text, paint, .. } if text == &model.status => Some(paint.color),
@@ -602,7 +597,7 @@ fn the_status_line_colours_by_severity() {
 /// commit or cancel the edit.
 #[test]
 fn the_edit_bar_shows_the_field_and_commits() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     actions.set_edit(Rc::new(RefCell::new(TextEdit::new("New Name"))));
     let model = ViewModel {
         editing: Some(EditState {
@@ -640,7 +635,7 @@ fn the_edit_field_focuses_and_accepts_text() {
         })
     }
 
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     actions.set_edit(Rc::new(RefCell::new(TextEdit::new("ab"))));
     let model = ViewModel {
         editing: Some(EditState {
@@ -671,7 +666,7 @@ fn the_edit_field_focuses_and_accepts_text() {
 /// The search bar opens the field, and shows the current query.
 #[test]
 fn the_search_bar_starts_and_reflects_the_query() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let (mut tree, list) = laid_out(&ViewModel::default(), &actions);
     click(&mut tree, text_position(&list, "搜索名称 / #标签…"));
     assert_eq!(actions.drain(), vec![Action::StartSearch]);
@@ -686,7 +681,7 @@ fn the_search_bar_starts_and_reflects_the_query() {
 
     // While the search edit is open, the row mounts the text field (with its
     // 完成 / 清除 buttons) instead of the plain button.
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     actions.set_edit(Rc::new(RefCell::new(TextEdit::new("mario"))));
     let model = ViewModel {
         editing: Some(EditState {
@@ -709,13 +704,13 @@ fn the_search_bar_starts_and_reflects_the_query() {
 /// The saves section lists the slots and its buttons emit the slot actions.
 #[test]
 fn the_saves_page_lists_slots_and_emits_actions() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Saves,
-        playing: true,
+        has_session: true,
         core_name: "Mesen".to_string(),
-        saves_supported: true,
-        saves: vec![
+        save_states_supported: true,
+        save_states: vec![
             SaveSlotRow {
                 slot: 0,
                 exists: true,
@@ -738,8 +733,8 @@ fn the_saves_page_lists_slots_and_emits_actions() {
                     DrawCommand::DrawText { text, .. } if text.contains(needle))
         })
     };
+    assert!(has("快速"));
     assert!(has("槽 1"));
-    assert!(has("槽 2"));
 
     click(&mut tree, text_position(&list, "存"));
     assert_eq!(actions.drain(), vec![Action::SaveToSlot(0)]);
@@ -752,7 +747,7 @@ fn the_saves_page_lists_slots_and_emits_actions() {
 /// The rail has a save section entry.
 #[test]
 fn the_rail_offers_the_saves_section() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let (mut tree, list) = laid_out(&ViewModel::default(), &actions);
     click(&mut tree, text_position(&list, "存档"));
     assert!(actions.drain().contains(&Action::Show(Section::Saves)));
@@ -761,10 +756,10 @@ fn the_rail_offers_the_saves_section() {
 /// The cheats page lists cheats, toggles one, and offers the import.
 #[test]
 fn the_cheats_page_lists_and_toggles() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Cheats,
-        playing: true,
+        has_session: true,
         core_name: "Mesen".to_string(),
         cheats: vec![
             CheatRow {
@@ -799,7 +794,7 @@ fn the_cheats_page_lists_and_toggles() {
 /// The rail has a cheats entry.
 #[test]
 fn the_rail_offers_the_cheats_section() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let (mut tree, list) = laid_out(&ViewModel::default(), &actions);
     click(&mut tree, text_position(&list, "金手指"));
     assert!(actions.drain().contains(&Action::Show(Section::Cheats)));
@@ -809,7 +804,7 @@ fn the_rail_offers_the_cheats_section() {
 /// has to be clickable too (icon + label inside a clickable cell).
 #[test]
 fn clicking_the_rail_switches_section() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel::default();
     let (mut tree, list) = laid_out(&model, &actions);
     let point = text_position(&list, "设置");
@@ -831,7 +826,7 @@ fn clicking_the_rail_switches_section() {
 }
 
 fn paint(model: &ViewModel) -> igui::igui_render::DrawList {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     laid_out(model, &actions).1
 }
 
@@ -841,10 +836,10 @@ fn paint(model: &ViewModel) -> igui::igui_render::DrawList {
 #[test]
 fn the_play_column_emits_a_draw_image() {
     let theme = default_theme(Mode::Dark);
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
-        playing: true,
-        frame: Some(FrameHandle {
+        has_session: true,
+        frame: Some(TextureHandle {
             texture: TextureId::new(1),
             width: 256,
             height: 240,
@@ -852,16 +847,8 @@ fn the_play_column_emits_a_draw_image() {
         ..ViewModel::default()
     };
 
-    let width = Rc::new(Cell::new(model.middle_width));
-    let (mut tree, _) = build(
-        theme,
-        &model,
-        &actions,
-        &width,
-        &NodeRef::new(),
-        &Cell::new((0, 0)),
-        &NodeRef::new(),
-    );
+    let mount = ViewMount::new(model.middle_width);
+    let (mut tree, _) = build(theme, &model, &actions, &mount);
     igui::igui_ui::layout(
         &mut tree,
         igui::igui_core::ViewportSize::new(Size::new(1100.0, 760.0)),
@@ -889,11 +876,11 @@ fn the_play_column_emits_a_draw_image() {
 /// windowed play column and in fullscreen alike.
 #[test]
 fn a_paused_game_shows_a_centered_pause_label() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
-        playing: true,
+        has_session: true,
         paused: true,
-        frame: Some(FrameHandle {
+        frame: Some(TextureHandle {
             texture: TextureId::new(1),
             width: 256,
             height: 240,
@@ -919,13 +906,13 @@ fn a_paused_game_shows_a_centered_pause_label() {
 /// library) is not mounted, but the title, live info, picture and controls are.
 #[test]
 fn fullscreen_play_hides_the_shell_but_keeps_the_picture() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
-        playing: true,
+        has_session: true,
         fullscreen: true,
         selected: Some(0),
         games: vec![game_row("Game 0", "/roms/game0.nes")],
-        frame: Some(FrameHandle {
+        frame: Some(TextureHandle {
             texture: TextureId::new(1),
             width: 256,
             height: 240,
@@ -975,7 +962,7 @@ fn the_status_line_is_painted() {
 /// choices, not the old placeholder text.
 #[test]
 fn the_settings_shader_presets_emit_actions() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Settings,
         shader: ShaderKind::Off,
@@ -988,7 +975,7 @@ fn the_settings_shader_presets_emit_actions() {
 
 #[test]
 fn the_settings_msaa_presets_emit_actions() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Settings,
         msaa: MsaaKind::Auto,
@@ -1001,7 +988,7 @@ fn the_settings_msaa_presets_emit_actions() {
 
 #[test]
 fn the_settings_core_options_cycle() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Settings,
         core_options: vec![crate::ui::model::CoreOptionRow {
@@ -1067,7 +1054,7 @@ fn the_settings_page_shows_the_library_and_cores() {
 /// The appearance section switches the theme family and the light / dark look.
 #[test]
 fn the_settings_page_switches_the_theme_and_appearance() {
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Settings,
         ..ViewModel::default()
@@ -1171,8 +1158,8 @@ fn the_library_page_lays_games_out_in_a_grid() {
 fn the_shell_is_three_columns() {
     let model = ViewModel {
         games: vec![game_row("Game 0", "/roms/game0.nes")],
-        playing: true,
-        frame: Some(FrameHandle {
+        has_session: true,
+        frame: Some(TextureHandle {
             texture: TextureId::new(1),
             width: 256,
             height: 240,
@@ -1212,7 +1199,7 @@ fn the_shell_is_three_columns() {
 #[test]
 fn the_settings_page_scrolls_when_it_overflows() {
     let theme = default_theme(Mode::Dark);
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let bindings: Vec<BindingRow> = (0..40)
         .map(|index| BindingRow {
             button: format!("按键 {index}"),
@@ -1224,16 +1211,8 @@ fn the_settings_page_scrolls_when_it_overflows() {
         bindings,
         ..ViewModel::default()
     };
-    let width = Rc::new(Cell::new(model.middle_width));
-    let (mut tree, mut scroll) = build(
-        theme,
-        &model,
-        &actions,
-        &width,
-        &NodeRef::new(),
-        &Cell::new((0, 0)),
-        &NodeRef::new(),
-    );
+    let mount = ViewMount::new(model.middle_width);
+    let (mut tree, mut scroll) = build(theme, &model, &actions, &mount);
     let viewport = igui::igui_core::ViewportSize::new(Size::new(1100.0, 760.0));
     igui::igui_ui::layout(&mut tree, viewport);
     tree.update();

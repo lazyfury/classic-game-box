@@ -2,21 +2,21 @@
 //! virtualized grid, with preview / cover / delete controls.
 
 use igui::igui_components::{
-    Badge, Button, Column, Component, EmptyState, Flex, Grid, NodeRef, Row, ScrollView,
-    ScrollViewState, Text,
+    Badge, Button, Column, Component, EmptyState, Flex, NodeRef, Row, ScrollView, Text,
 };
 use igui::igui_core::{Color, Edges};
 use igui::igui_render::Paint;
 use igui::igui_theme::radius::MD;
 use igui::igui_theme::{radius, space, Theme, Tone};
-use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle, Track};
+use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle};
 
-use crate::ui::frame::cover_fit;
+use crate::ui::frame::crop_fit;
 use crate::ui::icons::{Icon as SvgIcon, IconName};
 use crate::ui::model::{Action, Confirm, ScreenshotRow, ViewModel};
 
-use super::components::{format_when, grid_viewport, icon_button, spacer, window_for};
-use super::Actions;
+use super::components::{format_when, grid_viewport, icon_button, virtual_grid, window_for};
+use super::Page;
+use super::ViewBridge;
 use super::{CARD_ICON, CARD_ICON_BUTTON, PLACEHOLDER_HEIGHT, SHOT_HEIGHT};
 
 /// The screenshots grid's mounted row range for the model's scroll state. It
@@ -39,9 +39,9 @@ pub(super) fn screenshots_grid_window(model: &ViewModel) -> (usize, usize) {
 pub(super) fn screenshots_page(
     theme: &'static dyn Theme,
     model: &ViewModel,
-    actions: &Actions,
-    scroll: &mut Option<ScrollViewState>,
-) -> Column {
+    actions: &ViewBridge,
+) -> Page {
+    let mut scroll = None;
     let game_id = model.screenshot_game;
     let game_name = game_id
         .and_then(|id| model.games.iter().find(|game| game.id == id))
@@ -132,10 +132,13 @@ pub(super) fn screenshots_page(
             .scrollbar(false)
             .grow(1.0)
             .child(screenshots_grid(theme, model, &shots, actions));
-        *scroll = Some(view.state());
+        scroll = Some(view.state());
         column = column.child(view);
     }
-    column
+    Page {
+        tree: column,
+        scroll,
+    }
 }
 
 /// The screenshots grid, mounted a window at a time like the library grid.
@@ -143,42 +146,15 @@ pub(super) fn screenshots_grid(
     theme: &'static dyn Theme,
     model: &ViewModel,
     shots: &[&ScreenshotRow],
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> Column {
-    let total = shots.len();
-    let mut column = Column::new().gap(0.0).padding(Edges::ZERO);
-    if total == 0 {
-        return column;
-    }
-    let columns = model.grid_columns.max(1);
-    let rows = total.div_ceil(columns);
-    let stride = SHOT_HEIGHT + space::SM;
-    let (first, last) = screenshots_grid_window(model);
-
-    let top = first as f32 * stride;
-    if top > 0.0 {
-        column = column.child(spacer(top));
-    }
-
-    let mut grid = Grid::new(vec![Track::Fr(1.0); columns])
-        .gap(space::SM)
-        .padding(Edges::ZERO);
-    for row in first..=last {
-        for column_index in 0..columns {
-            let index = row * columns + column_index;
-            if index >= total {
-                break;
-            }
-            grid = grid.child(shot_card(theme, shots[index], model, actions));
-        }
-    }
-    column = column.child(grid);
-
-    let bottom = rows.saturating_sub(last + 1) as f32 * stride;
-    if bottom > 0.0 {
-        column = column.child(spacer(bottom));
-    }
-    column
+    virtual_grid(
+        model.grid_columns,
+        shots.len(),
+        SHOT_HEIGHT + space::SM,
+        screenshots_grid_window(model),
+        |index| shot_card(theme, shots[index], model, actions),
+    )
 }
 
 /// One screenshot cell: the thumbnail (a button that previews, or ticks in
@@ -187,7 +163,7 @@ pub(super) fn shot_card(
     theme: &'static dyn Theme,
     shot: &ScreenshotRow,
     model: &ViewModel,
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> Column {
     let selected = model.selected_screenshots.contains(&shot.id);
     Column::new()
@@ -225,7 +201,7 @@ pub(super) fn thumbnail(
     theme: &'static dyn Theme,
     shot: &ScreenshotRow,
     select: bool,
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> Flex {
     let click = actions.clone();
     let id = shot.id;
@@ -245,7 +221,7 @@ pub(super) fn thumbnail(
     match shot.thumb {
         Some(handle) => {
             thumb = thumb.foreground(move |ctx, rect, _state| {
-                let destination = cover_fit((handle.width, handle.height), rect);
+                let destination = crop_fit((handle.width, handle.height), rect);
                 ctx.draw_image(handle.texture, destination, None, Paint::default());
             });
         }
@@ -261,7 +237,7 @@ pub(super) fn thumbnail(
 pub(super) fn shot_controls(
     theme: &'static dyn Theme,
     shot: &ScreenshotRow,
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> Row {
     let mut row = Row::new().align(Align::Center).gap(space::XXS);
     if shot.is_cover {

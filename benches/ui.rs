@@ -19,7 +19,7 @@
 //! only mounts the visible rows, so the per-frame cost should stay flat as the
 //! library grows; the benchmark is what proves it (or exposes it).
 
-use cgb_app::ui::{Actions, CoreRow, GameRow, Section, Ui, ViewModel};
+use cgb_app::ui::{CoreRow, GameRow, Section, Ui, ViewBridge, ViewModel};
 use cgb_systems::SystemId;
 use igui::igui_bench::{black_box, finish, BenchRunner, RunConfig};
 use igui::igui_core::{Size, ViewportSize};
@@ -101,7 +101,7 @@ fn main() {
     let config = RunConfig::from_env();
     let runner = BenchRunner::new(&config);
     let theme = default_theme(Mode::Dark);
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let viewport = ViewportSize::new(Size::new(VIEWPORT.0, VIEWPORT.1));
     let mut results = Vec::new();
 

@@ -19,7 +19,7 @@ use igui::igui_render::{DrawCommand, Paint, PaintContext};
 use igui::igui_ui::{InteractState, MouseFilter};
 use igui_svg::SvgDocument;
 
-use crate::ui::model::FrameHandle;
+use crate::ui::model::TextureHandle;
 
 /// Which vendored icon to draw.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -119,12 +119,12 @@ thread_local! {
     /// Rasterized icon textures, registered by the host. When an icon has one,
     /// it is drawn as a single image instead of re-stroking its SVG every
     /// frame — a card's controls are most of a frame's draw commands.
-    static TEXTURES: RefCell<HashMap<IconName, FrameHandle>> = RefCell::new(HashMap::new());
+    static TEXTURES: RefCell<HashMap<IconName, TextureHandle>> = RefCell::new(HashMap::new());
 }
 
 /// Register a rasterized texture for an icon (see [`rasterize_icon`]). The host
 /// calls this once after the backend exists.
-pub fn set_texture(name: IconName, handle: FrameHandle) {
+pub fn set_texture(name: IconName, handle: TextureHandle) {
     TEXTURES.with(|textures| textures.borrow_mut().insert(name, handle));
 }
 
@@ -133,7 +133,7 @@ pub fn clear_textures() {
     TEXTURES.with(|textures| textures.borrow_mut().clear());
 }
 
-fn texture(name: IconName) -> Option<FrameHandle> {
+fn texture(name: IconName) -> Option<TextureHandle> {
     TEXTURES.with(|textures| textures.borrow().get(&name).copied())
 }
 

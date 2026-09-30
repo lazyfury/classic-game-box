@@ -197,7 +197,7 @@ impl super::App {
             self.cheat_path = None;
             self.core_options.clear();
             self.model.selected = None;
-            self.model.playing = false;
+            self.model.has_session = false;
             self.model.paused = false;
             self.model.frame = None;
             // The immersive view has nothing left to show.

@@ -2,16 +2,16 @@
 //! cover icon buttons, the minimal text field, and the grid virtualization
 //! helpers.
 
-use igui::igui_components::{Button, Component, Flex, NodeRef, Text, TextInput};
+use igui::igui_components::{Button, Column, Component, Flex, Grid, NodeRef, Text, TextInput};
 use igui::igui_core::{Color, Edges, NodeId};
 use igui::igui_scene::SceneTree;
 use igui::igui_theme::{radius, space, Theme, Tone};
-use igui::igui_ui::{Align, Justify, SurfaceStyle};
+use igui::igui_ui::{Align, Justify, SurfaceStyle, Track};
 
 use crate::ui::icons::{Icon as SvgIcon, IconName};
 use crate::ui::model::ViewModel;
 
-use super::{media, Actions, CARD_ICON, CARD_ICON_BUTTON};
+use super::{media, ViewBridge, CARD_ICON, CARD_ICON_BUTTON};
 
 /// A chip: a small single-choice control for a toolbar, ghost at rest and
 /// softly filled in the accent when selected. Always mini, so callers do not
@@ -51,10 +51,10 @@ pub(super) fn chip_bar(theme: &'static dyn Theme, caption: &str, chips: Flex) ->
 /// The editable text field the library uses for rename / tags / search. It is
 /// the standard `igui` [`TextInput`]: it owns the text, caret, selection and
 /// IME preedit, takes the keyboard on mount, and shares its state through
-/// [`Actions`] so a rebuild (e.g. search-as-you-type) keeps the caret.
+/// [`ViewBridge`] so a rebuild (e.g. search-as-you-type) keeps the caret.
 pub(super) fn text_field(
     theme: &'static dyn Theme,
-    actions: &Actions,
+    actions: &ViewBridge,
     placeholder: &str,
 ) -> TextInput {
     let input = TextInput::new(theme)
@@ -78,7 +78,7 @@ pub(super) fn icon_button(
     icon: IconName,
     color: Color,
     tip: &str,
-    actions: &Actions,
+    actions: &ViewBridge,
     on_click: impl FnMut(&mut SceneTree, NodeId) + 'static,
 ) -> impl Component {
     let node = NodeRef::new();
@@ -155,6 +155,54 @@ pub(super) fn grid_viewport(model: &ViewModel) -> f32 {
     } else {
         640.0
     }
+}
+
+/// A virtualized fixed-column grid, mounted a window of rows at a time. The
+/// rows outside `window` are replaced by top / bottom spacers so the scrollbar
+/// and offset stay correct without building every cell.
+///
+/// `columns`, `total` and `stride` describe the grid; `window` is the inclusive
+/// row range to mount (from [`window_for`]); `cell` builds one cell by item
+/// index. Shared by the library and screenshots pages.
+pub(super) fn virtual_grid<C: Component + 'static>(
+    columns: usize,
+    total: usize,
+    stride: f32,
+    window: (usize, usize),
+    mut cell: impl FnMut(usize) -> C,
+) -> Column {
+    let columns = columns.max(1);
+    let mut column = Column::new().gap(0.0).padding(Edges::ZERO);
+    if total == 0 {
+        return column;
+    }
+    let rows = total.div_ceil(columns);
+    let (first, last) = window;
+
+    let top = first as f32 * stride;
+    if top > 0.0 {
+        column = column.child(spacer(top));
+    }
+
+    let mut grid = Grid::new(vec![Track::Fr(1.0); columns])
+        .gap(space::SM)
+        .padding(Edges::ZERO);
+    for row in first..=last {
+        for column_index in 0..columns {
+            let index = row * columns + column_index;
+            if index >= total {
+                break;
+            }
+            grid = grid.child(cell(index));
+        }
+    }
+    column = column.child(grid);
+
+    let bottom = rows.saturating_sub(last + 1) as f32 * stride;
+    if bottom > 0.0 {
+        column = column.child(spacer(bottom));
+    }
+    column
 }
 
 /// A short "how long ago" for a screenshot caption.

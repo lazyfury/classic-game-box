@@ -1,9 +1,7 @@
 //! The cheats section: the running game's cheat list, with toggles and a `.cht`
 //! import.
 
-use igui::igui_components::{
-    Button, Column, Component, EmptyState, Row, ScrollView, ScrollViewState, Text,
-};
+use igui::igui_components::{Button, Column, Component, EmptyState, Row, ScrollView, Text};
 use igui::igui_core::Edges;
 use igui::igui_theme::radius::MD;
 use igui::igui_theme::{space, Theme, Tone};
@@ -11,23 +9,18 @@ use igui::igui_ui::{Align, MouseFilter};
 
 use crate::ui::model::{Action, CheatRow, ViewModel};
 
-use super::Actions;
+use super::Page;
+use super::ViewBridge;
 
-/// The screenshots section: the current game's screenshots, newest first.
-/// Which game is shown comes from the model (the playing game, or one a card
-/// sent us to).
 /// The cheats section: the running game's cheat list, with toggles and a
 /// `.cht` import.
 pub(super) fn cheats_page(
     theme: &'static dyn Theme,
     model: &ViewModel,
-    actions: &Actions,
-    scroll: &mut Option<ScrollViewState>,
-) -> Column {
-    let game = model
-        .selected
-        .and_then(|index| model.games.get(index))
-        .map(|game| game.name.clone());
+    actions: &ViewBridge,
+) -> Page {
+    let mut scroll = None;
+    let game = model.selected_game().map(|game| game.name.clone());
     let mut column = Column::new()
         .gap(space::SM)
         .padding(Edges::all(MD))
@@ -39,7 +32,7 @@ pub(super) fn cheats_page(
     };
     column = column.child(Text::caption(subtitle, theme).tone(Tone::Muted));
 
-    if !model.playing {
+    if !model.has_session {
         column = column.child(EmptyState::new("没有正在运行的游戏", theme));
     } else if model.cheats.is_empty() {
         column = column.child(
@@ -54,7 +47,7 @@ pub(super) fn cheats_page(
             .scrollbar(false)
             .grow(1.0)
             .child(list);
-        *scroll = Some(view.state());
+        scroll = Some(view.state());
         column = column.child(view);
     }
 
@@ -71,7 +64,10 @@ pub(super) fn cheats_page(
         .tone(Tone::Subtle)
         .max_lines(2),
     );
-    column
+    Page {
+        tree: column,
+        scroll,
+    }
 }
 
 /// One cheat: its description and code, and an on/off toggle.
@@ -79,7 +75,7 @@ pub(super) fn cheat_row(
     theme: &'static dyn Theme,
     index: usize,
     cheat: &CheatRow,
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> Row {
     let toggle = actions.clone();
     let button = if cheat.enabled {

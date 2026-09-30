@@ -75,10 +75,13 @@ fn system_counts_tally_each_console_in_systems_order() {
 
 #[test]
 fn save_state_hotkeys_match_the_old_layout() {
-    assert_eq!(state_shortcut(Key::F5, false), Some(Action::SaveState(0)));
-    assert_eq!(state_shortcut(Key::F6, false), Some(Action::LoadState(0)));
-    assert_eq!(state_shortcut(Key::F1, false), Some(Action::SaveState(1)));
-    assert_eq!(state_shortcut(Key::F1, true), Some(Action::LoadState(1)));
+    assert_eq!(state_shortcut(Key::F5, false), Some(Action::SaveToSlot(0)));
+    assert_eq!(
+        state_shortcut(Key::F6, false),
+        Some(Action::LoadFromSlot(0))
+    );
+    assert_eq!(state_shortcut(Key::F1, false), Some(Action::SaveToSlot(1)));
+    assert_eq!(state_shortcut(Key::F1, true), Some(Action::LoadFromSlot(1)));
     assert_eq!(state_shortcut(Key::F4, false), None);
     assert_eq!(
         state_shortcut(Key::F11, false),

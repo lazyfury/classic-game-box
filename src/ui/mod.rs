@@ -1,43 +1,42 @@
-//! The UI: quill views built from a pure [`ViewModel`].
+//! The UI: igui views built from a pure [`ViewModel`].
 //!
 //! This `ui` module is the only window-shaped part of the app, and it still
 //! does not know about libretro or the platform. The app projects core state into a
 //! [`ViewModel`], builds the tree, drains [`Action`]s, and never reaches into
 //! the tree from a callback.
 //!
-//! See `docs/architecture/quill-native-migration.md` §7 and the quill
+//! See `docs/architecture/quill-native-migration.md` §7 and the igui
 //! `docs/ui-guide.md` for the frame loop this wraps.
 
+mod focus;
 mod frame;
 mod icons;
 mod model;
 mod theme;
 mod view;
 
-pub use frame::{centered_fit, contain_fit, cover_fit, FrameImage};
+pub use frame::{centered_fit, contain_fit, crop_fit, FrameImage};
 pub use icons::{clear_textures, rasterize_icon, set_texture, Icon, IconName};
 pub use model::{
-    Action, BindingRow, CatalogRow, CheatRow, Confirm, CoreOptionRow, CoreRow, EditKind, EditState,
-    FrameHandle, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow, ScreenshotRow,
-    Section, ShaderKind, SortKey, StatusKind, SystemCount, ViewModel,
+    save_slot_label, Action, BindingRow, CatalogRow, CheatRow, Confirm, CoreOptionRow, CoreRow,
+    EditKind, EditState, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
+    ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, TextureHandle, ViewModel,
 };
 pub use theme::{game_theme, ThemeChoice};
 pub use view::{
-    grid_window, library_columns, Actions, MAX_LIBRARY_COLUMNS, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
-    MIN_LIBRARY_COLUMNS,
+    grid_window, library_columns, ViewBridge, MAX_LIBRARY_COLUMNS, MIDDLE_DEFAULT_WIDTH,
+    MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH, MIN_LIBRARY_COLUMNS,
 };
 
-use std::cell::Cell;
-use std::rc::Rc;
-
-use igui::igui_components::{Menu, MenuItem, NodeRef, OverlayId, Overlays, ScrollViewState};
+use igui::igui_components::{NodeRef, OverlayId, Overlays, ScrollViewState};
 use igui::igui_core::{Cursor, InputEvent, NodeId, Vec2, ViewportSize};
 use igui::igui_render::PaintContext;
 use igui::igui_scene::SceneTree;
 use igui::igui_theme::Theme;
 use igui::igui_ui::{hovered_cursor, Control, DragPhase, TextMeasurer};
+use std::rc::Rc;
 
-use cgb_systems::{SystemId, SYSTEMS};
+use cgb_systems::SystemId;
 
 /// The mounted tree plus the frame-loop calls.
 pub struct Ui {
@@ -68,35 +67,14 @@ pub struct Ui {
     repaint: bool,
     /// The middle column's live width, shared with the resize handle. It lives
     /// here so a rebuild does not reset a width the user dragged.
-    middle_width: Rc<Cell<f32>>,
-    /// The resize handle's mounted node. A rebuild (e.g. a grid column-count
-    /// change) drops the tree's pointer capture, so it is re-armed from here.
-    resize_handle: NodeRef,
-    /// The row range the active virtualized grid mounted in the current tree.
-    /// The app uses it to skip a rebuild while scrolling inside it.
-    mounted_rows: Cell<(usize, usize)>,
-    /// The play column's live info label (FPS / resolution), updated in place.
-    info_label: NodeRef,
+    mount: view::ViewMount,
 }
 
 impl Ui {
     /// Build a fresh tree from the model.
-    pub fn new(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Self {
-        let middle_width = Rc::new(Cell::new(
-            model.middle_width.clamp(MIDDLE_MIN_WIDTH, MIDDLE_MAX_WIDTH),
-        ));
-        let resize_handle = NodeRef::new();
-        let mounted_rows = Cell::new((0, 0));
-        let info_label = NodeRef::new();
-        let (tree, middle_scroll) = view::build(
-            theme,
-            model,
-            actions,
-            &middle_width,
-            &resize_handle,
-            &mounted_rows,
-            &info_label,
-        );
+    pub fn new(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Self {
+        let mount = view::ViewMount::new(model.middle_width);
+        let (tree, middle_scroll) = view::build(theme, model, actions, &mount);
         let tips = resolve_tips(actions.take_tips());
         Self {
             tree,
@@ -108,10 +86,7 @@ impl Ui {
             middle_section: model.section,
             scroll_target: None,
             repaint: true,
-            middle_width,
-            resize_handle,
-            mounted_rows,
-            info_label,
+            mount,
         }
     }
 
@@ -125,23 +100,15 @@ impl Ui {
     /// A rebuild also drops the tree's pointer capture, so a drag in progress
     /// on the resize handle is re-armed on the new tree. That keeps the drag
     /// alive when a rebuild is triggered mid-drag by a grid column change.
-    pub fn rebuild(&mut self, theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) {
+    pub fn rebuild(&mut self, theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) {
         let previous = (self.middle_section == model.section)
             .then(|| self.middle_scroll.as_ref().map(ScrollViewState::offset))
             .flatten();
         let dragging = igui::igui_ui::gui_state_of(&self.tree).and_then(|state| state.dragging);
         let drag_last = igui::igui_ui::gui_state_of(&self.tree).map(|state| state.drag_last);
-        let was_resizing = dragging.is_some() && dragging == self.resize_handle.get();
+        let was_resizing = dragging.is_some() && dragging == self.mount.resize_handle.get();
 
-        let (tree, middle_scroll) = view::build(
-            theme,
-            model,
-            actions,
-            &self.middle_width,
-            &self.resize_handle,
-            &self.mounted_rows,
-            &self.info_label,
-        );
+        let (tree, middle_scroll) = view::build(theme, model, actions, &self.mount);
         let retheme = !std::ptr::eq(self.theme, theme);
         self.tree = tree;
         self.theme = theme;
@@ -171,7 +138,7 @@ impl Ui {
     /// Re-establish a resize drag on the freshly built handle, so a rebuild
     /// that happened mid-drag does not require the user to grab it again.
     fn rearm_resize_drag(&mut self, drag_last: Option<Vec2>) {
-        let Some(id) = self.resize_handle.get() else {
+        let Some(id) = self.mount.resize_handle.get() else {
             return;
         };
         // Fire `Start` so the handle's own drag state (the grab cursor) matches.
@@ -205,7 +172,7 @@ impl Ui {
     /// Update the play column's info text (FPS / resolution) in place, so a
     /// live readout does not rebuild the tree. A no-op before the line mounts.
     pub fn set_info(&mut self, info: &str) {
-        let Some(id) = self.info_label.get() else {
+        let Some(id) = self.mount.info_label.get() else {
             return;
         };
         if igui::igui_components::set_text(&mut self.tree, id, info) {
@@ -215,7 +182,7 @@ impl Ui {
 
     /// The middle column's live width, for the host to persist after a drag.
     pub fn middle_width(&self) -> f32 {
-        self.middle_width.get()
+        self.mount.middle_width.get()
     }
 
     /// Whether the virtualized grid's mounted rows still cover `model`'s
@@ -226,7 +193,7 @@ impl Ui {
     /// [`ScrollView`](igui::igui_components::ScrollView) just moves the mounted
     /// content — so the host should only rebuild when this returns `false`.
     pub fn grid_window_covers(&self, model: &ViewModel) -> bool {
-        grid_window(model) == self.mounted_rows.get()
+        grid_window(model) == self.mount.mounted_rows.get()
     }
 
     /// The middle column's scroll offset, for the host to feed back into the
@@ -339,43 +306,9 @@ impl Ui {
         game: &GameRow,
         index: usize,
         position: Vec2,
-        actions: &Actions,
+        actions: &ViewBridge,
     ) {
-        let game_id = game.id;
-        let pinned = game.pinned;
-        let actions = actions.clone();
-        self.overlays.menu_at(position, move |tree, node| {
-            let item = |label: &str, action: Action| {
-                let actions = actions.clone();
-                MenuItem::new(label, theme).on_click(move |_tree, _id| actions.push(action))
-            };
-            let menu = Menu::new(theme)
-                .item(item("开始游戏", Action::Play(index)))
-                .item(item("改名…", Action::StartRename(game_id)))
-                .item(item(
-                    "选择机种…",
-                    Action::OpenSystemMenu {
-                        id: game_id,
-                        position,
-                    },
-                ))
-                .item(item("标签…", Action::StartTagEdit(game_id)))
-                .item(item(
-                    if pinned { "取消置顶" } else { "置顶" },
-                    Action::TogglePin(index),
-                ))
-                .item(item("截图", Action::ShowScreenshots(game_id)))
-                .separator()
-                .item({
-                    let actions = actions.clone();
-                    MenuItem::new("删除…", theme)
-                        .destructive()
-                        .on_click(move |_tree, _id| {
-                            actions.push(Action::RequestDelete(Confirm::DeleteGame(game_id)))
-                        })
-                });
-            tree.add_child(node, menu);
-        });
+        view::menus::game_menu(theme, &mut self.overlays, game, index, position, actions);
         self.repaint = true;
     }
 
@@ -386,31 +319,9 @@ impl Ui {
         system: SystemId,
         anchor: NodeId,
         cores: &[CoreRow],
-        actions: &Actions,
+        actions: &ViewBridge,
     ) {
-        let rows: Vec<(usize, String, bool)> = cores
-            .iter()
-            .enumerate()
-            .filter(|(_, core)| core.system == system)
-            .map(|(index, core)| (index, core.name.clone(), core.selected))
-            .collect();
-        let actions = actions.clone();
-        self.overlays.menu(anchor, move |tree, node| {
-            let mut menu = Menu::new(theme);
-            for (index, name, selected) in rows.clone() {
-                let label = if selected {
-                    format!("{name} ✓")
-                } else {
-                    name
-                };
-                let actions = actions.clone();
-                menu = menu.item(
-                    MenuItem::new(label, theme)
-                        .on_click(move |_tree, _id| actions.push(Action::SelectCore(index))),
-                );
-            }
-            tree.add_child(node, menu);
-        });
+        view::menus::core_menu(theme, &mut self.overlays, system, anchor, cores, actions);
         self.repaint = true;
     }
 
@@ -430,30 +341,16 @@ impl Ui {
         game_id: i64,
         current: SystemId,
         position: Vec2,
-        actions: &Actions,
+        actions: &ViewBridge,
     ) {
-        // Replaces the card menu this was opened from.
-        self.overlays.close_all();
-        let actions = actions.clone();
-        self.overlays.menu_at(position, move |tree, node| {
-            let mut menu = Menu::new(theme);
-            for system in SYSTEMS {
-                let label = if *system == current {
-                    format!("{} ✓", system.name())
-                } else {
-                    system.name().to_string()
-                };
-                let actions = actions.clone();
-                let system = *system;
-                menu = menu.item(MenuItem::new(label, theme).on_click(move |_tree, _id| {
-                    actions.push(Action::SetGameSystem {
-                        id: game_id,
-                        system,
-                    })
-                }));
-            }
-            tree.add_child(node, menu);
-        });
+        view::menus::system_menu(
+            theme,
+            &mut self.overlays,
+            game_id,
+            current,
+            position,
+            actions,
+        );
         self.repaint = true;
     }
 
@@ -464,13 +361,15 @@ impl Ui {
         title: impl Into<String>,
         message: impl Into<String>,
         on_confirm: Action,
-        actions: &Actions,
+        actions: &ViewBridge,
     ) {
-        let id = self.overlays.confirm(title.into(), message.into());
-        self.overlays.destructive(id, true);
-        let actions = actions.clone();
-        self.overlays
-            .on_confirm(id, move || actions.push(on_confirm));
+        view::menus::confirm_destructive(
+            &mut self.overlays,
+            title.into(),
+            message.into(),
+            on_confirm,
+            actions,
+        );
         self.repaint = true;
     }
 
@@ -537,124 +436,24 @@ impl Ui {
     /// Move keyboard focus to the next (or previous) interactive control, in
     /// tree order. Returns `false` when the UI has nothing to focus.
     pub fn move_focus(&mut self, backward: bool) -> bool {
-        let order = focus_order(&self.tree);
-        if order.is_empty() {
-            return false;
-        }
-        let current = igui::igui_ui::focused(&self.tree);
-        let index = current.and_then(|id| order.iter().position(|node| *node == id));
-        let next = match index {
-            Some(index) if backward => (index + order.len() - 1) % order.len(),
-            Some(index) => (index + 1) % order.len(),
-            None if backward => order.len() - 1,
-            None => 0,
-        };
-        igui::igui_ui::gui_state_mut(&mut self.tree).focused = Some(order[next]);
-        self.repaint = true;
-        true
+        let moved = focus::move_focus(&mut self.tree, backward);
+        self.repaint |= moved;
+        moved
     }
 
     /// Activate the focused control the way Enter / Space should: run its
-    /// click callback. quill's own keyboard activation only fires for its
-    /// low-level `Widget::Button`, which the themed components and this app's
-    /// custom targets do not use, so the host drives it here.
+    /// click callback. Returns `false` when nothing focused owns a click.
     pub fn activate_focus(&mut self) -> bool {
-        let Some(id) = igui::igui_ui::focused(&self.tree) else {
-            return false;
-        };
-        // A disabled control (or one under a disabled ancestor) never fires.
-        let mut guard = Some(id);
-        while let Some(node) = guard {
-            if self
-                .tree
-                .data::<Control>(node)
-                .is_some_and(|control| control.data.disabled)
-            {
-                return false;
-            }
-            guard = self.tree.parent(node);
-        }
-        // The nearest ancestor with a callback owns the click.
-        let mut current = Some(id);
-        while let Some(node) = current {
-            if let Some(callback) = self
-                .tree
-                .data::<Control>(node)
-                .and_then(|control| control.callback.clone())
-            {
-                (callback.borrow_mut())(&mut self.tree, node);
-                self.repaint = true;
-                return true;
-            }
-            current = self.tree.parent(node);
-        }
-        false
+        let fired = focus::activate_focus(&mut self.tree);
+        self.repaint |= fired;
+        fired
     }
 
-    /// A pointer click lands on the deepest control under it, which for a card
-    /// or a row is a text label with no click action. Snap the focus to the
-    /// nearest ancestor that has one (the card / button the label belongs to),
-    /// or clear it when there is none, so the ring and Tab agree with what Tab
-    /// would pick.
     /// Keep keyboard focus on a control that is focusable in its own right (a
-    /// text field). The old heuristic walked every focused node up to the
-    /// nearest click handler, which cleared a field's focus as soon as any
-    /// input was routed.
+    /// text field); a click on a label snaps up to its clickable ancestor so
+    /// the ring and Tab agree.
     fn normalize_focus(&mut self) {
-        let Some(id) = igui::igui_ui::focused(&self.tree) else {
-            return;
-        };
-        if self
-            .tree
-            .data::<Control>(id)
-            .is_some_and(|control| control.focusable)
-        {
-            return;
-        }
-        let target = interactive_ancestor(&self.tree, id);
-        if target != Some(id) {
-            igui::igui_ui::gui_state_mut(&mut self.tree).focused = target;
-        }
-    }
-}
-
-/// The nearest ancestor of `id` (including itself) with a click callback.
-fn interactive_ancestor(tree: &SceneTree, id: NodeId) -> Option<NodeId> {
-    let mut current = Some(id);
-    while let Some(node) = current {
-        if tree
-            .data::<Control>(node)
-            .is_some_and(|control| control.callback.is_some())
-        {
-            return Some(node);
-        }
-        current = tree.parent(node);
-    }
-    None
-}
-
-/// Every focusable control in tree order: the nodes that own a click or drag
-/// callback, are enabled, and are not clipped away.
-fn focus_order(tree: &SceneTree) -> Vec<NodeId> {
-    let mut order = Vec::new();
-    collect_focusable(tree, tree.root(), &mut order);
-    order
-}
-
-fn collect_focusable(tree: &SceneTree, id: NodeId, out: &mut Vec<NodeId>) {
-    if let Some(control) = tree.data::<Control>(id) {
-        // Only controls a keyboard can activate: a click callback. (A drag
-        // handle has no keyboard equivalent yet, so it is not a focus stop.)
-        let interactive = control.callback.is_some();
-        let clipped = matches!(control.data.clip_rect, Some(rect) if rect.is_empty());
-        if interactive && !control.data.disabled && !clipped {
-            out.push(id);
-        }
-    }
-    if let Some(children) = tree.children(id) {
-        for child in children {
-            collect_focusable(tree, *child, out);
-        }
+        focus::normalize(&mut self.tree);
     }
 }
 
@@ -695,7 +494,7 @@ mod tests {
     #[test]
     fn a_text_field_keeps_focus_and_accepts_text() {
         let theme = game_theme(Mode::Dark);
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         actions.set_edit(Rc::new(std::cell::RefCell::new(
             igui::igui_ui::TextEdit::new("ab"),
         )));
@@ -729,7 +528,7 @@ mod tests {
     #[test]
     fn a_rebuild_keeps_the_scroll_offset() {
         let theme = default_theme(Mode::Dark);
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let model = ViewModel {
             games: (0..40).map(game).collect(),
             ..ViewModel::default()
@@ -756,7 +555,7 @@ mod tests {
     /// overlays) rather than keeping the old one.
     #[test]
     fn a_retheme_swaps_the_active_theme() {
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let model = ViewModel::default();
         let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
         let mut ui = Ui::new(default_theme(Mode::Dark), &model, &actions);
@@ -776,7 +575,7 @@ mod tests {
     #[test]
     fn switching_pages_does_not_carry_the_offset() {
         let theme = default_theme(Mode::Dark);
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let mut model = ViewModel {
             games: (0..40).map(game).collect(),
             ..ViewModel::default()
@@ -804,7 +603,7 @@ mod tests {
     #[test]
     fn a_small_scroll_stays_inside_the_mounted_window() {
         let theme = default_theme(Mode::Dark);
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let mut model = ViewModel {
             games: (0..40).map(game).collect(),
             grid_viewport: 400.0,
@@ -832,7 +631,7 @@ mod tests {
     #[test]
     fn dragging_the_divider_resizes_the_middle_column() {
         let theme = default_theme(Mode::Dark);
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let model = ViewModel::default();
         let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
 
@@ -872,7 +671,7 @@ mod tests {
     #[test]
     fn a_rebuild_mid_drag_keeps_resizing() {
         let theme = default_theme(Mode::Dark);
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let model = ViewModel::default();
         let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
 
@@ -906,7 +705,7 @@ mod tests {
     #[test]
     fn tab_moves_the_focus_between_controls() {
         let theme = default_theme(Mode::Dark);
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let model = ViewModel {
             games: (0..3).map(game).collect(),
             ..ViewModel::default()
@@ -933,7 +732,7 @@ mod tests {
     #[test]
     fn activating_the_focus_fires_its_click() {
         let theme = default_theme(Mode::Dark);
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let model = ViewModel {
             games: (0..3).map(game).collect(),
             ..ViewModel::default()
@@ -953,7 +752,7 @@ mod tests {
     #[test]
     fn the_focused_control_gets_a_ring() {
         let theme = default_theme(Mode::Dark);
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let model = ViewModel {
             games: (0..3).map(game).collect(),
             ..ViewModel::default()
@@ -980,7 +779,7 @@ mod tests {
     #[test]
     fn clicking_card_text_focuses_the_card() {
         let theme = default_theme(Mode::Dark);
-        let actions = Actions::default();
+        let actions = ViewBridge::default();
         let model = ViewModel {
             games: (0..3).map(game).collect(),
             ..ViewModel::default()

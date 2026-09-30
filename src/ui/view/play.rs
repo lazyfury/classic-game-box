@@ -12,14 +12,14 @@ use crate::ui::icons::{Icon as SvgIcon, IconName};
 use crate::ui::model::{Action, Confirm, ScreenshotRow, ViewModel};
 
 use super::components::format_when;
-use super::Actions;
+use super::ViewBridge;
 
 /// The console column, on the right and always mounted. While a screenshot is
 /// being previewed it shows the picture instead of the console.
 pub(super) fn play_column(
     theme: &'static dyn Theme,
     model: &ViewModel,
-    actions: &Actions,
+    actions: &ViewBridge,
     info_ref: &NodeRef,
 ) -> Column {
     if let Some(id) = model.preview {
@@ -37,8 +37,7 @@ pub(super) fn play_column(
     // A game launched from `--rom` may not be in the library list, so the
     // title falls back to the core name rather than the selected row.
     let title = model
-        .selected
-        .and_then(|index| model.games.get(index))
+        .selected_game()
         .map(|game| game.name.clone())
         .or_else(|| (!model.core_name.is_empty()).then(|| model.core_name.clone()))
         .unwrap_or_else(|| "没有选中游戏".to_string());
@@ -97,12 +96,12 @@ pub(super) fn play_column(
     let save = actions.clone();
     controls = controls.child(
         Button::secondary("快速存档", theme)
-            .on_click(move |_tree, _id| save.push(Action::SaveState(0))),
+            .on_click(move |_tree, _id| save.push(Action::SaveToSlot(0))),
     );
     let load = actions.clone();
     controls = controls.child(
         Button::secondary("快速读档", theme)
-            .on_click(move |_tree, _id| load.push(Action::LoadState(0))),
+            .on_click(move |_tree, _id| load.push(Action::LoadFromSlot(0))),
     );
     let shot = actions.clone();
     controls = controls.child(
@@ -138,7 +137,7 @@ pub(super) fn preview_column(
     theme: &'static dyn Theme,
     model: &ViewModel,
     shot: &ScreenshotRow,
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> Column {
     let ids: Vec<i64> = model
         .screenshots

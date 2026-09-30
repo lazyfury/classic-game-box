@@ -5,15 +5,15 @@
 //! UI stack lacks is an *image widget*: `igui::igui_ui::Widget` is a closed enum with
 //! no image variant and ``igui_components`` ships no `Image`.
 //!
-//! Rather than fork quill's widget enum, this module builds a leaf component on
-//! quill's public extension points — `igui::igui_components::Component` plus the
+//! Rather than fork igui's widget enum, this module builds a leaf component on
+//! igui's public extension points — `igui::igui_components::Component` plus the
 //! `foreground` decorator (the same hook `Divider` uses). The component carries
 //! the texture handle, reserves the available area, and paints the frame scaled
 //! to fill the area's limiting dimension, centred, from the rectangle layout
 //! hands it. Nothing here knows about libretro: it is handed a `TextureId`.
 //!
 //! Git history: the clean long-term home for this is a `Widget::Image` +
-//! `igui::igui_components::Image` pair in quill; the app-local component unblocks Q1
+//! `igui::igui_components::Image` pair in igui; the app-local component unblocks Q1
 //! without touching a sibling repo's public API.
 
 use igui::igui_components::base::{Component, Spec};
@@ -53,7 +53,7 @@ pub fn centered_fit(frame: (u32, u32), area: Rect) -> Rect {
 /// The rectangle that makes `frame` *fill* `area`, cropping the overflow (the
 /// CSS `object-fit: cover`). The destination is at least as large as `area` on
 /// both axes, centred; the caller clips it to `area`.
-pub fn cover_fit(frame: (u32, u32), area: Rect) -> Rect {
+pub fn crop_fit(frame: (u32, u32), area: Rect) -> Rect {
     let (fw, fh) = frame;
     if fw == 0 || fh == 0 || area.size.width <= 0.0 || area.size.height <= 0.0 {
         return Rect::from_min_size(area.origin, Size::ZERO);
@@ -69,7 +69,7 @@ pub fn cover_fit(frame: (u32, u32), area: Rect) -> Rect {
 
 /// A leaf component that paints a registered framebuffer texture.
 ///
-/// Give it the texture handle from [`FrameHandle`](crate::ui::FrameHandle) and let
+/// Give it the texture handle from [`TextureHandle`](crate::ui::TextureHandle) and let
 /// it grow; at paint time it computes the fitted destination inside whatever
 /// rectangle the layout assigned and emits one `DrawImage`.
 pub struct FrameImage {
@@ -142,7 +142,7 @@ mod tests {
     fn cover_fit_fills_the_area_and_crops_the_overflow() {
         let area = Rect::from_min_size(Vec2::new(10.0, 20.0), Size::new(100.0, 100.0));
         // A 4:3 frame in a square area: the height fills, the width overflows.
-        let fitted = cover_fit((256, 240), area);
+        let fitted = crop_fit((256, 240), area);
         assert!((fitted.size.height - 100.0).abs() < 0.001);
         assert!(fitted.size.width > 100.0);
         assert!(fitted.origin.x < area.left(), "cropped on both sides");

@@ -243,28 +243,6 @@ impl super::App {
                 Action::SetThemeChoice(choice) => self.set_theme(choice, self.light),
                 Action::SetLight(light) => self.set_theme(self.theme_choice, light),
                 Action::CycleCoreOption(index, delta) => self.cycle_core_option(index, delta),
-                Action::SaveState(slot) => {
-                    let (message, kind) = match self.session.as_ref() {
-                        Some(session) => match session.save_state(slot) {
-                            Ok(()) => (format!("已存档（槽位 {slot}）"), StatusKind::Success),
-                            Err(error) => (error, StatusKind::Error),
-                        },
-                        None => ("没有正在运行的游戏".to_string(), StatusKind::Info),
-                    };
-                    self.model.set_status(message, kind);
-                    self.dirty = true;
-                }
-                Action::LoadState(slot) => {
-                    let (message, kind) = match self.session.as_ref() {
-                        Some(session) => match session.load_state(slot) {
-                            Ok(()) => (format!("已读档（槽位 {slot}）"), StatusKind::Success),
-                            Err(error) => (error, StatusKind::Error),
-                        },
-                        None => ("没有正在运行的游戏".to_string(), StatusKind::Info),
-                    };
-                    self.model.set_status(message, kind);
-                    self.dirty = true;
-                }
                 Action::AddGames => self.add_games_dialog(),
                 Action::SwitchLibrary => self.switch_library(),
                 Action::FilterSystem(system) => {
@@ -604,7 +582,7 @@ impl super::App {
         match started {
             Ok(session) => {
                 self.model.core_name = session.core_name().to_string();
-                self.model.playing = true;
+                self.model.has_session = true;
                 self.model.paused = false;
                 self.model.status.clear();
                 self.session = Some(session);
@@ -657,7 +635,7 @@ impl super::App {
                     error
                 };
                 self.model.set_status(message, StatusKind::Error);
-                self.model.playing = false;
+                self.model.has_session = false;
                 // A failed load leaves nothing to fill the immersive view.
                 self.set_fullscreen(false);
             }

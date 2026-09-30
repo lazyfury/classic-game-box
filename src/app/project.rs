@@ -53,7 +53,7 @@ pub(crate) fn game_matches_search(game: &Game, query: &str) -> bool {
 }
 
 /// Project a library row into the view model's row.
-pub(crate) fn game_row(game: Game, cover: Option<FrameHandle>) -> GameRow {
+pub(crate) fn game_row(game: Game, cover: Option<TextureHandle>) -> GameRow {
     GameRow {
         id: game.id,
         name: game.name,
@@ -137,14 +137,14 @@ pub(crate) fn import_status(report: &ImportReport) -> String {
 pub(crate) fn state_shortcut(key: Key, shift: bool) -> Option<Action> {
     match key {
         Key::F11 => Some(Action::ToggleFullscreen),
-        Key::F5 => Some(Action::SaveState(0)),
-        Key::F6 => Some(Action::LoadState(0)),
-        Key::F1 if shift => Some(Action::LoadState(1)),
-        Key::F2 if shift => Some(Action::LoadState(2)),
-        Key::F3 if shift => Some(Action::LoadState(3)),
-        Key::F1 => Some(Action::SaveState(1)),
-        Key::F2 => Some(Action::SaveState(2)),
-        Key::F3 => Some(Action::SaveState(3)),
+        Key::F5 => Some(Action::SaveToSlot(0)),
+        Key::F6 => Some(Action::LoadFromSlot(0)),
+        Key::F1 if shift => Some(Action::LoadFromSlot(1)),
+        Key::F2 if shift => Some(Action::LoadFromSlot(2)),
+        Key::F3 if shift => Some(Action::LoadFromSlot(3)),
+        Key::F1 => Some(Action::SaveToSlot(1)),
+        Key::F2 => Some(Action::SaveToSlot(2)),
+        Key::F3 => Some(Action::SaveToSlot(3)),
         _ => None,
     }
 }

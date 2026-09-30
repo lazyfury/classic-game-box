@@ -184,14 +184,14 @@ fn check_icons(_paths: &Paths) -> Result<(), String> {
 /// no window (the `igui` recording route), and asserts a semantic anchor so the
 /// check is not just "it drew something".
 fn check_render(_paths: &Paths) -> Result<(), String> {
-    use crate::ui::{game_theme, Actions, Ui, ViewModel};
+    use crate::ui::{game_theme, Ui, ViewBridge, ViewModel};
     use igui::igui_core::{Size, ViewportSize};
     use igui::igui_profile::{inspect, FrameCounters, FrameStats, Severity, StageTimes};
     use igui::igui_render::{DrawCommand, PaintContext};
     use igui::igui_theme::Mode;
 
     let theme = game_theme(Mode::Dark);
-    let actions = Actions::default();
+    let actions = ViewBridge::default();
     let model = ViewModel {
         games: (0..40).map(sample_game).collect(),
         // The app feeds the measured viewport back after the first layout; the

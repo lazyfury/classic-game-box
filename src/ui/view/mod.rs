@@ -1,4 +1,4 @@
-//! Builds the quill tree from a [`ViewModel`].
+//! Builds the igui tree from a [`ViewModel`].
 //!
 //! Three columns, following the old Electron front end: a narrow icon rail on
 //! the left picks what the middle column shows (the game library or settings);
@@ -18,12 +18,12 @@
 //! ```
 //!
 //! This still uses only public ``igui_components`` APIs. Callbacks push
-//! [`Action`]s into an [`Actions`] queue; the app drains them after routing
+//! [`Action`]s into an [`ViewBridge`] queue; the app drains them after routing
 //! input.
 //!
 //! ## Layout shape (matters)
 //!
-//! quill's layout root places its direct children by **anchors**, and flex
+//! igui's layout root places its direct children by **anchors**, and flex
 //! starts one level down (see `examples/file_browser/src/ui.rs`). So the row
 //! of columns must live inside the root column, not at the root itself.
 //!
@@ -60,6 +60,7 @@ use crate::ui::model::{Action, Section, StatusKind, ViewModel};
 mod cheats;
 mod components;
 mod library;
+pub mod menus;
 mod play;
 mod saves;
 mod screenshots;
@@ -83,6 +84,9 @@ const RAIL_WIDTH: f32 = 64.0;
 /// width to it on startup.
 pub const MIDDLE_MIN_WIDTH: f32 = 300.0;
 pub const MIDDLE_MAX_WIDTH: f32 = 640.0;
+
+/// The middle column's width before the player drags the divider.
+pub const MIDDLE_DEFAULT_WIDTH: f32 = 320.0;
 
 /// The library / screenshots grid column limits. The count follows the middle
 /// column's width, so a wider pane shows more cards per row.
@@ -139,13 +143,13 @@ mod media {
 }
 
 /// Where view callbacks deposit what the user did. The app drains it once per
-/// frame (see the quill UI guide's "state lives in cells" rule).
+/// frame (see the igui UI guide's "state lives in cells" rule).
 ///
 /// It also carries the tooltip text the current tree registered: the view
 /// cannot open an overlay (the host owns the overlay layer), so it records
 /// `control → tooltip` here and [`crate::ui::Ui`] opens the tip after layout.
 #[derive(Clone, Default)]
-pub struct Actions {
+pub struct ViewBridge {
     queue: Rc<RefCell<Vec<Action>>>,
     tips: Rc<RefCell<Vec<(NodeRef, String)>>>,
     /// The live state of the in-progress text edit. The app seeds it when an
@@ -154,7 +158,7 @@ pub struct Actions {
     edit: Rc<RefCell<Option<Rc<RefCell<TextEdit>>>>>,
 }
 
-impl Actions {
+impl ViewBridge {
     /// Record an action.
     pub fn push(&self, action: Action) {
         self.queue.borrow_mut().push(action);
@@ -200,31 +204,61 @@ impl Actions {
     }
 }
 
+/// The host-owned view state a tree build reads and writes across frames,
+/// bundled so [`build`] takes one handle instead of four out-params.
+pub struct ViewMount {
+    /// The shared width cell the resize handle writes and the middle panel
+    /// reads; the caller owns it so the width survives a rebuild.
+    pub middle_width: Rc<Cell<f32>>,
+    /// The resize handle's mounted node, re-armed after a rebuild drops the
+    /// tree's pointer capture (a column-count change rebuilds mid-drag).
+    pub resize_handle: NodeRef,
+    /// The row range the active virtualized grid mounted in this tree, so the
+    /// host can tell whether a scroll still fits inside it.
+    pub mounted_rows: Cell<(usize, usize)>,
+    /// The play column's live info text node (FPS / resolution), updated in
+    /// place so a live readout does not rebuild the tree.
+    pub info_label: NodeRef,
+}
+
+impl ViewMount {
+    /// A fresh mount with the middle column clamped to the allowed width.
+    pub fn new(middle_width: f32) -> Self {
+        Self {
+            middle_width: Rc::new(Cell::new(
+                middle_width.clamp(MIDDLE_MIN_WIDTH, MIDDLE_MAX_WIDTH),
+            )),
+            resize_handle: NodeRef::new(),
+            mounted_rows: Cell::new((0, 0)),
+            info_label: NodeRef::new(),
+        }
+    }
+}
+
+/// A built page: the middle column's content, plus the scroll state the host
+/// must keep driving when the page scrolls.
+pub(super) struct Page {
+    pub tree: Column,
+    pub scroll: Option<ScrollViewState>,
+}
+
 /// Build the whole tree for one frame, plus the persistent view state the app
 /// must drive across frames (the library grid's scroll offset).
 ///
-/// `middle_width` is the shared width cell the resize handle writes and the
-/// middle panel reads; the caller owns it so the width survives a rebuild.
-/// `handle_ref` receives the resize handle's node, so the caller can re-arm a
-/// drag across a rebuild (a column-count change rebuilds mid-drag).
-/// `mounted_rows` is set to the row range the active virtualized grid mounts,
-/// so the caller can tell whether a scroll still fits inside it.
-/// `info_ref` receives the play column's live info text node, so the host can
-/// update its FPS / resolution in place without rebuilding the tree.
+/// `mount` carries the host-owned view state (the shared width, the resize
+/// handle, the mounted grid rows, the info label); the caller owns it so the
+/// width survives a rebuild.
 pub fn build(
     theme: &'static dyn Theme,
     model: &ViewModel,
-    actions: &Actions,
-    middle_width: &Rc<Cell<f32>>,
-    handle_ref: &NodeRef,
-    mounted_rows: &Cell<(usize, usize)>,
-    info_ref: &NodeRef,
+    actions: &ViewBridge,
+    mount: &ViewMount,
 ) -> (SceneTree, Option<ScrollViewState>) {
-    mounted_rows.set(grid_window(model));
+    mount.mounted_rows.set(grid_window(model));
     // A fullscreen transition hides the tree while the OS animates the window;
     // the caller mounts the target UI once it settles.
     if model.ui_hidden {
-        mounted_rows.set((0, 0));
+        mount.mounted_rows.set((0, 0));
         return (
             Flex::column().mouse_filter(MouseFilter::Ignore).into_tree(),
             None,
@@ -233,10 +267,10 @@ pub fn build(
     // Immersive play: fullscreen for now reuses the right-column play view
     // (title, live info, picture, controls, core), just without the shell.
     if model.fullscreen {
-        mounted_rows.set((0, 0));
+        mount.mounted_rows.set((0, 0));
         let tree = Flex::column()
             .mouse_filter(MouseFilter::Ignore)
-            .child(play_column(theme, model, actions, info_ref))
+            .child(play_column(theme, model, actions, &mount.info_label))
             .into_tree();
         return (tree, None);
     }
@@ -259,9 +293,15 @@ pub fn build(
                 .padding(Edges::ZERO)
                 .mouse_filter(MouseFilter::Ignore)
                 .child(rail(theme, model, actions))
-                .child(middle(theme, model, actions, &mut scroll, middle_width).ref_(&middle_ref))
-                .child(resize_handle(theme, middle_width, middle_ref).ref_(handle_ref))
-                .child(play_column(theme, model, actions, info_ref)),
+                .child(
+                    middle(theme, model, actions, &mut scroll, &mount.middle_width)
+                        .ref_(&middle_ref),
+                )
+                .child(
+                    resize_handle(theme, &mount.middle_width, middle_ref)
+                        .ref_(&mount.resize_handle),
+                )
+                .child(play_column(theme, model, actions, &mount.info_label)),
         );
     let tree = Flex::column()
         .mouse_filter(MouseFilter::Ignore)
@@ -298,7 +338,7 @@ fn header(theme: &'static dyn Theme, model: &ViewModel) -> Column {
 
 /// The left rail: one icon-over-label button per section (the VS Code
 /// activity bar, with the names always visible).
-fn rail(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Column {
+fn rail(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Column {
     let mut rail = Column::new()
         .gap(space::SM)
         .padding(Edges::new(space::XS, space::SM, space::XS, space::SM))
@@ -317,7 +357,7 @@ fn rail_item(
     theme: &'static dyn Theme,
     section: Section,
     active: Section,
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> Column {
     let actions = actions.clone();
     let selected = section == active;
@@ -361,17 +401,18 @@ fn rail_item(
 fn middle(
     theme: &'static dyn Theme,
     model: &ViewModel,
-    actions: &Actions,
+    actions: &ViewBridge,
     scroll: &mut Option<ScrollViewState>,
     middle_width: &Rc<Cell<f32>>,
 ) -> Panel {
     let page = match model.section {
-        Section::Library => library_page(theme, model, actions, scroll),
-        Section::Screenshots => screenshots_page(theme, model, actions, scroll),
-        Section::Saves => saves_page(theme, model, actions, scroll),
-        Section::Cheats => cheats_page(theme, model, actions, scroll),
-        Section::Settings => settings_page(theme, model, actions, scroll),
+        Section::Library => library_page(theme, model, actions),
+        Section::Screenshots => screenshots_page(theme, model, actions),
+        Section::Saves => saves_page(theme, model, actions),
+        Section::Cheats => cheats_page(theme, model, actions),
+        Section::Settings => settings_page(theme, model, actions),
     };
+    *scroll = page.scroll;
     Panel::new()
         .color(theme.palette().surface_raised)
         .flat()
@@ -379,7 +420,7 @@ fn middle(
         .shrink(0.0)
         .clip(true)
         .mouse_filter(MouseFilter::Ignore)
-        .child(page.grow(1.0))
+        .child(page.tree.grow(1.0))
 }
 
 /// The draggable divider between the middle column and the console.

@@ -2,32 +2,32 @@
 //! controls, and the virtualized grid of cover cards.
 
 use igui::igui_components::{
-    Button, Column, Component, Divider, EmptyState, Flex, Grid, NodeRef, Row, ScrollView,
-    ScrollViewState, Text,
+    Button, Column, Component, Divider, EmptyState, Flex, NodeRef, Row, ScrollView, Text,
 };
 use igui::igui_core::{Color, Cursor, Edges};
 use igui::igui_render::Paint;
 use igui::igui_theme::radius::MD;
 use igui::igui_theme::{radius, space, Theme, Tone};
-use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle, Track};
+use igui::igui_ui::{Align, Justify, MouseFilter, SurfaceStyle};
 
-use crate::ui::frame::cover_fit;
+use crate::ui::frame::crop_fit;
 use crate::ui::icons::{Icon as SvgIcon, IconName};
 use crate::ui::model::{Action, Confirm, EditKind, EditState, GameRow, SortKey, ViewModel};
 
 use super::components::{
-    chip, chip_bar, chip_group, compact_button, grid_viewport, icon_button, spacer, text_field,
-    window_for,
+    chip, chip_bar, chip_group, compact_button, grid_viewport, icon_button, text_field,
+    virtual_grid, window_for,
 };
-use super::Actions;
+use super::Page;
+use super::ViewBridge;
 use super::{media, CARD_HEIGHT, CARD_ICON, CARD_ICON_BUTTON, PLACEHOLDER_HEIGHT};
 
 pub(super) fn library_page(
     theme: &'static dyn Theme,
     model: &ViewModel,
-    actions: &Actions,
-    scroll: &mut Option<ScrollViewState>,
-) -> Column {
+    actions: &ViewBridge,
+) -> Page {
+    let mut scroll = None;
     let mut column = Column::new()
         .gap(space::SM)
         .padding(Edges::all(MD))
@@ -66,7 +66,7 @@ pub(super) fn library_page(
             .scrollbar(false)
             .grow(1.0)
             .child(library_grid(theme, model, actions));
-        *scroll = Some(view.state());
+        scroll = Some(view.state());
         column = column.child(view);
     }
 
@@ -84,12 +84,19 @@ pub(super) fn library_page(
                     .on_click(move |_tree, _id| add_dir.push(Action::SwitchLibrary)),
             ),
     );
-    column
+    Page {
+        tree: column,
+        scroll,
+    }
 }
 
 /// The library's console filter: a chip per console present (with its count),
 /// then an “全部” chip. The total is shown by the page title, not here.
-pub(super) fn stats_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Flex {
+pub(super) fn stats_bar(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &ViewBridge,
+) -> Flex {
     let mut filter_chips = chip_group();
     let all = actions.clone();
     filter_chips = filter_chips.child(
@@ -110,7 +117,7 @@ pub(super) fn stats_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &
 
 /// The library's sort controls: a chip per key, then a direction toggle.
 /// Pinned games are always on top, so the key only orders within the groups.
-pub(super) fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Flex {
+pub(super) fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Flex {
     let mut sort_chips = chip_group();
     for key in SortKey::ALL {
         let actions = actions.clone();
@@ -139,7 +146,11 @@ pub(super) fn sort_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &A
 
 /// The search row: a button that opens the field, or the field while typing,
 /// with a clear control when a query is set.
-pub(super) fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Row {
+pub(super) fn search_bar(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &ViewBridge,
+) -> Row {
     let mut row = Row::new().align(Align::Center).gap(space::XS);
     if let Some(edit) = &model.editing {
         if edit.kind == EditKind::Search {
@@ -192,7 +203,11 @@ pub(super) fn search_bar(theme: &'static dyn Theme, model: &ViewModel, actions: 
 }
 
 /// The rename / tags edit bar: a text field, the caret, and save / cancel.
-pub(super) fn edit_bar(theme: &'static dyn Theme, edit: &EditState, actions: &Actions) -> Column {
+pub(super) fn edit_bar(
+    theme: &'static dyn Theme,
+    edit: &EditState,
+    actions: &ViewBridge,
+) -> Column {
     let label = match edit.kind {
         EditKind::Name => "改名",
         EditKind::Tags => "标签（用逗号分隔）",
@@ -232,42 +247,15 @@ pub(super) fn edit_bar(theme: &'static dyn Theme, edit: &EditState, actions: &Ac
 pub(super) fn library_grid(
     theme: &'static dyn Theme,
     model: &ViewModel,
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> Column {
-    let total = model.games.len();
-    let mut column = Column::new().gap(0.0).padding(Edges::ZERO);
-    if total == 0 {
-        return column;
-    }
-    let columns = model.grid_columns.max(1);
-    let rows = total.div_ceil(columns);
-    let stride = CARD_HEIGHT + space::SM;
-    let (first, last) = library_grid_window(model);
-
-    let top = first as f32 * stride;
-    if top > 0.0 {
-        column = column.child(spacer(top));
-    }
-
-    let mut grid = Grid::new(vec![Track::Fr(1.0); columns])
-        .gap(space::SM)
-        .padding(Edges::ZERO);
-    for row in first..=last {
-        for column_index in 0..columns {
-            let index = row * columns + column_index;
-            if index >= total {
-                break;
-            }
-            grid = grid.child(game_card(theme, model, &model.games[index], index, actions));
-        }
-    }
-    column = column.child(grid);
-
-    let bottom = rows.saturating_sub(last + 1) as f32 * stride;
-    if bottom > 0.0 {
-        column = column.child(spacer(bottom));
-    }
-    column
+    virtual_grid(
+        model.grid_columns,
+        model.games.len(),
+        CARD_HEIGHT + space::SM,
+        library_grid_window(model),
+        |index| game_card(theme, model, &model.games[index], index, actions),
+    )
 }
 
 /// The library grid's mounted row range for the model's scroll state.
@@ -290,7 +278,7 @@ pub(super) fn game_card(
     model: &ViewModel,
     game: &GameRow,
     index: usize,
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> Column {
     let click = actions.clone();
     let menu = actions.clone();
@@ -378,7 +366,7 @@ pub(super) fn cover(
     theme: &'static dyn Theme,
     game: &GameRow,
     index: usize,
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> Column {
     let color = cover_color(&game.path);
     let mut cover = Column::new()
@@ -410,7 +398,7 @@ pub(super) fn cover(
         // clip crops the overflow to the cell.
         Some(handle) => {
             cover = cover.clip(true).foreground(move |ctx, rect, _state| {
-                let destination = cover_fit((handle.width, handle.height), rect);
+                let destination = crop_fit((handle.width, handle.height), rect);
                 ctx.draw_image(handle.texture, destination, None, Paint::default());
             });
         }
@@ -437,7 +425,7 @@ pub(super) fn cover(
 /// The play button on a card's bottom-right: a single click starts the game.
 /// The card itself plays on a double click, so this is the deliberate
 /// one-click path; the hint beside it says as much.
-fn play_button(theme: &'static dyn Theme, index: usize, actions: &Actions) -> impl Component {
+fn play_button(theme: &'static dyn Theme, index: usize, actions: &ViewBridge) -> impl Component {
     let click = actions.clone();
     Button::new("", theme)
         .cursor(Cursor::Pointer)
@@ -470,7 +458,7 @@ pub(super) fn card_controls(
     theme: &'static dyn Theme,
     game: &GameRow,
     index: usize,
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> Row {
     let mut row = Row::new().align(Align::Center).gap(space::XXS);
     if game.screenshots > 0 {
@@ -511,7 +499,7 @@ pub(super) fn card_controls(
 pub(super) fn screenshot_entry(
     theme: &'static dyn Theme,
     game: &GameRow,
-    actions: &Actions,
+    actions: &ViewBridge,
 ) -> impl Component {
     let node = NodeRef::new();
     actions.tip(&node, "截图");

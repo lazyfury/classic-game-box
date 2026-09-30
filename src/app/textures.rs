@@ -62,7 +62,7 @@ impl super::App {
                     game.id,
                     CoverTexture {
                         cover_id,
-                        handle: FrameHandle {
+                        handle: TextureHandle {
                             texture,
                             width,
                             height,
@@ -92,7 +92,7 @@ impl super::App {
             {
                 crate::ui::set_texture(
                     name,
-                    FrameHandle {
+                    TextureHandle {
                         texture,
                         width,
                         height,
@@ -152,7 +152,7 @@ impl super::App {
                     shot.id,
                     ScreenshotTexture {
                         file: shot.file.clone(),
-                        handle: FrameHandle {
+                        handle: TextureHandle {
                             texture,
                             width,
                             height,

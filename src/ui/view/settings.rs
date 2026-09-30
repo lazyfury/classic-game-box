@@ -2,7 +2,7 @@
 //! effect, the running core's options and inputs, and the keyboard bindings.
 
 use igui::igui_components::{
-    Button, Card, Column, Component, NodeRef, Row, ScrollView, ScrollViewState, Select, Text,
+    Button, Card, Column, Component, NodeRef, Row, ScrollView, Select, Text,
 };
 use igui::igui_core::Edges;
 use igui::igui_theme::{space, Theme, Tone};
@@ -12,13 +12,14 @@ use crate::ui::model::{Action, EditKind, MsaaKind, ShaderKind, ViewModel};
 use crate::ui::theme::ThemeChoice;
 
 use super::components::{chip, chip_group, text_field};
-use super::Actions;
+use super::Page;
+use super::ViewBridge;
 
 /// The "download a core" card. The catalog is a local copy of the libretro
 /// buildbot's list (the built-in snapshot, or the cache `刷新下载源` writes);
 /// downloading runs on a background thread and reports through
 /// `catalog_status` / `catalog_progress`.
-fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Card {
+fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Card {
     let mut search = Row::new().align(Align::Center).gap(space::XS);
     if let Some(edit) = &model.editing {
         if edit.kind == EditKind::CatalogSearch {
@@ -144,9 +145,8 @@ fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions)
 pub(super) fn settings_page(
     theme: &'static dyn Theme,
     model: &ViewModel,
-    actions: &Actions,
-    scroll: &mut Option<ScrollViewState>,
-) -> Column {
+    actions: &ViewBridge,
+) -> Page {
     let mut column = Column::new()
         .gap(space::MD)
         .padding(Edges::all(space::MD))
@@ -399,8 +399,11 @@ pub(super) fn settings_page(
         .grow(1.0)
         .scrollbar(false)
         .child(body);
-    *scroll = Some(view.state());
+    let scroll = Some(view.state());
     column = column.child(view);
 
-    column
+    Page {
+        tree: column,
+        scroll,
+    }
 }

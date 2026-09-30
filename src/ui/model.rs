@@ -1,4 +1,4 @@
-//! Pure view data for the UI. No quill, no platform — just what the screen
+//! Pure view data for the UI. No igui, no platform — just what the screen
 //! needs to know, so the view builder can be tested headlessly.
 
 use cgb_systems::SystemId;
@@ -72,7 +72,7 @@ pub enum EditKind {
 
 /// An in-progress text edit. The app owns the keyboard while this is set and
 /// commits or cancels it; the view mounts an `igui` `TextInput` from the shared
-/// editing state the app seeded into [`Actions`](crate::ui::Actions).
+/// editing state the app seeded into [`ViewBridge`](crate::ui::ViewBridge).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EditState {
     pub game_id: i64,
@@ -246,7 +246,7 @@ pub struct GameRow {
     pub screenshots: i64,
     /// The game's cover texture, when it has a screenshot set as cover. The
     /// app registers it; the view draws it behind the card controls.
-    pub cover: Option<FrameHandle>,
+    pub cover: Option<TextureHandle>,
 }
 
 /// One console's tally in the library, for the filter row.
@@ -273,7 +273,18 @@ pub struct SaveSlotRow {
     /// When it was written, epoch milliseconds (0 = never).
     pub modified_ms: i64,
     /// The registered thumbnail texture, when the slot has one.
-    pub thumb: Option<FrameHandle>,
+    pub thumb: Option<TextureHandle>,
+}
+
+/// What to call a save-state slot. Slot `0` is the quick slot; the numbered
+/// slots read 1-based (`槽 1` … `槽 9`) so the label matches the `F1`–`F3`
+/// hotkeys.
+pub fn save_slot_label(slot: u8) -> String {
+    if slot == 0 {
+        "快速".to_string()
+    } else {
+        format!("槽 {slot}")
+    }
 }
 
 /// One screenshot in the screenshots section.
@@ -287,7 +298,7 @@ pub struct ScreenshotRow {
     /// Whether this picture is its game's cover.
     pub is_cover: bool,
     /// The registered thumbnail texture, when it has been uploaded.
-    pub thumb: Option<FrameHandle>,
+    pub thumb: Option<TextureHandle>,
 }
 
 /// How the library is ordered. Pinned games always come first, whatever the
@@ -414,7 +425,7 @@ pub struct CoreOptionRow {
 /// carries the handle. Drawing it is the one thing the current UI stack cannot
 /// do yet — see `frame.rs`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FrameHandle {
+pub struct TextureHandle {
     pub texture: TextureId,
     pub width: u32,
     pub height: u32,
@@ -431,14 +442,14 @@ pub struct ViewModel {
     /// The active library sort key, and whether it is descending.
     pub sort: SortKey,
     pub sort_desc: bool,
-    pub playing: bool,
+    pub has_session: bool,
     pub paused: bool,
     /// Immersive play: only the game picture (plus a slim overlay bar) is
     /// mounted, and the window is asked to go borderless-fullscreen. The rest
     /// of the shell is hidden.
     pub fullscreen: bool,
     pub core_name: String,
-    pub frame: Option<FrameHandle>,
+    pub frame: Option<TextureHandle>,
     pub status: String,
     /// The severity of [`status`](Self::status), so the line can colour an
     /// error differently from a success.
@@ -450,9 +461,9 @@ pub struct ViewModel {
     pub screenshot_game: Option<i64>,
     /// The running game's save slots. Empty when nothing is running; the
     /// section shows a note instead.
-    pub saves: Vec<SaveSlotRow>,
+    pub save_states: Vec<SaveSlotRow>,
     /// Whether the running core supports save states at all.
-    pub saves_supported: bool,
+    pub save_states_supported: bool,
     /// The running game's cheats.
     pub cheats: Vec<CheatRow>,
     /// The middle column's scrollable grid (library or screenshots): its
@@ -530,6 +541,13 @@ impl ViewModel {
         self.status = text.into();
         self.status_kind = kind;
     }
+
+    /// The game the shell is focused on: the selected library row, if any.
+    /// Returns `None` when nothing is selected (e.g. a game launched straight
+    /// from `--rom` that is not in the library list).
+    pub fn selected_game(&self) -> Option<&GameRow> {
+        self.selected.and_then(|index| self.games.get(index))
+    }
 }
 
 impl Default for ViewModel {
@@ -541,7 +559,7 @@ impl Default for ViewModel {
             selected: None,
             sort: SortKey::Name,
             sort_desc: false,
-            playing: false,
+            has_session: false,
             paused: false,
             fullscreen: false,
             core_name: String::new(),
@@ -550,8 +568,8 @@ impl Default for ViewModel {
             status_kind: StatusKind::Info,
             screenshots: Vec::new(),
             screenshot_game: None,
-            saves: Vec::new(),
-            saves_supported: false,
+            save_states: Vec::new(),
+            save_states_supported: false,
             cheats: Vec::new(),
             grid_offset: 0.0,
             grid_viewport: 0.0,
@@ -575,7 +593,7 @@ impl Default for ViewModel {
             theme_choice: ThemeChoice::default(),
             light: false,
             core_options: Vec::new(),
-            middle_width: 320.0,
+            middle_width: crate::ui::view::MIDDLE_DEFAULT_WIDTH,
             grid_columns: 2,
             catalog: Vec::new(),
             catalog_query: String::new(),
@@ -610,10 +628,6 @@ pub enum Action {
     SetLight(bool),
     /// Cycle the core option at this index by `+1` / `-1`.
     CycleCoreOption(usize, i32),
-    /// Write a save state to a slot (`0` is the quick slot).
-    SaveState(u8),
-    /// Restore a save state from a slot.
-    LoadState(u8),
     /// Open the native file picker and add the chosen ROM files to the library.
     AddGames,
     /// Open the native folder picker and switch to the chosen game library.
@@ -666,9 +680,9 @@ pub enum Action {
     StepPreview(i32),
     /// Make the screenshot with this id its game's cover.
     SetCover(i64),
-    /// Write a save state to this slot.
+    /// Write a save state to this slot (`0` is the quick slot).
     SaveToSlot(u8),
-    /// Load the save state in this slot.
+    /// Load the save state in this slot (`0` is the quick slot).
     LoadFromSlot(u8),
     /// Delete the save state in this slot.
     DeleteSlot(u8),

@@ -155,7 +155,7 @@ impl super::App {
         if let Some(session) = self.session.as_ref() {
             self.model.frame = session.frame();
             self.model.paused = session.paused();
-            self.model.playing = true;
+            self.model.has_session = true;
             // A core message (SET_MESSAGE) goes to the status line, but only
             // when it changed (a core may repeat the same message each frame).
             if let Some(message) = session.take_message() {

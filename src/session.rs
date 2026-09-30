@@ -8,7 +8,7 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
-use crate::ui::FrameHandle;
+use crate::ui::TextureHandle;
 use cgb_audio::AudioOutput;
 use cgb_input::InputState;
 use cgb_library::{encode_png, exists, list_slots, read, remove, write, StateSlot};
@@ -59,7 +59,7 @@ pub struct Session {
     /// `None` when the output device could not be opened; the game still runs.
     audio: Option<AudioOutput>,
     texture: TextureId,
-    frame: Option<FrameHandle>,
+    frame: Option<TextureHandle>,
     paused: bool,
     core_name: String,
     frame_seconds: f64,
@@ -150,7 +150,7 @@ impl Session {
             core,
             audio,
             texture: GAME_TEXTURE,
-            frame: Some(FrameHandle {
+            frame: Some(TextureHandle {
                 texture: GAME_TEXTURE,
                 width,
                 height,
@@ -211,7 +211,7 @@ impl Session {
 
         if let Some(frame) = self.core.take_frame() {
             let _ = backend.update_texture(self.texture, frame.width, frame.height, &frame.rgba);
-            self.frame = Some(FrameHandle {
+            self.frame = Some(TextureHandle {
                 texture: self.texture,
                 width: frame.width,
                 height: frame.height,
@@ -289,7 +289,7 @@ impl Session {
     pub fn load_state(&self, slot: u8) -> Result<(), String> {
         let path = save_state_path(&self.save_dir, &self.rom_path, &self.core_key, slot);
         let Some(bytes) = read(&path) else {
-            return Err(format!("槽位 {slot} 还没有存档"));
+            return Err("该槽位还没有存档".to_string());
         };
         if self.core.unserialize(&bytes) {
             Ok(())
@@ -331,7 +331,7 @@ impl Session {
         self.paused
     }
 
-    pub fn frame(&self) -> Option<FrameHandle> {
+    pub fn frame(&self) -> Option<TextureHandle> {
         self.frame
     }
 
