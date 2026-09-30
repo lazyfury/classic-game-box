@@ -8,6 +8,7 @@ members = [
     "crates/cgb-paths",
     "crates/cgb-cores",
     "crates/cgb-library",
+    "crates/cgb-ffi",
 ]
 
 # ---------------------------------------------------------------------------
@@ -109,11 +110,21 @@ igui = { workspace = true, features = ["ui", "app", "wgpu", "profile", "recordin
 igui_svg.workspace = true
 igui_scene.workspace = true
 igui_core.workspace = true
-# Window / input / IME / text-metrics / clipboard platform plugins.
-igui_winit.workspace = true
-
-winit.workspace = true
 rfd.workspace = true
+
+# The `winit` window / input / IME / text-metrics / clipboard plugins. Optional
+# so the embedded Swift/macOS host can build `cgb-app` with
+# `default-features = false` and no `winit` at all.
+igui_winit = { workspace = true, optional = true }
+winit = { workspace = true, optional = true }
+
+# ---------------------------------------------------------------------------
+# The bundled window host. On by default (the `classic-game-box` binary needs
+# it); the embedded host turns it off.
+# ---------------------------------------------------------------------------
+[features]
+default = ["winit-host"]
+winit-host = ["dep:igui_winit", "dep:winit"]
 
 # The headless UI benchmark (`benches/ui.rs`) uses igui's measurement harness.
 [dev-dependencies]

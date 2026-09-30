@@ -51,3 +51,6 @@ frames/
 **/Mupen64plus/
 /ParallelN64/
 **/ParallelN64/
+
+# Experimental Swift/macOS client (SwiftPM).
+/macos/.build/

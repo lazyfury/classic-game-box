@@ -12,25 +12,28 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "winit-host")]
 use igui::igui_app::{
-    App as IguiApp, AppBuilder, AppConfig, AppLogic, EventContext, EventResult, FrameContext,
-    InitContext, PlatformEvent, PlatformObserver, Plugin,
+    App as IguiApp, AppBuilder, AppConfig, PlatformEvent, PlatformObserver, Plugin,
 };
-use igui::igui_backend_wgpu::{FontConfig, FontMode, TextureEffect};
+use igui::igui_app::{AppLogic, EventContext, EventResult, FrameContext, InitContext};
+#[cfg(feature = "winit-host")]
+use igui::igui_backend_wgpu::{FontConfig, FontMode};
+use igui::igui_backend_wgpu::{TextureEffect, WgpuBackend};
 use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, Rect, ViewportSize};
 use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, Severity, StageTimes};
 use igui::igui_render::{DrawList, PaintContext, TextureId};
 use igui::igui_theme::{Mode, Theme};
 use igui::igui_ui::{focused_caret, TextEdit, TextMeasurer};
+#[cfg(feature = "winit-host")]
 use igui_winit::{
-    ClipboardPlugin, GpuConfig, ImePlugin, KeyboardPlugin, PointerPlugin, SharedBackend,
-    SharedWindow, TextMeasurePlugin, TitlebarMode, WgpuPlugin, WindowConfig,
+    ClipboardPlugin, GpuConfig, ImePlugin, KeyboardPlugin, PointerPlugin, SharedWindow,
+    TextMeasurePlugin, TitlebarMode, WgpuPlugin, WindowConfig,
 };
+#[cfg(feature = "winit-host")]
 use winit::event::WindowEvent;
-use winit::window::{Fullscreen, Window};
 
 use crate::ui::{
     library_columns, save_slot_label, Action, BindingRow, CatalogRow, Confirm, CoreOptionRow,
@@ -56,6 +59,7 @@ use crate::session::Session;
 mod cheats;
 mod cores;
 mod helpers;
+mod host;
 mod input;
 mod library;
 mod project;
@@ -68,7 +72,15 @@ mod textures;
 mod window;
 
 pub(crate) use helpers::*;
+pub use host::{HostWindow, SharedHostWindow};
 pub(crate) use project::*;
+
+/// The wgpu backend a platform graphics plugin publishes as a service.
+///
+/// A structural alias for `Rc<RefCell<WgpuBackend>>`, so it is the *same*
+/// service `igui_winit::SharedBackend` names: the embedded host can insert it
+/// without depending on `igui_winit`.
+pub type SharedBackend = Rc<RefCell<WgpuBackend>>;
 
 /// The shortest gap between grid column-count recomputations while the middle
 /// divider is dragged. A column change rebuilds the tree; throttling keeps a
@@ -169,9 +181,10 @@ const BUNDLED_J2ME: &str = "freej2me_plus";
 const BUNDLED_PPSSPP: &str = "ppsspp";
 
 /// Runs the app on the `igui_app` plugin runtime (winit + wgpu + input).
+#[cfg(feature = "winit-host")]
 pub fn run(args: Args) {
     let app = App::new(args);
-    let drops: Rc<RefCell<Vec<PathBuf>>> = app.pending_drops.clone();
+    let drops = app.drop_sink();
     let title = "Classic Game Box".to_string();
     let size = (1100.0, 760.0);
     IguiApp::new(AppConfig {
@@ -207,13 +220,22 @@ pub fn run(args: Args) {
     .run();
 }
 
+/// The embedded host drives the app itself; there is no bundled window host in
+/// this build (`--no-default-features`).
+#[cfg(not(feature = "winit-host"))]
+pub fn run(_args: Args) {
+    panic!("this build has no bundled window host; embed `cgb-app` via a platform host");
+}
+
 /// Bridges host platform events the app cares about into shared flags: files
 /// dropped on the window. (Window resizes are picked up from the presenter's
 /// viewport, so a repeated resize does not force a redundant re-layout.)
+#[cfg(feature = "winit-host")]
 struct HostPlugin {
     drops: Rc<RefCell<Vec<PathBuf>>>,
 }
 
+#[cfg(feature = "winit-host")]
 impl Plugin for HostPlugin {
     fn name(&self) -> &'static str {
         "cgb-host"
@@ -226,10 +248,12 @@ impl Plugin for HostPlugin {
     }
 }
 
+#[cfg(feature = "winit-host")]
 struct HostObserver {
     drops: Rc<RefCell<Vec<PathBuf>>>,
 }
 
+#[cfg(feature = "winit-host")]
 impl PlatformObserver for HostObserver {
     fn on_platform(&mut self, event: PlatformEvent<'_>, _out: &mut Vec<InputEvent>) {
         if let Some(WindowEvent::DroppedFile(path)) = event.downcast_ref::<WindowEvent>() {
@@ -256,8 +280,8 @@ struct App {
     /// The wgpu backend, published by `WgpuPlugin`; `None` until the first
     /// resume creates the window and the surface.
     backend: Option<SharedBackend>,
-    /// The window, read from the `SharedWindow` service (fullscreen toggling).
-    window: Option<Arc<Window>>,
+    /// The window host, from the `SharedHostWindow` service (fullscreen).
+    window: Option<SharedHostWindow>,
     /// The backend's real font metrics, published by `TextMeasurePlugin`.
     measurer: Option<Rc<dyn TextMeasurer>>,
     /// Whether this frame must lay out and paint; otherwise the previous draw
@@ -386,7 +410,12 @@ struct App {
 }
 
 impl App {
-    fn new(args: Args) -> Self {
+    /// Build the application from parsed CLI arguments.
+    ///
+    /// The platform host constructs this and hands it to the runtime as the
+    /// [`AppLogic`]; an embedded host does the same through the C ABI in
+    /// `macos/rust`.
+    pub fn new(args: Args) -> Self {
         // A `--library-dir` overrides the remembered library; app data (and so
         // the settings that would remember it) stays in the platform folder.
         let forced_library = args.library_dir.is_some();
@@ -560,6 +589,12 @@ impl App {
         app.rebuild_settings_view();
         app
     }
+
+    /// The sink a host pushes files dropped on the window into; they are
+    /// imported on the next frame.
+    pub fn drop_sink(&self) -> Rc<RefCell<Vec<PathBuf>>> {
+        self.pending_drops.clone()
+    }
 }
 
 impl AppLogic for App {
@@ -570,8 +605,16 @@ impl AppLogic for App {
                 .borrow_mut()
                 .set_clear_color(self.theme.background());
         }
-        if let Some(window) = ctx.service::<SharedWindow>() {
-            self.window = window.borrow().clone();
+        if let Some(window) = ctx.service::<SharedHostWindow>() {
+            self.window = Some(window.clone());
+        }
+        #[cfg(feature = "winit-host")]
+        if self.window.is_none() {
+            if let Some(window) = ctx.service::<SharedWindow>() {
+                if let Some(window) = window.borrow().clone() {
+                    self.window = Some(Rc::new(host::WinitWindow(window)));
+                }
+            }
         }
         if let Some(measurer) = ctx.service::<Rc<dyn TextMeasurer>>() {
             self.measurer = Some(measurer.clone());

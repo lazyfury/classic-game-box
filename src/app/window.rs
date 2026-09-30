@@ -95,11 +95,7 @@ impl super::App {
                 self.pending_fullscreen = None;
                 self.hidden_painted = false;
                 if let Some(window) = self.window.clone() {
-                    window.set_fullscreen(if on {
-                        Some(Fullscreen::Borderless(None))
-                    } else {
-                        None
-                    });
+                    window.set_fullscreen(on);
                 }
                 self.transition = Some(FullscreenTransition {
                     target: on,

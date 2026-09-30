@@ -13,6 +13,11 @@
 //!
 //! The window host lives in [`app`]; one running game is a [`session`].
 
+// When built without the bundled `winit` host, `App` is only used from the
+// embedded host crate through its `AppLogic` impl, so this crate's private
+// methods look unused.
+#![cfg_attr(not(feature = "winit-host"), allow(dead_code))]
+
 pub mod app;
 pub mod cli;
 pub mod cores_cli;

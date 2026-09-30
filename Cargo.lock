@@ -393,6 +393,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cgb-ffi"
+version = "0.2.0"
+dependencies = [
+ "cgb-audio",
+ "cgb-libretro",
+ "cgb-paths",
+ "cgb-systems",
+]
+
+[[package]]
 name = "cgb-input"
 version = "0.2.0"
 dependencies = [
