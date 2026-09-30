@@ -14,8 +14,10 @@
 > - **阶段 B2（代码）**：`cgb-library` 按功能拆分：新增 `cgb-paths`（paths + settings）
 >   与 `cgb-cores`（cores 清单 + catalog + download）；`cgb-library` 保留
 >   error/png/saves/cheats/library/import（共享 `LibraryError` 带 rusqlite，故不拆开）。
+> - **阶段 B3（代码）**：`cgb-input` 定义自己的 `Key`（只含可绑定键），app 在
+>   `to_input_key` 里把 `igui_core::Key` 映射进来；去掉 `cgb-input → igui_core` 依赖。
 > - 未做：`cgb-library` 不并入 app（保留 crate，`包名不变`；也避免 `cgb-libretro`
->   测试对根 app 的 dev-依赖环）；B3（`cgb-input → igui_core::Key`）暂留。
+>   测试对根 app 的 dev-依赖环）。
 > - 提交：`5a4bd0e` 结构、`c854dd7` app 拆分、下一个 `cgb-library` 拆分。
 >
 > 用户方向：**app 为根项目；`src/` 为 app；UI 收为 `src/ui`；其余 crate 暂时保留；

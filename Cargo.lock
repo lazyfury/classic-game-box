@@ -398,7 +398,6 @@ version = "0.2.0"
 dependencies = [
  "cgb-systems",
  "gilrs",
- "igui_core",
 ]
 
 [[package]]

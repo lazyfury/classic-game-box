@@ -62,10 +62,14 @@ impl super::App {
                 } else if let Some(bindings) = self.bindings.get(&self.active_system) {
                     match event {
                         InputEvent::KeyDown { key } => {
-                            bindings.apply(*key, true, &mut self.input, 0)
+                            if let Some(key) = to_input_key(*key) {
+                                bindings.apply(key, true, &mut self.input, 0);
+                            }
                         }
                         InputEvent::KeyUp { key } => {
-                            bindings.apply(*key, false, &mut self.input, 0)
+                            if let Some(key) = to_input_key(*key) {
+                                bindings.apply(key, false, &mut self.input, 0);
+                            }
                         }
                         _ => {}
                     }
@@ -666,4 +670,21 @@ impl super::App {
             gamepads.poll(&mut self.input);
         }
     }
+}
+
+/// Map a UI key to the input crate's bindable key, or `None` when the key
+/// cannot be bound to a joypad button (function keys, editing keys, …).
+fn to_input_key(key: Key) -> Option<cgb_input::Key> {
+    use cgb_input::Key as Input;
+    Some(match key {
+        Key::Character(c) => Input::Character(c),
+        Key::ArrowUp => Input::ArrowUp,
+        Key::ArrowDown => Input::ArrowDown,
+        Key::ArrowLeft => Input::ArrowLeft,
+        Key::ArrowRight => Input::ArrowRight,
+        Key::Enter => Input::Enter,
+        Key::Space => Input::Space,
+        Key::Tab => Input::Tab,
+        _ => return None,
+    })
 }

@@ -13,7 +13,24 @@
 use std::collections::HashMap;
 
 use cgb_systems::{JoypadButton, SystemId};
-use igui_core::Key;
+
+/// A key the keyboard bindings can bind.
+///
+/// Deliberately not `igui_core::Key`: this crate owns only the keys it can
+/// bind, so it stays free of the UI (dependency rule). The app maps the UI's
+/// key events into this type before calling [`KeyboardBindings::apply`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Key {
+    /// A printable character (`w`, `z`, `1`, …).
+    Character(char),
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
+    Enter,
+    Space,
+    Tab,
+}
 
 /// The pressed-button bitmask for both controller ports.
 ///

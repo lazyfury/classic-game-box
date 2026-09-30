@@ -90,34 +90,18 @@ pub(crate) fn binding_rows(bindings: &KeyboardBindings) -> Vec<BindingRow> {
         .collect()
 }
 
-/// A key's printable name for the bindings list.
-pub(crate) fn key_label(key: Key) -> String {
+/// A bound key's printable name for the bindings list.
+pub(crate) fn key_label(key: cgb_input::Key) -> String {
+    use cgb_input::Key;
     match key {
         Key::Character(c) => c.to_ascii_uppercase().to_string(),
         Key::Enter => "Enter".to_string(),
-        Key::Escape => "Esc".to_string(),
-        Key::Backspace => "Backspace".to_string(),
-        Key::Delete => "Delete".to_string(),
         Key::Tab => "Tab".to_string(),
         Key::Space => "Space".to_string(),
-        Key::Home => "Home".to_string(),
-        Key::End => "End".to_string(),
         Key::ArrowUp => "↑".to_string(),
         Key::ArrowDown => "↓".to_string(),
         Key::ArrowLeft => "←".to_string(),
         Key::ArrowRight => "→".to_string(),
-        Key::F1 => "F1".to_string(),
-        Key::F2 => "F2".to_string(),
-        Key::F3 => "F3".to_string(),
-        Key::F4 => "F4".to_string(),
-        Key::F5 => "F5".to_string(),
-        Key::F6 => "F6".to_string(),
-        Key::F7 => "F7".to_string(),
-        Key::F8 => "F8".to_string(),
-        Key::F9 => "F9".to_string(),
-        Key::F10 => "F10".to_string(),
-        Key::F11 => "F11".to_string(),
-        Key::F12 => "F12".to_string(),
     }
 }
 

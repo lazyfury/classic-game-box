@@ -43,7 +43,7 @@ igui 的源码可看相邻 `../igui/crates/`，只读需要的模块。
 cgb-app (root, src/) → { cgb-libretro, cgb-audio, cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems }
 src/ui (app 内模块)   → cgb-systems, igui_*
 cgb-libretro          → cgb-systems, libloading
-cgb-input             → cgb-systems, gilrs, igui_core
+cgb-input             → cgb-systems, gilrs（自带 `Key`，不依赖 UI）
 cgb-audio             → cpal, ringbuf
 cgb-paths             → cgb-systems, serde, dirs
 cgb-cores             → cgb-systems, serde, ureq, zip
