@@ -60,8 +60,9 @@ pub(crate) fn load_core_manifest(paths: &Paths) -> Vec<CoreSpec> {
     // Only offer a core whose module is actually present: a checkout that built
     // `--minimal` still has the full `cores.json`, and a packaged app may ship a
     // subset. This resolves through the same search order `find_module` uses, so
-    // anything kept here loads.
-    cores.retain(|core| resolve_module(paths, &core.module).is_file());
+    // anything kept here loads. Blocked cores are dropped even when a module for
+    // them exists (e.g. one registered before it was blocked).
+    cores.retain(|core| !is_blocked(&core.key) && resolve_module(paths, &core.module).is_file());
     cores
 }
 
@@ -104,14 +105,16 @@ pub(crate) fn recommend_core(
         .iter()
         .filter(|core| core.system == system)
         .map(|core| core.key.as_str())
-        .find(|key| catalog.get(key).is_some())
+        .find(|key| !is_blocked(key) && catalog.get(key).is_some())
     {
         return Some(key.to_string());
     }
     catalog
         .cores
         .iter()
-        .find(|entry| SystemId::parse_key(&entry.system) == Some(system))
+        .find(|entry| {
+            !is_blocked(&entry.name) && SystemId::parse_key(&entry.system) == Some(system)
+        })
         .map(|entry| entry.name.clone())
 }
 

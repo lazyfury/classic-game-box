@@ -49,6 +49,22 @@ non-commercial cores (`snes9x`, `genesis_plus_gx`, `picodrive`, `fbneo`) are
 **not** in it — they cannot be sold, so they ship as downloads instead of being
 redistributed. Everything else can go either way.
 
+## Blocked cores
+
+Some buildbot cores download and load fine but still cannot run a game here.
+`BLOCKED_CORES` in `crates/cgb-cores/src/catalog.rs` hides those from the whole
+app: they are not listed in the download card (`--search-core`), never
+recommended for their console, and `--download-core` / registration refuse
+them.
+
+- **`squirreljme`** (Java ME): its libretro glue passes `-jar <path>` as the
+  whole `argv`, but `sjme_nvm_parseCommandLine` starts at `argv[1]` (it treats
+  `argv[0]` as the program name), so it falls through to
+  `SJME_ERROR_INVALID_ARGUMENT` and `retro_load_game` returns `false` — the app
+  reports that as “the core refused to load `<jar>`”. It additionally needs a
+  SquirrelJME boot-suite jar in the system directory, which the buildbot does
+  not ship. Use the bundled FreeJ2ME-Plus for J2ME instead.
+
 `libretro/libretro.h` is the vendored ABI contract (the same header
 `crates/cgb-libretro` binds by hand).
 

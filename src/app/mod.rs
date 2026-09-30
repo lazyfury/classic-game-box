@@ -40,8 +40,8 @@ use crate::ui::{
     CONTENT_MAX_WIDTH, CONTENT_MIN_WIDTH,
 };
 use cgb_cores::{
-    cache_path, download_core_with_progress, load_cores, register_downloaded, registry_path,
-    update_catalog, write_catalog, Catalog, Platform, DEFAULT_SOURCE,
+    cache_path, download_core_with_progress, is_blocked, load_cores, register_downloaded,
+    registry_path, update_catalog, write_catalog, Catalog, Platform, DEFAULT_SOURCE,
 };
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{

@@ -9,7 +9,10 @@ mod catalog;
 mod cores;
 mod download;
 
-pub use catalog::{cache_path, registry_path, Catalog, CatalogEntry, Platform, DEFAULT_SOURCE};
+pub use catalog::{
+    cache_path, is_blocked, registry_path, Catalog, CatalogEntry, Platform, BLOCKED_CORES,
+    DEFAULT_SOURCE,
+};
 pub use cores::load_cores;
 pub use download::{
     download_core, download_core_with_progress, register_downloaded, update_catalog, write_catalog,

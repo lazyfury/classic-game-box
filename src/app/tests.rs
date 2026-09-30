@@ -207,6 +207,23 @@ fn a_core_whose_module_is_missing_is_not_offered() {
     let _ = std::fs::remove_dir_all(&paths.root);
 }
 
+#[test]
+fn a_blocked_core_is_never_offered() {
+    let paths = temp_paths("blocked");
+    // A blocked core registered before the blocklist existed is dropped.
+    std::fs::write(
+        paths.cores.join("downloaded.json"),
+        r#"{ "cores": [ { "key": "squirreljme", "system": "j2me", "dylib": "squirreljme_libretro.dylib" } ] }"#,
+    )
+    .expect("write registry");
+    std::fs::write(paths.cores.join("squirreljme_libretro.dylib"), b"").expect("write module");
+
+    assert!(!load_core_manifest(&paths)
+        .iter()
+        .any(|core| core.key == "squirreljme"));
+    let _ = std::fs::remove_dir_all(&paths.root);
+}
+
 fn spec(key: &str, system: SystemId) -> CoreSpec {
     CoreSpec {
         key: key.to_string(),
@@ -254,6 +271,16 @@ fn recommend_core_prefers_the_manifest_choice_then_the_catalog() {
     );
     // Nothing downloadable serves it.
     assert_eq!(recommend_core(&[], &catalog, SystemId::J2me), None);
+}
+
+#[test]
+fn recommend_core_skips_blocked_cores() {
+    // SquirrelJME is the only catalog J2ME core, but it is blocked, so the app
+    // must offer no recommendation for J2ME rather than suggest it.
+    let catalog = catalog(&[("squirreljme", "j2me")]);
+    assert_eq!(recommend_core(&[], &catalog, SystemId::J2me), None);
+    let shipped = vec![spec("squirreljme", SystemId::J2me)];
+    assert_eq!(recommend_core(&shipped, &catalog, SystemId::J2me), None);
 }
 
 #[test]

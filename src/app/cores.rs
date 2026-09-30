@@ -76,6 +76,14 @@ impl super::App {
     /// Download one core on a background thread; `poll_downloads` applies the
     /// result and re-reads the manifest.
     pub(super) fn download_core(&mut self, name: &str) {
+        if is_blocked(name) {
+            self.model.set_status(
+                format!("核心 {name} 已屏蔽（当前无法运行）"),
+                StatusKind::Error,
+            );
+            self.dirty = true;
+            return;
+        }
         if self.download_rx.is_some() {
             // One download at a time; a "download all" prompt queues the rest.
             if !self.download_queue.iter().any(|queued| queued == name) {

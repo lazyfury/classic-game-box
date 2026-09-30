@@ -99,6 +99,9 @@ pub fn register_downloaded(
     entry: &CatalogEntry,
     platform: Platform,
 ) -> Result<bool, DownloadError> {
+    if crate::is_blocked(&entry.name) {
+        return Ok(false);
+    }
     if cgb_systems::SystemId::parse_key(&entry.system).is_none() {
         return Ok(false);
     }

@@ -52,6 +52,20 @@ pub struct Catalog {
     pub cores: Vec<CatalogEntry>,
 }
 
+/// Cores the buildbot offers but this app deliberately hides: the module
+/// downloads and loads, yet cannot run any content here, so offering it only
+/// wastes a download. Kept in one place so the download catalog, the
+/// per-console recommendation and the downloader all agree. See
+/// cores/README.md ("Known gaps").
+pub const BLOCKED_CORES: &[&str] = &["squirreljme"];
+
+/// Whether a core name is on the blocklist (case-insensitive).
+pub fn is_blocked(name: &str) -> bool {
+    BLOCKED_CORES
+        .iter()
+        .any(|blocked| blocked.eq_ignore_ascii_case(name))
+}
+
 impl Catalog {
     /// The built-in snapshot, embedded at compile time.
     pub fn builtin() -> Self {
@@ -76,16 +90,15 @@ impl Catalog {
     }
 
     /// Case-insensitive substring search over name, display name and system.
-    /// An empty query lists everything.
+    /// An empty query lists everything. Blocked cores are never listed.
     pub fn search(&self, query: &str) -> Vec<&CatalogEntry> {
         let q = query.to_ascii_lowercase();
-        if q.is_empty() {
-            return self.cores.iter().collect();
-        }
         self.cores
             .iter()
+            .filter(|core| !is_blocked(&core.name))
             .filter(|core| {
-                core.name.to_ascii_lowercase().contains(&q)
+                q.is_empty()
+                    || core.name.to_ascii_lowercase().contains(&q)
                     || core.display_name.to_ascii_lowercase().contains(&q)
                     || core.system.to_ascii_lowercase().contains(&q)
             })
@@ -198,8 +211,25 @@ mod tests {
             .search("no-such-core-xyz")
             .iter()
             .any(|c| c.name == "snes9x"));
-        // An empty query lists everything.
-        assert_eq!(catalog.search("").len(), catalog.cores.len());
+        // An empty query lists everything except the blocked cores.
+        assert!(catalog
+            .search("")
+            .iter()
+            .all(|core| !is_blocked(&core.name)));
+        assert!(catalog.search("").len() < catalog.cores.len());
+    }
+
+    #[test]
+    fn blocked_cores_are_never_listed() {
+        let catalog = Catalog::builtin();
+        // The snapshot has it, but the search must not surface it.
+        assert!(catalog.get("squirreljme").is_some());
+        assert!(is_blocked("SquirrelJME"));
+        assert!(!catalog
+            .search("squirreljme")
+            .iter()
+            .any(|c| c.name == "squirreljme"));
+        assert!(!catalog.search("j2me").iter().any(|c| is_blocked(&c.name)));
     }
 
     #[test]

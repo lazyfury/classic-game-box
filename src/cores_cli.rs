@@ -5,8 +5,8 @@
 use std::path::Path;
 
 use cgb_cores::{
-    cache_path, download_core, register_downloaded, registry_path, update_catalog, write_catalog,
-    Catalog, CatalogEntry, Platform, DEFAULT_SOURCE,
+    cache_path, download_core, is_blocked, register_downloaded, registry_path, update_catalog,
+    write_catalog, Catalog, CatalogEntry, Platform, DEFAULT_SOURCE,
 };
 use cgb_libretro::CoreHost;
 use cgb_paths::Paths;
@@ -112,6 +112,10 @@ fn download(
         eprintln!("无法确定本机平台，buildbot 没有对应目录");
         return 1;
     };
+    if is_blocked(name) {
+        eprintln!("核心 {name} 已屏蔽（本应用无法运行它）");
+        return 1;
+    }
     let catalog = Catalog::load(cache);
     let entry = catalog.get(name).cloned().unwrap_or_else(|| CatalogEntry {
         name: name.to_string(),
