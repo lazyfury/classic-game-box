@@ -74,13 +74,23 @@ cargo bench --bench ui                 # UI 帧管线基准
 `src/app/{mod,cores}.rs::{load_core_manifest, resolve_core, find_module}` 与
 `cgb-systems::choose_core`。设置持久化按 key 字符串（`Settings::core_key`）。
 
-**加一个核心**：完整清单见 `cores/README.md` 的 "Adding a core"。简版：从
-`cores/build.sh.example` 抄一个 `cores/<name>/build.sh`（产出到 `cores/dist/`）+
-在 `cores/cores.json` 加一行 → `./scripts/build-cores.sh` 跑每个 `cores/*/build.sh`。
-新机种还要：`cgb-systems/src/system.rs` 的 `SystemId` 变体 + extensions，
-`cgb-library/src/settings.rs` 加 `<system>_core` 字段 + key 匹配；UI 不用改。
-验证：`nm -gU` 看 `retro_*`，并加进 `crates/cgb-libretro/tests/cores_run_through_the_host.rs`。
-要从 `--core <path>` 直接试，连清单都不用。
+**加一个核心**：完整流程见 `cores/README.md` 的 "Adding a core"。顺序：
+
+1. **先构建**：从 `cores/build.sh.example` 抄一个 `cores/<name>/build.sh`（产出到
+   `cores/dist/`）并跑通；无源码构建的（buildbot dylib / 随包二进制）就固定那份产物。
+2. **对齐 Rust 端 API**：用 `--core <path>` 或 host 测试跑真实核心，看它调了哪些
+   libretro environment，对照 `cgb-libretro/src/host.rs`（接受的像素格式
+   `XRGB8888`/`RGB565`、`need_fullpath`、`SET_HW_RENDER` 只给 OpenGL、core options
+   v1/v2、输入/rumble、system/save 目录）；缺的补 `host.rs`/`ffi.rs` 并加测试，私有扩展忽略。
+3. **清单**：在 `cores/cores.json` 加一行（`key`/`name`/`system`/`dylib`）。
+4. **新机种**：`cgb-systems/src/system.rs` 的 `SystemId` 变体 + extensions，
+   `cgb-library/src/settings.rs` 加 `<system>_core` 字段 + key 匹配；UI 不用改。
+5. **验证**：`nm -gU` 看 `retro_*`，并加进
+   `crates/cgb-libretro/tests/cores_run_through_the_host.rs`。要从 `--core <path>`
+   直接试，连清单都不用。
+6. **定发布方式**：必须离线 / 干净可分发 / buildbot 没有 → 加进 `scripts/core-profiles.sh`
+   的 `CGB_MINIMAL_CORES` 随包；buildbot 有且可商用 → 留作运行时下载（必要时
+   `./scripts/update-core-catalog.sh`）；有但跑不了 → 加 `BLOCKED_CORES`。
 
 **改 UI 视图**：`src/ui/model.rs` 加字段 → `src/ui/view/` 构建树 →
 `src/app/`（`app::mod` 的投影 + 对应功能模块）把状态投影进 `ViewModel`。

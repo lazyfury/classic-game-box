@@ -151,7 +151,10 @@ change).
   `<NAME>_SRC` env var overrides it with a local checkout.
 - One row in [`cores.json`](cores.json).
 
-### 1. Build script
+### 1. Build it first
+
+Get the module building before anything else: a core that does not emit a
+loadable `cores/dist/<dylib>` cannot be taken further.
 
 Copy [`build.sh.example`](build.sh.example) to `cores/<name>/build.sh`, fill
 in the clone URL, source dir and output name, and `chmod +x` it. There are two
@@ -234,13 +237,45 @@ system dir and puts `runtime/bin` on `PATH` so the core finds `java`. See
 `./scripts/build-cores.sh` runs every `cores/*/build.sh` in name order;
 `--skip-mgba` skips the cmake build.
 
-### 2. Manifest row
+### 2. Align the Rust side
+
+The front end drives every core through one libretro host
+(`crates/cgb-libretro/src/host.rs`). A new core may call an environment
+command the host does not answer yet, so run it through the real host (`--core
+<path>`, or the test in step 5) and watch the log, then close the gaps. What
+the host already covers:
+
+- **Pixel format** — `XRGB8888` and `RGB565` are accepted and converted to
+  RGBA8; anything else is refused and the core keeps its `0RGB1555` default. A
+  core that hardcodes RGB565 (mGBA, Snes9x, Genesis Plus GX, PicoDrive) needs
+  nothing.
+- **`need_fullpath`** — the app always passes the real path *and* the bytes, so
+  a core that reads the file (Mesen) and one that reads the buffer both work.
+- **Hardware render** — `SET_HW_RENDER` with `OPENGL_CORE` / `OPENGL` rides the
+  offscreen CGL GL path (`crates/cgb-libretro/src/gl.rs`); every other context
+  type (Vulkan included) is refused so the core can fall back. A software core
+  needs nothing.
+- **Core options / input** — core options v1 and v2,
+  `SET_CONTROLLER_PORT_DEVICE`, input descriptors, and a no-op rumble interface
+  are handled. A core that also wants the keyboard, mouse or pointer callbacks
+  is a host change (`host.rs::environment`), as is any new environment command.
+- **System / save directories** — `GET_SYSTEM_DIRECTORY` (`<app data>/system`)
+  and `GET_SAVE_DIRECTORY` are answered. A core that reads its own assets or
+  firmware from the system dir (PPSSPP, FreeJ2ME-Plus) also needs a seed step in
+  `src/app/mod.rs` and a copy in `scripts/package-macos.sh`; a BIOS is just a
+  file the user drops in, no code.
+
+Touch `ffi.rs` / `host.rs` only when the ABI genuinely needs it, keep the
+answers honest, and add a test for anything with a side effect. A private,
+non-libretro extension is ignored (`custom_nes_core`'s `fc_*` is never used).
+
+### 3. Manifest row
 
 Add the entry to [`cores.json`](cores.json) (see the format above). The console
 name in `system` is what ties the core to a loader — get it right and nothing
 else is needed.
 
-### 3. New console (only if `system` is not already supported)
+### 4. New console (only if `system` is not already supported)
 
 A small, mechanical Rust change; the core itself is still just data.
 
@@ -254,7 +289,7 @@ A small, mechanical Rust change; the core itself is still just data.
 
 No UI change: the library badge and play page read `SystemId`.
 
-### 4. Verify
+### 5. Verify
 
 ```bash
 ./scripts/build-cores.sh --skip-mgba
@@ -269,7 +304,27 @@ gate — it drives the core through the real `CoreHost`, including the pixel
 format conversion (see below). A core can also be tried with no row at all,
 straight from a path: `--core ./cores/dist/<dylib>`.
 
-### 5. Runtime notes (why most cores need no patch)
+### 6. Decide how it ships
+
+Once the core runs, pick how it reaches the player: not every core is bundled.
+
+- **Bundled** — add the key to `CGB_MINIMAL_CORES` in
+  `scripts/core-profiles.sh` when the core is small, clean to redistribute and
+  has no buildbot build (or must work offline out of the box), the way
+  `custom_nes_core` and `freej2me_plus` are. `scripts/package-macos.sh` then
+  copies its dylib into the app.
+- **Download-only** — leave it out and let the library page's “缺少核心” card /
+  the settings 下载核心 card offer it at runtime. Check the libretro buildbot
+  actually has it for the target platforms (`apple/osx/arm64`, `linux/x86_64`,
+  …); the catalog is a snapshot, so run `./scripts/update-core-catalog.sh` when
+  the core is new. The non-commercial cores (`snes9x`, `genesis_plus_gx`,
+  `picodrive`, `fbneo`) ship this way — they cannot be redistributed for sale.
+- **Blocked** — if the buildbot has it but it cannot run a game here, add the
+  key to `BLOCKED_CORES` (`crates/cgb-cores/src/catalog.rs`) so it is never
+  listed, recommended or registered. `squirreljme` is the current example; see
+  “Blocked cores”.
+
+### 7. Runtime notes (why most cores need no patch)
 
 - **Pixel format:** the host accepts `XRGB8888` and `RGB565` and converts both
   to RGBA8; anything else is refused and the core keeps its `0RGB1555` default.
