@@ -197,7 +197,7 @@ pub fn run(args: Args) {
     .plugin(igui_winit::WinitPlugin::new(WindowConfig {
         title,
         size,
-        titlebar: TitlebarMode::Transparent,
+        titlebar: TitlebarMode::Native,
         ime: true,
     }))
     // The surface and backend, published as the `SharedBackend` service.

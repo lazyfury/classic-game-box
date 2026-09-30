@@ -266,7 +266,7 @@ pub fn build(
         .gap(0.0)
         .padding(Edges::ZERO)
         .mouse_filter(MouseFilter::Ignore)
-        .child(header(theme, model))
+        // .child(header(theme, model))
         .child(
             Flex::row()
                 .grow(1.0)
