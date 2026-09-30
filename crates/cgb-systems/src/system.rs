@@ -13,6 +13,9 @@ pub enum SystemId {
     Nes,
     Gba,
     Gb,
+    /// Super Nintendo / Super Famicom (the 16-bit Nintendo console). A
+    /// software-rendered core; no BIOS or DSP ROM is required.
+    Snes,
     /// Sega Mega Drive / Genesis (the 16-bit console).
     Genesis,
     /// Sega Master System.
@@ -39,6 +42,7 @@ pub const SYSTEMS: &[SystemId] = &[
     SystemId::Nes,
     SystemId::Gba,
     SystemId::Gb,
+    SystemId::Snes,
     SystemId::Genesis,
     SystemId::MasterSystem,
     SystemId::GameGear,
@@ -57,6 +61,7 @@ impl SystemId {
             SystemId::Nes => "NES / FC",
             SystemId::Gba => "Game Boy Advance",
             SystemId::Gb => "Game Boy / Color",
+            SystemId::Snes => "Super Nintendo / SFC",
             SystemId::Genesis => "Sega Mega Drive / Genesis",
             SystemId::MasterSystem => "Sega Master System",
             SystemId::GameGear => "Sega Game Gear",
@@ -76,6 +81,7 @@ impl SystemId {
             SystemId::Nes => "NES",
             SystemId::Gba => "GBA",
             SystemId::Gb => "GB",
+            SystemId::Snes => "SNES",
             SystemId::Genesis => "MD",
             SystemId::MasterSystem => "SMS",
             SystemId::GameGear => "GG",
@@ -94,6 +100,11 @@ impl SystemId {
             SystemId::Nes => &["nes"],
             SystemId::Gba => &["gba"],
             SystemId::Gb => &["gb", "gbc"],
+            // Super Nintendo ROM images. `.bin` is a raw Mega Drive dump and
+            // stays with Genesis; a SNES `.bin` is fixed per game from the
+            // card's "选择机种…" menu. `.bs`/`.st` are left out: they need a
+            // BS-X / Sufami Turbo BIOS the app does not bundle.
+            SystemId::Snes => &["sfc", "smc", "fig", "swc"],
             // `.bin` is the common raw Mega Drive dump; nothing else here
             // claims it, and the scanner only admits known extensions.
             SystemId::Genesis => &["md", "gen", "smd", "bin"],
@@ -121,6 +132,7 @@ impl SystemId {
             SystemId::Nes => "nes",
             SystemId::Gba => "gba",
             SystemId::Gb => "gb",
+            SystemId::Snes => "snes",
             SystemId::Genesis => "genesis",
             SystemId::MasterSystem => "sms",
             SystemId::GameGear => "gg",
@@ -140,6 +152,7 @@ impl SystemId {
             "nes" => Some(SystemId::Nes),
             "gba" => Some(SystemId::Gba),
             "gb" | "gbc" => Some(SystemId::Gb),
+            "snes" | "sfc" => Some(SystemId::Snes),
             "genesis" | "md" | "megadrive" => Some(SystemId::Genesis),
             "sms" => Some(SystemId::MasterSystem),
             "gg" => Some(SystemId::GameGear),
@@ -173,6 +186,7 @@ pub fn system_for_path(path: &str) -> SystemId {
     match extension_of(path).as_str() {
         "gba" => SystemId::Gba,
         "gb" | "gbc" => SystemId::Gb,
+        "sfc" | "smc" | "fig" | "swc" => SystemId::Snes,
         "md" | "gen" | "smd" | "bin" => SystemId::Genesis,
         "sms" => SystemId::MasterSystem,
         "gg" => SystemId::GameGear,
@@ -196,6 +210,10 @@ mod tests {
         assert_eq!(system_for_path("pokemon.GBA"), SystemId::Gba);
         assert_eq!(system_for_path("tetris.gb"), SystemId::Gb);
         assert_eq!(system_for_path("tetris.gbc"), SystemId::Gb);
+        assert_eq!(system_for_path("mario.sfc"), SystemId::Snes);
+        assert_eq!(system_for_path("MARIO.SMC"), SystemId::Snes);
+        assert_eq!(system_for_path("mario.fig"), SystemId::Snes);
+        assert_eq!(system_for_path("mario.swc"), SystemId::Snes);
         assert_eq!(system_for_path("sonic.md"), SystemId::Genesis);
         assert_eq!(system_for_path("sonic.gen"), SystemId::Genesis);
         assert_eq!(system_for_path("sonic.smd"), SystemId::Genesis);

@@ -8,6 +8,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 |---|---|---|---|---|
 | `mesen` | NES / FC | `libretro/Mesen` | `dist/mesen_libretro.dylib` | ✅ arm64, synthetic NROM |
 | `mgba` | GB / GBC / GBA | `libretro/mgba` | `dist/mgba_libretro.dylib` | ✅ arm64, RGB565, synthetic GBA ROM |
+| `snes9x` | SNES / SFC | `libretro/snes9x` | `dist/snes9x_libretro.dylib` | ✅ arm64, RGB565, synthetic LoROM |
 | `nestopia` | NES / FC | `libretro/nestopia` | `dist/nestopia_libretro.dylib` | ✅ arm64, synthetic NROM |
 | `custom_nes_core` | NES / FC | `legacy/packages/fc-{core,libretro}` | `dist/custom_nes_core_libretro.dylib` | ✅ arm64 (clang++ direct), synthetic NROM |
 | `fbneo` | Arcade | `libretro/FBNeo` | `dist/fbneo_libretro.dylib` | ✅ arm64, loads standard Neo Geo sets (encrypted C-ROMs) |
@@ -48,7 +49,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 - `name` defaults to `key`.
 - `sample_rate` / `fps` are hints only: the real values come from the core's
   own `av_info` after a game loads.
-- `system` is `nes`, `gba`, `gb`, `gbc`, `arcade`, `n64`, `psp`, `ps1`, `j2me` (or one of
+- `system` is `nes`, `gba`, `gb`, `gbc`, `snes`, `arcade`, `n64`, `psp`, `ps1`, `j2me` (or one of
   the Sega keys); an unknown system is skipped with a
   warning. A duplicate `(system, key)` keeps the first.
 - `option_defaults` (optional) is a `{ "core_option_key": "value" }` map the
@@ -113,6 +114,17 @@ git submodules (`platform/libpicofe`, `cpu/cyclone`, `pico/cd/libchdr`,
 `--recurse-submodules`. It builds from `Makefile.libretro` at the
 `libretro/picodrive` repo root with `platform=osx`, renders **RGB565**, declares
 `need_fullpath`, and lists once per console like Genesis Plus GX.
+
+`snes9x` is the Super Nintendo / SFC core. It is software-rendered: it asks
+for **RGB565** (the host converts it) and never calls `SET_HW_RENDER`, so it
+rides the plain frame path with no OpenGL. SuperFX / SA-1 / CX4 / SDD-1 /
+SPC7110 / MSU-1 and the DSP-1..4 mixers are emulated in-tree (the DSP firmware
+table is compiled in), so a regular SNES game needs **no BIOS or firmware
+ROM**; only BS-X (`BS-X.bin`) and Sufami Turbo (`STBIOS.bin`) want one, and the
+manifest does not expose `.bs`/`.st`. It is a Makefile core, but the file is
+`libretro/Makefile` (not the repo root), has no submodules, and needs no
+deployment-target override on arm64. `.bin` stays with Genesis, so a SNES `.bin`
+is fixed per game from the card's “选择机种…” menu.
 
 `ppsspp` is the PlayStation Portable core. Its `build.sh` installs the libretro
 buildbot's `apple/osx/arm64` dylib instead of compiling: the upstream libretro

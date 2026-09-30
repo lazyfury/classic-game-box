@@ -198,6 +198,14 @@ impl KeyboardBindings {
             bindings.bind(Key::Character('e'), JoypadButton::R); // R1
             bindings.bind(Key::Character('r'), JoypadButton::L2); // L2
             bindings.bind(Key::Character('f'), JoypadButton::R2); // R2
+        } else if system == SystemId::Snes {
+            // Snes9x's libretro ids: B = B, A = A, Y = Y, X = X, L/R = the
+            // shoulders. The base layout already covers B (`z`/`j`), A
+            // (`x`/`k`), the D-pad, Start and Select; add the rest.
+            bindings.bind(Key::Character('c'), JoypadButton::Y); // SNES Y
+            bindings.bind(Key::Character('v'), JoypadButton::X); // SNES X
+            bindings.bind(Key::Character('q'), JoypadButton::L);
+            bindings.bind(Key::Character('e'), JoypadButton::R);
         } else if system == SystemId::J2me {
             // FreeJ2ME's libretro buttons, straight from its input descriptors:
             // Y = "OK/Fire", SELECT = "Left Softkey", START = "Right Softkey",
@@ -653,6 +661,23 @@ mod tests {
             ('e', JoypadButton::R),  // R1
             ('r', JoypadButton::L2), // L2
             ('f', JoypadButton::R2), // R2
+        ] {
+            bindings.apply(Key::Character(key), true, &mut state, 0);
+            assert!(state.is_down(0, button), "{key:?} -> {button:?}");
+        }
+    }
+
+    #[test]
+    fn the_snes_layout_adds_x_y_and_shoulders() {
+        let bindings = KeyboardBindings::default_bindings_for(SystemId::Snes);
+        let mut state = InputState::new();
+        for (key, button) in [
+            ('z', JoypadButton::B), // SNES B
+            ('x', JoypadButton::A), // SNES A
+            ('c', JoypadButton::Y), // SNES Y
+            ('v', JoypadButton::X), // SNES X
+            ('q', JoypadButton::L),
+            ('e', JoypadButton::R),
         ] {
             bindings.apply(Key::Character(key), true, &mut state, 0);
             assert!(state.is_down(0, button), "{key:?} -> {button:?}");

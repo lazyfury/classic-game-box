@@ -41,13 +41,20 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   `Session::advance(dt)` 的时间累积驱动，`needs_frame` 在跑游戏/带动画 overlay/倒带时为真。
   改名 / 搜索 / 标签编辑用上游 `igui_components::TextInput`（自带 caret/选区/IME 预编辑）。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
-  （mesen / mgba / nestopia / custom_nes_core / fbneo / genesis_plus_gx / picodrive /
-  parallel_n64 / ppsspp / mednafen_psx_hw / freej2me_plus）；
+  （mesen / mgba / nestopia / custom_nes_core / fbneo / snes9x / genesis_plus_gx /
+  picodrive / parallel_n64 / ppsspp / mednafen_psx_hw / freej2me_plus）；
   `--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
   Sega 系（genesis / sms / gg / sg1000）有两个核心：Genesis Plus GX 与轻量的
   PicoDrive（同一模块四个机种，PicoDrive 是首个带 git submodule 的核心）。
   街机是 `SystemId::Arcade`（`.zip` → FBNeo，按 CRC 读标准 Neo Geo 套）。
+- **超任（SNES/SFC）**：`SystemId::Snes`（`.sfc/.smc/.fig/.swc`）→ **Snes9x**
+  （`libretro/snes9x`，Makefile 在 `libretro/` 子目录，无 submodule）。**软件渲染**，
+  输出 RGB565（宿主转换），不走 `SET_HW_RENDER`；SuperFX/SA-1/CX4/DSP1–4/MSU-1 等
+  全内建，常规游戏**无 BIOS**（仅 BS-X/Sufami Turbo 可选，未开放该扩展名）。
+  倒带**保留**（state ~804 KB，与 mGBA 同量级）。`.bin` 仍归 Genesis，SNES 的
+  `.bin` 用卡片「选择机种…」覆盖。真机：
+  `cargo run -p cgb-app -- --rom game.sfc`（`./cores/snes9x/build.sh` 构建）。
 - **N64 硬件加速（GL 路径）**：`SystemId::N64`（`.z64/.n64/.v64`）→
   ParaLLEl-N64 + GLideN64。`cgb-libretro` 实现 `SET_HW_RENDER`：用一个
   **离屏 CGL 4.1 core 上下文 + FBO**（`crates/cgb-libretro/src/gl.rs`）接管核心

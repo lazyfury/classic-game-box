@@ -38,6 +38,29 @@ fn gba_rom() -> Vec<u8> {
     rom
 }
 
+/// A minimal Super Nintendo LoROM: 32 KiB with a header at `0x7FC0` and a
+/// reset vector that jumps into a self-loop at `$8000`. Snes9x accepts it and
+/// reports its default 256x224, 32040 Hz output.
+fn lorom() -> Vec<u8> {
+    let mut rom = vec![0xEAu8; 0x8000]; // NOP fill
+    rom[0x7FC0..0x7FC0 + 21].copy_from_slice(b"CGB SYNTHETIC SNES   ");
+    rom[0x7FD5] = 0x20; // map mode: LoROM, slow
+    rom[0x7FD6] = 0x00; // cartridge type: ROM only
+    rom[0x7FD7] = 0x05; // ROM size: 32 KiB
+    rom[0x7FFA] = 0x00;
+    rom[0x7FFB] = 0x80; // NMI -> $8000
+    rom[0x7FF8] = 0x00;
+    rom[0x7FF9] = 0x80; // IRQ -> $8000
+    rom[0x7FFC] = 0x00;
+    rom[0x7FFD] = 0x80; // reset -> $8000
+    rom[0x7FDE] = 0xFF;
+    rom[0x7FDF] = 0xFF; // checksum
+    rom[0] = 0x4C;
+    rom[1] = 0x00;
+    rom[2] = 0x80; // JMP $8000 (self loop)
+    rom
+}
+
 fn dist_core(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../cores/dist")
@@ -143,6 +166,27 @@ fn cores_run_through_the_host() {
         tested += 1;
     } else {
         eprintln!("skip: {} not built", mgba.display());
+    }
+
+    // Snes9x is software-rendered and asks for RGB565 (converted by the host),
+    // so a synthetic LoROM drives it end to end — no BIOS or DSP ROM needed.
+    let snes9x = dist_core("snes9x_libretro.dylib");
+    if snes9x.is_file() {
+        let (host, av) = run(&snes9x, "test.sfc", &lorom());
+        assert_eq!((av.width, av.height), (256, 224));
+        assert!(
+            (av.sample_rate - 32_040.0).abs() < 1.0,
+            "snes9x reported {}Hz, manifest says 32040",
+            av.sample_rate
+        );
+        eprintln!(
+            "snes9x_libretro.dylib: {}x{} @ {:.3}fps",
+            av.width, av.height, av.fps
+        );
+        drop(host);
+        tested += 1;
+    } else {
+        eprintln!("skip: {} not built", snes9x.display());
     }
 
     // FBNeo has no synthetic ROM: prove it opens through the loader and

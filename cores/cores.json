@@ -25,6 +25,14 @@
       "fps": 59.7275
     },
     {
+      "key": "snes9x",
+      "name": "Snes9x",
+      "system": "snes",
+      "dylib": "snes9x_libretro.dylib",
+      "sample_rate": 32040,
+      "fps": 60.0988
+    },
+    {
       "key": "genesis_plus_gx",
       "name": "Genesis Plus GX",
       "system": "genesis",
