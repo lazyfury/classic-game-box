@@ -8,11 +8,11 @@
 //! There is no `winit` here: Swift drives the clock and forwards events (see
 //! `ffi.rs`).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::rc::Rc;
 
-use cgb_app::app::SharedBackend;
+use cgb_app::app::{HostWindow, SharedBackend};
 use igui::igui_app::{App, AppBuilder, LifecycleObserver, Plugin, PresentOutcome, Presenter};
 use igui::igui_backend_wgpu::wgpu;
 use igui::igui_backend_wgpu::{FontConfig, FontMetrics, FontMode, WgpuBackend};
@@ -70,6 +70,29 @@ impl MacGpu {
         state.scale = scale;
         let scale = if scale > 0.0 { scale as f32 } else { 1.0 };
         state.backend.borrow_mut().set_scale_factor(scale);
+    }
+}
+
+/// The host window the app asks for fullscreen.
+///
+/// The app calls [`HostWindow::set_fullscreen`]; the request is parked here and
+/// Swift polls it with `cgb_mac_take_fullscreen` (so Swift keeps the AppKit
+/// `toggleFullScreen:` animation and no callback crosses the boundary).
+#[derive(Clone, Default)]
+pub struct MacHostWindow {
+    request: Rc<Cell<Option<bool>>>,
+}
+
+impl MacHostWindow {
+    /// Take the pending request, if any.
+    pub fn take_request(&self) -> Option<bool> {
+        self.request.take()
+    }
+}
+
+impl HostWindow for MacHostWindow {
+    fn set_fullscreen(&self, on: bool) {
+        self.request.set(Some(on));
     }
 }
 

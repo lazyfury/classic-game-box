@@ -105,6 +105,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func tick() {
         guard let app else { return }
         cgb_mac_frame(app)
+        syncFullscreen()
+    }
+
+    /// Apply a fullscreen request the Rust app parked for the window.
+    private func syncFullscreen() {
+        guard let app, let window else { return }
+        switch cgb_mac_take_fullscreen(app) {
+        case 1 where !window.styleMask.contains(.fullScreen):
+            window.toggleFullScreen(nil)
+        case 0 where window.styleMask.contains(.fullScreen):
+            window.toggleFullScreen(nil)
+        default:
+            break
+        }
     }
 
     private func installMenu() {

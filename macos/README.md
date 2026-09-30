@@ -65,7 +65,8 @@ swift build --package-path macos  # macos/.build/debug/cgb-mac
 
 Working: the library UI renders into Swift's Metal layer; pointer (click,
 double-click, drag, wheel) and keyboard (named keys, text, modifiers) are
-forwarded; resizing reconfigures the surface; dropped files import.
+forwarded; resizing reconfigures the surface; dropped files import; the
+in-app fullscreen toggle is applied by Swift.
 
 Known gaps:
 
@@ -74,8 +75,6 @@ Known gaps:
 - IME is a minimal `NSTextInputClient` (preedit / commit forwarded,
   `hasMarkedText` always false); CJK composition is untested.
 - Clipboard (Cmd+C/V) is not wired, so text-field copy/paste does nothing.
-- Fullscreen: the Rust app asks a `HostWindow`, but this host publishes none
-  yet, so the in-app fullscreen toggle is a no-op.
 - Audio goes through Rust `cpal` (as in the main app).
 - Packaging: a dev build links `target/debug/deps/libcgb_mac.dylib` by absolute
   path; a release `.app` would copy/`@rpath` it.

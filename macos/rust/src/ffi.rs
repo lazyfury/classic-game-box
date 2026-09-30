@@ -5,18 +5,19 @@ use std::ffi::{c_char, c_void, CStr};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use cgb_app::app::App as CgbApp;
+use cgb_app::app::{App as CgbApp, SharedHostWindow};
 use cgb_app::cli::Args;
 use igui::igui_app::{App as IguiApp, AppConfig, PlatformEvent};
 use igui::igui_core::{ImeEvent, Vec2};
 
-use crate::host::{MacGpu, MacGpuPlugin, MacSurface, MacTextMeasurePlugin};
+use crate::host::{MacGpu, MacGpuPlugin, MacHostWindow, MacSurface, MacTextMeasurePlugin};
 use crate::input::{key_from_code, modifiers_from_bits, pointer_button, MacEvent, MacInputPlugin};
 
 /// A running embedded app. Opaque to C (`CgbMacApp`).
 pub struct CgbMacApp {
     app: IguiApp,
     gpu: MacGpu,
+    host_window: MacHostWindow,
     drops: Rc<RefCell<Vec<PathBuf>>>,
 }
 
@@ -97,6 +98,7 @@ pub unsafe extern "C" fn cgb_mac_start(
     let logic = CgbApp::new(args);
     let drops = logic.drop_sink();
     let (gpu_plugin, gpu) = MacGpuPlugin::new();
+    let host_window = MacHostWindow::default();
 
     let mut builder = IguiApp::new(AppConfig {
         title: "Classic Game Box".to_string(),
@@ -113,11 +115,18 @@ pub unsafe extern "C" fn cgb_mac_start(
         height,
         scale,
     });
+    let host: SharedHostWindow = Rc::new(host_window.clone());
+    builder.insert_service(host);
 
     let mut app = builder.build();
     app.resumed();
 
-    Box::into_raw(Box::new(CgbMacApp { app, gpu, drops }))
+    Box::into_raw(Box::new(CgbMacApp {
+        app,
+        gpu,
+        host_window,
+        drops,
+    }))
 }
 
 /// Tear the app down.
@@ -156,6 +165,23 @@ pub unsafe extern "C" fn cgb_mac_frame(app: *mut CgbMacApp) {
 #[no_mangle]
 pub unsafe extern "C" fn cgb_mac_needs_frame(app: *const CgbMacApp) -> bool {
     unsafe { app.as_ref() }.is_some_and(|app| app.app.needs_frame())
+}
+
+/// The pending fullscreen request: `1` enter, `0` leave, `-1` none.
+///
+/// The app parks a request in `HostWindow::set_fullscreen`; Swift applies it
+/// with AppKit's own `toggleFullScreen:` animation.
+///
+/// # Safety
+///
+/// `app` must be a live pointer from `cgb_mac_start`.
+#[no_mangle]
+pub unsafe extern "C" fn cgb_mac_take_fullscreen(app: *mut CgbMacApp) -> i32 {
+    match unsafe { app.as_ref() }.and_then(|app| app.host_window.take_request()) {
+        Some(true) => 1,
+        Some(false) => 0,
+        None => -1,
+    }
 }
 
 /// Resize the drawable (physical pixels) and update the backing scale.

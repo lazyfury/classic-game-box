@@ -41,6 +41,12 @@ void cgb_mac_frame(CgbMacApp *app);
  */
 bool cgb_mac_needs_frame(const CgbMacApp *app);
 
+/*
+ * The pending fullscreen request: 1 enter, 0 leave, -1 none. The app parks a
+ * request; Swift applies it with AppKit's own `toggleFullScreen:` animation.
+ */
+int32_t cgb_mac_take_fullscreen(CgbMacApp *app);
+
 /* Resize the drawable (physical pixels) and update the backing scale. */
 void cgb_mac_resize(CgbMacApp *app, uint32_t width, uint32_t height, double scale);
 
