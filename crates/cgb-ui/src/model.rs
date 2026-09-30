@@ -66,6 +66,8 @@ pub enum EditKind {
     Tags,
     /// The library search query.
     Search,
+    /// The downloadable-core catalog search query.
+    CatalogSearch,
 }
 
 /// An in-progress text edit. The app owns the keyboard while this is set and
@@ -360,6 +362,19 @@ pub struct CoreRow {
     pub selected: bool,
 }
 
+/// One core in the settings page's "download a core" list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatalogRow {
+    /// The buildbot name (`mame`, `snes9x`, …).
+    pub name: String,
+    /// The display name from `libretro-core-info`.
+    pub display_name: String,
+    /// The core-info `systemid` (`super_nes`, `mame`, …).
+    pub system: String,
+    /// Whether a module with this name is already in the cores directory.
+    pub downloaded: bool,
+}
+
 /// One joypad button and the keys bound to it, for the settings page.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BindingRow {
@@ -490,6 +505,18 @@ pub struct ViewModel {
     /// The library / screenshots grid column count. The app steps it 2 / 3 / 4
     /// from the middle width (see [`library_columns`](crate::library_columns)).
     pub grid_columns: usize,
+    /// The downloadable-core catalog, filtered by [`catalog_query`](Self::catalog_query).
+    pub catalog: Vec<CatalogRow>,
+    /// The catalog search query.
+    pub catalog_query: String,
+    /// How many cores the whole catalog holds, before filtering.
+    pub catalog_total: usize,
+    /// The core currently downloading, if any.
+    pub catalog_downloading: Option<String>,
+    /// A human line about the catalog / download state.
+    pub catalog_status: String,
+    /// Download progress in `0.0..=1.0`; `None` when the total is unknown.
+    pub catalog_progress: Option<f32>,
 }
 
 impl ViewModel {
@@ -546,6 +573,12 @@ impl Default for ViewModel {
             core_options: Vec::new(),
             middle_width: 320.0,
             grid_columns: 2,
+            catalog: Vec::new(),
+            catalog_query: String::new(),
+            catalog_total: 0,
+            catalog_downloading: None,
+            catalog_status: String::new(),
+            catalog_progress: None,
         }
     }
 }
@@ -585,6 +618,14 @@ pub enum Action {
     FilterSystem(Option<SystemId>),
     /// Make the core at this `cores` index the pick for its console.
     SelectCore(usize),
+    /// Begin typing a downloadable-core catalog search.
+    StartCatalogSearch,
+    /// Clear the downloadable-core catalog search query.
+    ClearCatalogSearch,
+    /// Refresh the downloadable-core catalog from the network.
+    RefreshCatalog,
+    /// Download the catalog core at this `catalog` index.
+    DownloadCore(usize),
     /// Pin or unpin the game at this library index.
     TogglePin(usize),
     /// Ask to delete something destructive; the app opens a confirmation dialog.

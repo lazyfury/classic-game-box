@@ -150,16 +150,16 @@ impl SystemId {
     pub fn parse_key(key: &str) -> Option<SystemId> {
         match key.to_ascii_lowercase().as_str() {
             "nes" => Some(SystemId::Nes),
-            "gba" => Some(SystemId::Gba),
-            "gb" | "gbc" => Some(SystemId::Gb),
-            "snes" | "sfc" => Some(SystemId::Snes),
-            "genesis" | "md" | "megadrive" => Some(SystemId::Genesis),
-            "sms" => Some(SystemId::MasterSystem),
-            "gg" => Some(SystemId::GameGear),
-            "sg1000" | "sg" => Some(SystemId::Sg1000),
-            "arcade" => Some(SystemId::Arcade),
-            "n64" => Some(SystemId::N64),
-            "psp" => Some(SystemId::Psp),
+            "gba" | "game_boy_advance" => Some(SystemId::Gba),
+            "gb" | "gbc" | "game_boy" | "game_boy_color" => Some(SystemId::Gb),
+            "snes" | "sfc" | "super_nes" | "super_famicom" => Some(SystemId::Snes),
+            "genesis" | "md" | "megadrive" | "mega_drive" => Some(SystemId::Genesis),
+            "sms" | "master_system" => Some(SystemId::MasterSystem),
+            "gg" | "game_gear" => Some(SystemId::GameGear),
+            "sg1000" | "sg" | "sg-1000" => Some(SystemId::Sg1000),
+            "arcade" | "mame" | "fb_alpha" | "fbneo" | "neogeo" => Some(SystemId::Arcade),
+            "n64" | "nintendo_64" => Some(SystemId::N64),
+            "psp" | "playstation_portable" => Some(SystemId::Psp),
             "ps1" | "psx" | "playstation" => Some(SystemId::PlayStation),
             "j2me" | "java" => Some(SystemId::J2me),
             _ => None,
@@ -248,6 +248,30 @@ mod tests {
         assert_eq!(SystemId::parse_key("MEGADRIVE"), Some(SystemId::Genesis));
         assert_eq!(SystemId::parse_key("md"), Some(SystemId::Genesis));
         assert_eq!(SystemId::parse_key("wonderswan"), None);
+    }
+
+    #[test]
+    fn libretro_core_info_system_ids_map_to_consoles() {
+        // The downloadable-core catalog carries libretro's `systemid`, which
+        // differs from our keys; the mapping lives here so one table serves
+        // the manifest, the catalog and the settings.
+        assert_eq!(SystemId::parse_key("super_nes"), Some(SystemId::Snes));
+        assert_eq!(SystemId::parse_key("game_boy_advance"), Some(SystemId::Gba));
+        assert_eq!(SystemId::parse_key("mega_drive"), Some(SystemId::Genesis));
+        assert_eq!(
+            SystemId::parse_key("master_system"),
+            Some(SystemId::MasterSystem)
+        );
+        assert_eq!(SystemId::parse_key("fb_alpha"), Some(SystemId::Arcade));
+        assert_eq!(SystemId::parse_key("mame"), Some(SystemId::Arcade));
+        assert_eq!(SystemId::parse_key("nintendo_64"), Some(SystemId::N64));
+        assert_eq!(
+            SystemId::parse_key("playstation_portable"),
+            Some(SystemId::Psp)
+        );
+        // A console we do not model stays unknown.
+        assert_eq!(SystemId::parse_key("wiiu"), None);
+        assert_eq!(SystemId::parse_key("nds"), None);
     }
 
     #[test]

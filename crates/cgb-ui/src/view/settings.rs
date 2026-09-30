@@ -6,13 +6,127 @@ use igui::igui_components::{
 };
 use igui::igui_core::Edges;
 use igui::igui_theme::{space, Theme, Tone};
-use igui::igui_ui::{Align, MouseFilter};
+use igui::igui_ui::{Align, Justify, MouseFilter};
 
-use crate::model::{Action, MsaaKind, ShaderKind, ViewModel};
+use crate::model::{Action, EditKind, MsaaKind, ShaderKind, ViewModel};
 use crate::theme::ThemeChoice;
 
-use super::components::{chip, chip_group};
+use super::components::{chip, chip_group, text_field};
 use super::Actions;
+
+/// The "download a core" card. The catalog is a local copy of the libretro
+/// buildbot's list (the built-in snapshot, or the cache `刷新下载源` writes);
+/// downloading runs on a background thread and reports through
+/// `catalog_status` / `catalog_progress`.
+fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &Actions) -> Card {
+    let mut search = Row::new().align(Align::Center).gap(space::XS);
+    if let Some(edit) = &model.editing {
+        if edit.kind == EditKind::CatalogSearch {
+            let done = actions.clone();
+            search = search
+                .child(text_field(theme, actions, "核心名称 / 机种…").grow(1.0))
+                .child(
+                    Button::primary("完成", theme)
+                        .mini()
+                        .on_click(move |_tree, _id| done.push(Action::CommitEdit)),
+                );
+        }
+    } else {
+        let start = actions.clone();
+        let label = if model.catalog_query.is_empty() {
+            "搜索可下载的核心…".to_string()
+        } else {
+            format!("搜索：{}", model.catalog_query)
+        };
+        search = search.child(
+            Button::new("", theme)
+                .child(
+                    Row::new()
+                        .grow(1.0)
+                        .shrink(1.0)
+                        .align(Align::Start)
+                        .justify(Justify::Start)
+                        .child(Text::caption(label, theme)),
+                )
+                .grow(1.0)
+                .on_click(move |_tree, _id| start.push(Action::StartCatalogSearch)),
+        );
+    }
+    let refresh = actions.clone();
+    search = search.child(
+        Button::secondary("刷新下载源", theme)
+            .mini()
+            .on_click(move |_tree, _id| refresh.push(Action::RefreshCatalog)),
+    );
+
+    let status = if let Some(name) = &model.catalog_downloading {
+        match model.catalog_progress {
+            Some(progress) => format!("正在下载 {name}… {:.0}%", progress * 100.0),
+            None => format!("正在下载 {name}…"),
+        }
+    } else {
+        model.catalog_status.clone()
+    };
+
+    let mut list = Column::new().gap(space::XS);
+    if !status.is_empty() {
+        list = list.child(Text::caption(status, theme).tone(Tone::Muted));
+    }
+    if model.catalog.is_empty() {
+        list = list.child(
+            Text::small(
+                format!(
+                    "输入名称搜索可下载的核心（共 {} 个）。",
+                    model.catalog_total
+                ),
+                theme,
+            )
+            .tone(Tone::Muted),
+        );
+    } else {
+        for (index, row) in model.catalog.iter().enumerate() {
+            let download = actions.clone();
+            let button = if row.downloaded {
+                Button::ghost("已下载", theme).mini()
+            } else {
+                Button::secondary("下载", theme)
+                    .mini()
+                    .on_click(move |_tree, _id| download.push(Action::DownloadCore(index)))
+            };
+            list = list.child(
+                Row::new()
+                    .align(Align::Center)
+                    .gap(space::SM)
+                    .child(
+                        Text::small(row.display_name.as_str(), theme)
+                            .grow(1.0)
+                            .max_lines(1)
+                            .ellipsis(true),
+                    )
+                    .child(Text::caption(row.system.as_str(), theme).tone(Tone::Muted))
+                    .child(button),
+            );
+        }
+        list = list.child(
+            Text::caption(
+                format!(
+                    "显示 {} / 共 {} 个",
+                    model.catalog.len(),
+                    model.catalog_total
+                ),
+                theme,
+            )
+            .tone(Tone::Muted),
+        );
+    }
+
+    Card::new(theme)
+        .gap(space::SM)
+        .padding(Edges::all(space::SM))
+        .child(Text::subheading("下载核心", theme))
+        .child(search)
+        .child(list)
+}
 
 pub(super) fn settings_page(
     theme: &'static dyn Theme,
@@ -262,6 +376,10 @@ pub(super) fn settings_page(
                 .child(inputs),
         );
     }
+
+    // Downloadable cores: search the catalog and fetch one into app data. Kept
+    // last so it does not push the everyday settings below the fold.
+    body = body.child(catalog_card(theme, model, actions));
 
     // Only the settings bodies scroll; the title stays put.
     let view = ScrollView::new(theme)

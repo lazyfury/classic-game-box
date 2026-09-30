@@ -59,6 +59,10 @@ png = "0.17"
 dirs = "5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The dynamic core downloader: a blocking HTTPS client (rustls, no OpenSSL)
+# and just the DEFLATE codec for the buildbot's `.zip` payloads.
+ureq = { version = "2", features = ["proxy-from-env"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 # Native file/folder dialogs. macOS uses the objc2 backend, which is
 # unconditional; the default `xdg-portal`/`async-std` features are Linux-only,
 # so drop them rather than pull a second async runtime into the lockfile.

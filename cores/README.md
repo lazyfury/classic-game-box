@@ -66,6 +66,36 @@ running from a checkout. `dylib` is a file name resolved in the packaged
 `cores/` dir and `dist/`, or an absolute path. The loader is
 `cgb-library::load_cores`; `cgb-systems::choose_core` makes the pick.
 
+## Downloading cores at runtime
+
+The app can fetch a core from the libretro buildbot instead of shipping every
+`.dylib`. The **catalog** ("下载源") is a local copy of the buildbot's core list:
+
+- `cores/catalog.json` — the **built-in snapshot**, embedded at compile time,
+  so search works offline. Regenerate it with `./scripts/update-core-catalog.sh`.
+- `<app data>/cores/catalog.json` — the **user cache**, written by
+  `--force-update`; the app prefers it over the snapshot when it parses.
+
+CLI:
+
+```bash
+classic-game-box --search-core snes        # search the catalog (offline)
+classic-game-box --force-update            # refresh the cache from the buildbot
+classic-game-box --download-core mame      # fetch a core, then open it to prove it loads
+```
+
+The download lands in `<app data>/cores/<name>_libretro.dylib` (which
+`find_module` already searches first) and is recorded in
+`<app data>/cores/downloaded.json`, so it shows up in the settings page's
+per-console core picker. A core whose console this app does not model is not
+registered — it loads only via `--core <path>`. The download URL is built from
+the current platform (`apple/osx/arm64`, `linux/x86_64`, …) and the buildbot's
+`latest/` directory; `--core-base-url` overrides the base.
+
+The settings page's **下载核心** card is the same thing with a search box: type a
+name, click 下载, and the download runs on a background thread while the status
+line shows progress. `刷新下载源` rewrites the cache.
+
 ## Adding a core
 
 Same process for a core you wrote or a third-party project. Two shapes: an

@@ -46,7 +46,7 @@ pub(super) fn library_page(
     column = column.child(Divider::horizontal(theme));
     column = column.child(search_bar(theme, model, actions));
     if let Some(edit) = &model.editing {
-        if edit.kind != EditKind::Search {
+        if matches!(edit.kind, EditKind::Name | EditKind::Tags) {
             column = column.child(edit_bar(theme, edit, actions));
         }
     }
@@ -197,6 +197,7 @@ pub(super) fn edit_bar(theme: &'static dyn Theme, edit: &EditState, actions: &Ac
         EditKind::Name => "改名",
         EditKind::Tags => "标签（用逗号分隔）",
         EditKind::Search => "搜索",
+        EditKind::CatalogSearch => "搜索核心",
     };
     let save = actions.clone();
     let cancel = actions.clone();

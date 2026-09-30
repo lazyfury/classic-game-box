@@ -11,6 +11,7 @@
 
 mod app;
 mod cli;
+mod cores_cli;
 mod selfcheck;
 mod session;
 
@@ -22,6 +23,7 @@ fn main() {
     }
     match cli::Args::parse(raw) {
         Ok(args) if args.selfcheck => std::process::exit(selfcheck::run()),
+        Ok(args) if args.is_core_command() => std::process::exit(cores_cli::run(&args)),
         Ok(args) => app::run(args),
         Err(error) => {
             eprintln!("{error}\n\n{}", cli::USAGE);

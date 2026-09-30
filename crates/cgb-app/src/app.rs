@@ -11,6 +11,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::mpsc::{channel, Receiver};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -33,13 +34,14 @@ use winit::window::{Fullscreen, Window};
 
 use cgb_input::{Gamepads, InputState, KeyboardBindings};
 use cgb_library::{
-    collect_games, decode_png, encode_png, import_roms, load_cores, seed_dir, seed_dir_recursive,
-    Game, ImportReport, Library, Paths, Settings,
+    cache_path, collect_games, decode_png, download_core_with_progress, encode_png, import_roms,
+    load_cores, register_downloaded, registry_path, seed_dir, seed_dir_recursive, update_catalog,
+    write_catalog, Catalog, Game, ImportReport, Library, Paths, Platform, Settings, DEFAULT_SOURCE,
 };
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
 use cgb_ui::{
-    library_columns, Action, Actions, BindingRow, Confirm, CoreOptionRow, CoreRow, EditKind,
-    EditState, FrameHandle, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
+    library_columns, Action, Actions, BindingRow, CatalogRow, Confirm, CoreOptionRow, CoreRow,
+    EditKind, EditState, FrameHandle, GameRow, InputDescriptorRow, MsaaKind, SafeArea, SaveSlotRow,
     ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, ThemeChoice, Ui,
     ViewModel, MIDDLE_MAX_WIDTH, MIDDLE_MIN_WIDTH,
 };
@@ -58,6 +60,22 @@ const PERF_REPORT_FRAMES: u64 = 120;
 
 /// Cover textures start above the game framebuffer's id, one per game.
 const COVER_TEXTURE_BASE: u32 = 0x1000;
+
+/// How many catalog rows the settings page mounts at once. The whole list is
+/// hundreds of cores; the search box narrows it, and this caps the layout cost.
+const CATALOG_LIST_LIMIT: usize = 40;
+
+/// What a background core download reports back to the UI thread.
+enum DownloadEvent {
+    /// Bytes received, and the total when the server sent `Content-Length`.
+    Progress { received: u64, total: Option<u64> },
+    /// A download finished; `registered` is whether the core joined the manifest.
+    Done { name: String, registered: bool },
+    /// A download or catalog refresh failed.
+    Failed { name: String, error: String },
+    /// The catalog cache was rewritten.
+    CatalogRefreshed(Box<Catalog>),
+}
 
 /// Screenshot thumbnails live in their own id space, above the covers.
 const SCREENSHOT_TEXTURE_BASE: u32 = 0x1_0000;
@@ -297,6 +315,11 @@ struct App {
     core_override: Option<CoreOverride>,
     /// Every core declared in `cores.json`, in manifest order.
     cores: Vec<CoreSpec>,
+    /// The downloadable-core catalog (the user cache, else the built-in
+    /// snapshot), for the settings page's search list.
+    catalog: Catalog,
+    /// A background download / catalog refresh in flight, with its events.
+    download_rx: Option<Receiver<DownloadEvent>>,
     /// Keyboard modifiers, so save-state hotkeys can tell save from load.
     modifiers: Modifiers,
     /// Files dropped onto the window since the last frame. The winit runner
@@ -422,6 +445,7 @@ impl App {
         };
         let library = Library::open(&paths.library_db).ok();
         let cores = load_core_manifest(&paths);
+        let catalog = Catalog::load(&cache_path(&paths.cores));
 
         let actions = Actions::default();
         let mode = if light { Mode::Light } else { Mode::Dark };
@@ -487,6 +511,8 @@ impl App {
             pending_rom: args.rom,
             core_override: args.core,
             cores,
+            catalog,
+            download_rx: None,
             modifiers: Modifiers::NONE,
             pending_drops: Rc::new(RefCell::new(Vec::new())),
             last_viewport: None,
@@ -1292,7 +1318,203 @@ impl App {
                 description: descriptor.description,
             })
             .collect();
+        self.rebuild_catalog();
         self.dirty = true;
+    }
+
+    /// Rebuild the settings page's downloadable-core rows from the query.
+    fn rebuild_catalog(&mut self) {
+        self.model.catalog_total = self.catalog.cores.len();
+        let platform = Platform::current();
+        let cores_dir = self.paths.cores.clone();
+        let query = self.model.catalog_query.trim().to_string();
+        // An empty query lists nothing: the catalog is hundreds of cores, and
+        // the search box is the way in.
+        self.model.catalog = if query.is_empty() {
+            Vec::new()
+        } else {
+            self.catalog
+                .search(&query)
+                .into_iter()
+                .take(CATALOG_LIST_LIMIT)
+                .map(|entry| CatalogRow {
+                    name: entry.name.clone(),
+                    display_name: entry.display_name.clone(),
+                    system: entry.system.clone(),
+                    downloaded: platform.is_some_and(|platform| {
+                        cores_dir.join(entry.module_file(platform)).is_file()
+                    }),
+                })
+                .collect()
+        };
+    }
+
+    /// Clear the catalog search and rebuild the list.
+    fn clear_catalog_search(&mut self) {
+        self.model.catalog_query.clear();
+        self.model.editing = None;
+        self.actions.clear_edit();
+        self.rebuild_catalog();
+        self.dirty = true;
+    }
+
+    /// Refresh the downloadable-core catalog on a background thread;
+    /// `poll_downloads` applies the result.
+    fn refresh_catalog(&mut self) {
+        if self.download_rx.is_some() {
+            return;
+        }
+        let Some(platform) = Platform::current() else {
+            self.model
+                .set_status("无法确定本机平台，无法刷新下载源", StatusKind::Error);
+            self.dirty = true;
+            return;
+        };
+        let cache = cache_path(&self.paths.cores);
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let result = update_catalog(DEFAULT_SOURCE, platform)
+                .and_then(|catalog| write_catalog(&cache, &catalog).map(|()| catalog));
+            let event = match result {
+                Ok(catalog) => DownloadEvent::CatalogRefreshed(Box::new(catalog)),
+                Err(error) => DownloadEvent::Failed {
+                    name: "下载源".to_string(),
+                    error: error.to_string(),
+                },
+            };
+            let _ = tx.send(event);
+        });
+        self.download_rx = Some(rx);
+        self.model.catalog_status = "正在刷新下载源…".to_string();
+        self.model.catalog_progress = None;
+        self.dirty = true;
+    }
+
+    /// Download one core on a background thread; `poll_downloads` applies the
+    /// result and re-reads the manifest.
+    fn download_core(&mut self, name: &str) {
+        if self.download_rx.is_some() {
+            return;
+        }
+        let Some(platform) = Platform::current() else {
+            self.model
+                .set_status("无法确定本机平台，无法下载核心", StatusKind::Error);
+            self.dirty = true;
+            return;
+        };
+        let entry = self
+            .catalog
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| cgb_library::CatalogEntry {
+                name: name.to_string(),
+                display_name: name.to_string(),
+                system: String::new(),
+                extensions: String::new(),
+            });
+        let cores_dir = self.paths.cores.clone();
+        let registry = registry_path(&cores_dir);
+        let (tx, rx) = channel();
+        let progress = tx.clone();
+        let entry_for_thread = entry.clone();
+        std::thread::spawn(move || {
+            let result = download_core_with_progress(
+                &entry_for_thread,
+                DEFAULT_SOURCE,
+                platform,
+                &cores_dir,
+                move |received, total| {
+                    let _ = progress.send(DownloadEvent::Progress { received, total });
+                },
+            );
+            let event = match result {
+                Ok(_path) => {
+                    let registered = register_downloaded(&registry, &entry_for_thread, platform)
+                        .unwrap_or(false);
+                    DownloadEvent::Done {
+                        name: entry_for_thread.name.clone(),
+                        registered,
+                    }
+                }
+                Err(error) => DownloadEvent::Failed {
+                    name: entry_for_thread.name.clone(),
+                    error: error.to_string(),
+                },
+            };
+            let _ = tx.send(event);
+        });
+        self.download_rx = Some(rx);
+        self.model.catalog_downloading = Some(entry.name.clone());
+        self.model.catalog_status = format!("正在下载 {}…", entry.name);
+        self.model.catalog_progress = Some(0.0);
+        self.dirty = true;
+    }
+
+    /// Drain the background download's events. Called once per frame.
+    fn poll_downloads(&mut self) {
+        let Some(rx) = self.download_rx.take() else {
+            return;
+        };
+        let mut events = Vec::new();
+        let mut disconnected = false;
+        loop {
+            match rx.try_recv() {
+                Ok(event) => events.push(event),
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    disconnected = true;
+                    break;
+                }
+            }
+        }
+        if !disconnected {
+            self.download_rx = Some(rx);
+        }
+        for event in events {
+            self.on_download_event(event);
+        }
+    }
+
+    /// Apply one background download event.
+    fn on_download_event(&mut self, event: DownloadEvent) {
+        match event {
+            DownloadEvent::Progress { received, total } => {
+                self.model.catalog_progress = total
+                    .filter(|total| *total > 0)
+                    .map(|total| (received as f32 / total as f32).clamp(0.0, 1.0));
+                self.dirty = true;
+            }
+            DownloadEvent::Done { name, registered } => {
+                self.model.catalog_downloading = None;
+                self.model.catalog_progress = None;
+                self.model.catalog_status = if registered {
+                    format!("已下载并登记 {name}")
+                } else {
+                    format!("已下载 {name}（机种暂不支持，用 --core <路径> 加载）")
+                };
+                self.cores = load_core_manifest(&self.paths);
+                self.rebuild_settings_view();
+                self.model
+                    .set_status(format!("核心 {name} 已就绪"), StatusKind::Success);
+                self.dirty = true;
+            }
+            DownloadEvent::Failed { name, error } => {
+                self.model.catalog_downloading = None;
+                self.model.catalog_progress = None;
+                self.model.catalog_status = format!("{name} 失败：{error}");
+                self.model
+                    .set_status(format!("{name} 失败：{error}"), StatusKind::Error);
+                self.dirty = true;
+            }
+            DownloadEvent::CatalogRefreshed(catalog) => {
+                self.catalog = *catalog;
+                self.model.catalog_status =
+                    format!("下载源已更新（{} 个核心）", self.catalog.cores.len());
+                self.rebuild_catalog();
+                self.model.set_status("下载源已更新", StatusKind::Success);
+                self.dirty = true;
+            }
+        }
     }
 
     /// Choose `dir` as the game library: remember it, point the library data
@@ -1867,6 +2089,15 @@ impl App {
                     self.rebuild_game_rows();
                 }
                 Action::SelectCore(index) => self.select_core(index),
+                Action::StartCatalogSearch => self.start_edit(-1, EditKind::CatalogSearch),
+                Action::ClearCatalogSearch => self.clear_catalog_search(),
+                Action::RefreshCatalog => self.refresh_catalog(),
+                Action::DownloadCore(index) => {
+                    if let Some(row) = self.model.catalog.get(index) {
+                        let name = row.name.clone();
+                        self.download_core(&name);
+                    }
+                }
                 Action::TogglePin(index) => self.toggle_pin(index),
                 Action::RequestDelete(confirm) => {
                     self.pending_confirm = Some(confirm);
@@ -1975,17 +2206,19 @@ impl App {
     /// Begin editing a game's name or tags; the app seeds the shared edit state
     /// the view mounts a `TextInput` from.
     fn start_edit(&mut self, game_id: i64, kind: EditKind) {
-        // A search is not tied to a game; rename / tag edits are.
-        let text = if kind == EditKind::Search {
-            self.model.search.clone()
-        } else {
-            let Some(game) = self.game_source.iter().find(|game| game.id == game_id) else {
-                return;
-            };
-            match kind {
-                EditKind::Name => game.name.clone(),
-                EditKind::Tags => game.tags.join(", "),
-                EditKind::Search => unreachable!("handled above"),
+        // Searches are not tied to a game; rename / tag edits are.
+        let text = match kind {
+            EditKind::Search => self.model.search.clone(),
+            EditKind::CatalogSearch => self.model.catalog_query.clone(),
+            EditKind::Name | EditKind::Tags => {
+                let Some(game) = self.game_source.iter().find(|game| game.id == game_id) else {
+                    return;
+                };
+                match kind {
+                    EditKind::Name => game.name.clone(),
+                    EditKind::Tags => game.tags.join(", "),
+                    EditKind::Search | EditKind::CatalogSearch => unreachable!("handled above"),
+                }
             }
         };
         self.actions
@@ -2010,16 +2243,19 @@ impl App {
 
     /// Discard the pending edit. A search edit also clears the query.
     fn cancel_edit(&mut self) {
-        let was_search = self
-            .model
-            .editing
-            .as_ref()
-            .is_some_and(|edit| edit.kind == EditKind::Search);
+        let kind = self.model.editing.as_ref().map(|edit| edit.kind);
         self.model.editing = None;
         self.actions.clear_edit();
-        if was_search {
-            self.model.search.clear();
-            self.rebuild_game_rows();
+        match kind {
+            Some(EditKind::Search) => {
+                self.model.search.clear();
+                self.rebuild_game_rows();
+            }
+            Some(EditKind::CatalogSearch) => {
+                self.model.catalog_query.clear();
+                self.rebuild_catalog();
+            }
+            _ => {}
         }
         self.dirty = true;
     }
@@ -2037,6 +2273,16 @@ impl App {
                 String::new()
             } else {
                 format!("搜索：{}", self.model.search)
+            };
+            self.model.set_status(message, StatusKind::Info);
+            self.dirty = true;
+            return;
+        }
+        if edit.kind == EditKind::CatalogSearch {
+            let message = if self.model.catalog_query.is_empty() {
+                String::new()
+            } else {
+                format!("搜索核心：{}", self.model.catalog_query)
             };
             self.model.set_status(message, StatusKind::Info);
             self.dirty = true;
@@ -2094,7 +2340,7 @@ impl App {
                     StatusKind::Success,
                 );
             }
-            EditKind::Search => {}
+            EditKind::Search | EditKind::CatalogSearch => {}
         }
         self.rebuild_game_rows();
         self.dirty = true;
@@ -2705,17 +2951,24 @@ impl AppLogic for App {
         self.feed(event);
         // A search filters as it is typed: read the field back and rebuild the
         // rows when the query changed.
-        if self
-            .model
-            .editing
-            .as_ref()
-            .is_some_and(|edit| edit.kind == EditKind::Search)
-        {
+        if let Some(kind) = self.model.editing.as_ref().map(|edit| edit.kind) {
             let text = self.actions.edit_text();
-            if text != self.model.search {
-                self.model.search = text;
-                self.rebuild_game_rows();
-                self.dirty = true;
+            match kind {
+                EditKind::Search => {
+                    if text != self.model.search {
+                        self.model.search = text;
+                        self.rebuild_game_rows();
+                        self.dirty = true;
+                    }
+                }
+                EditKind::CatalogSearch => {
+                    if text != self.model.catalog_query {
+                        self.model.catalog_query = text;
+                        self.rebuild_catalog();
+                        self.dirty = true;
+                    }
+                }
+                EditKind::Name | EditKind::Tags => {}
             }
         }
         EventResult::Handled
@@ -2728,6 +2981,7 @@ impl AppLogic for App {
     }
 
     fn update(&mut self, ctx: &FrameContext<'_>) {
+        self.poll_downloads();
         self.advance_frame(ctx.delta());
     }
 
@@ -2756,6 +3010,7 @@ impl AppLogic for App {
         self.rewinding
             || self.transition.is_some()
             || self.pending_fullscreen.is_some()
+            || self.download_rx.is_some()
             || self.ui.overlays_animating()
             || self
                 .session
@@ -2815,6 +3070,28 @@ fn open_path(path: &Path) {
 /// `cores/cores.json`. Missing is not an error — the app then just has no core
 /// to run, and says so when a game is started.
 fn load_core_manifest(paths: &Paths) -> Vec<CoreSpec> {
+    let mut cores = load_shipped_cores(paths);
+    // Cores fetched by `--download-core` are registered beside the catalog;
+    // merge them in so the core picker offers them. A shipped row with the same
+    // `(system, key)` wins the slot, but the downloaded module still shadows the
+    // packaged one because `find_module` looks in app data first.
+    let downloaded = paths.cores.join("downloaded.json");
+    if downloaded.is_file() {
+        for spec in load_cores(&downloaded) {
+            if !cores
+                .iter()
+                .any(|core| core.system == spec.system && core.key == spec.key)
+            {
+                cores.push(spec);
+            }
+        }
+    }
+    cores
+}
+
+/// The cores shipped with the app (packaged app-data copy, bundled Resources,
+/// or the checkout's `cores/cores.json`).
+fn load_shipped_cores(paths: &Paths) -> Vec<CoreSpec> {
     let packaged = paths.cores.join("cores.json");
     if packaged.is_file() {
         return load_cores(&packaged);
@@ -3208,6 +3485,41 @@ mod tests {
 
         let cores = load_core_manifest(&paths);
         assert!(cores.iter().any(|core| core.key == "x"));
+        let _ = std::fs::remove_dir_all(&paths.root);
+    }
+
+    #[test]
+    fn a_downloaded_core_is_merged_into_the_manifest() {
+        let paths = temp_paths("downloaded");
+        std::fs::write(
+            paths.cores.join("cores.json"),
+            r#"{ "cores": [ { "key": "snes9x", "system": "snes", "dylib": "snes9x_libretro.dylib" } ] }"#,
+        )
+        .expect("write manifest");
+        // The registry carries libretro's `systemid` (`super_nes`) and also
+        // duplicates the shipped `snes9x` row.
+        std::fs::write(
+            paths.cores.join("downloaded.json"),
+            r#"{ "cores": [
+                { "key": "bsnes", "name": "bsnes", "system": "super_nes", "dylib": "bsnes_libretro.dylib" },
+                { "key": "snes9x", "system": "snes", "dylib": "snes9x_libretro.dylib" }
+            ] }"#,
+        )
+        .expect("write registry");
+
+        let cores = load_core_manifest(&paths);
+        // The new core is offered for its console…
+        assert!(cores
+            .iter()
+            .any(|core| core.key == "bsnes" && core.system == SystemId::Snes));
+        // …and a downloaded row duplicating a shipped (system, key) stays once.
+        assert_eq!(
+            cores
+                .iter()
+                .filter(|core| core.key == "snes9x" && core.system == SystemId::Snes)
+                .count(),
+            1
+        );
         let _ = std::fs::remove_dir_all(&paths.root);
     }
 }

@@ -33,6 +33,24 @@ pub struct Args {
     pub light: bool,
     /// Run the headless checks and exit, without opening a window.
     pub selfcheck: bool,
+    /// Refresh the downloadable-core catalog from the network and exit
+    /// (`--force-update`).
+    pub force_update: bool,
+    /// Search the (cached) core catalog and exit (`--search-core <query>`).
+    pub search_cores: Option<String>,
+    /// Download one core into the app-data cores directory and exit
+    /// (`--download-core <name>`).
+    pub download_core: Option<String>,
+    /// Override the download source base URL (`--core-base-url <url>`).
+    pub core_base_url: Option<String>,
+}
+
+impl Args {
+    /// Whether a core-management flag was given, so `main` runs the headless
+    /// core path instead of opening the UI.
+    pub fn is_core_command(&self) -> bool {
+        self.force_update || self.search_cores.is_some() || self.download_core.is_some()
+    }
 }
 
 /// Which core `--core` named.
@@ -52,6 +70,7 @@ Classic Game Box
 USAGE:
     classic-game-box [--rom <path>] [--core <key|module>] [--library-dir <path>]
                      [--theme <name>] [--light] [--selfcheck]
+                     [--force-update] [--search-core <q>] [--download-core <name>]
 
 OPTIONS:
     --rom <path>          Load a ROM at startup (also accepted positionally).
@@ -65,6 +84,14 @@ OPTIONS:
     --light               Use the light appearance (default: dark).
     --selfcheck           Run the headless checks (paths, library, settings,
                           cores, icons) and exit; opens no window.
+    --force-update        Refresh the downloadable-core catalog (the 下载源) from
+                          the libretro buildbot into the app-data cache and exit.
+    --search-core <q>     Search the cached core catalog and exit.
+    --download-core <name>
+                          Download a core by name into the app-data cores
+                          directory, then open it to prove it loads, and exit.
+    --core-base-url <url> Override the download source (default: the libretro
+                          nightly buildbot).
     -h, --help            Print this help.
 
 EXAMPLES:
@@ -95,6 +122,16 @@ impl Args {
                 }
                 "--light" => out.light = true,
                 "--selfcheck" => out.selfcheck = true,
+                "--force-update" => out.force_update = true,
+                "--search-core" => {
+                    out.search_cores = Some(require_value("--search-core", &mut iter)?)
+                }
+                "--download-core" => {
+                    out.download_core = Some(require_value("--download-core", &mut iter)?)
+                }
+                "--core-base-url" => {
+                    out.core_base_url = Some(require_value("--core-base-url", &mut iter)?)
+                }
                 other if other.starts_with('-') => return Err(format!("未知参数：{other}")),
                 other if out.rom.is_none() => out.rom = Some(PathBuf::from(other)),
                 other => return Err(format!("多余的位置参数：{other}")),
@@ -162,6 +199,36 @@ mod tests {
     #[test]
     fn selfcheck_parses() {
         assert!(parse(&["--selfcheck"]).unwrap().selfcheck);
+    }
+
+    #[test]
+    fn core_management_flags_parse() {
+        let update = parse(&["--force-update"]).unwrap();
+        assert!(update.force_update);
+        assert!(update.is_core_command());
+        assert_eq!(
+            parse(&["--search-core", "snes"])
+                .unwrap()
+                .search_cores
+                .as_deref(),
+            Some("snes")
+        );
+        assert_eq!(
+            parse(&["--download-core", "mame"])
+                .unwrap()
+                .download_core
+                .as_deref(),
+            Some("mame")
+        );
+        assert_eq!(
+            parse(&["--core-base-url", "https://example.com/x"])
+                .unwrap()
+                .core_base_url
+                .as_deref(),
+            Some("https://example.com/x")
+        );
+        assert!(!Args::default().is_core_command());
+        assert!(parse(&["--search-core"]).is_err());
     }
 
     #[test]

@@ -48,6 +48,16 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   Sega 系（genesis / sms / gg / sg1000）有两个核心：Genesis Plus GX 与轻量的
   PicoDrive（同一模块四个机种，PicoDrive 是首个带 git submodule 的核心）。
   街机是 `SystemId::Arcade`（`.zip` → FBNeo，按 CRC 读标准 Neo Geo 套）。
+- **动态下载核心（下载源）**：可运行时从 libretro buildbot 下载核心，不用打包全部
+  `.dylib`。目录（下载源）落两份：内置快照 `cores/catalog.json`（`include_str!`
+  进二进制，离线可搜，`scripts/update-core-catalog.sh` 重生成）+ 用户缓存
+  `<app data>/cores/catalog.json`（`--force-update` 写，优先）。CLI：
+  `--search-core <q>` / `--force-update` / `--download-core <name>` /
+  `--core-base-url <url>`；设置页「下载核心」卡片是同一功能的 UI（搜索 + 下载 +
+  进度 + 刷新源，下载在后台线程）。下载落到 `<app data>/cores/`，并登记到
+  `downloaded.json`，经 `load_core_manifest` 合并进清单（core-info 的 `systemid`
+  由 `SystemId::parse_key` 的别名映射，如 `super_nes`→`snes`）；不支持的机种不登记。
+  新增依赖：`ureq`（rustls + proxy-from-env）+ `zip`（只 deflate）。
 - **超任（SNES/SFC）**：`SystemId::Snes`（`.sfc/.smc/.fig/.swc`）→ **Snes9x**
   （`libretro/snes9x`，Makefile 在 `libretro/` 子目录，无 submodule）。**软件渲染**，
   输出 RGB565（宿主转换），不走 `SET_HW_RENDER`；SuperFX/SA-1/CX4/DSP1–4/MSU-1 等
