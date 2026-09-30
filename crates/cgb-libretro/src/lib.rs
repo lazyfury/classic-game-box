@@ -80,6 +80,14 @@ mod gl {
     pub fn proc_address(_name: &CStr) -> *mut c_void {
         std::ptr::null_mut()
     }
+
+    /// No-op counterpart of the macOS `glBindFramebuffer` wrapper.
+    ///
+    /// # Safety
+    ///
+    /// Has the same contract as the real entry point, but there is never a
+    /// live hardware context on this platform, so the call does nothing.
+    pub unsafe fn bind_framebuffer(_target: u32, _framebuffer: u32) {}
 }
 
 mod error;
