@@ -1,19 +1,26 @@
-//! The settings page: the game library, the per-console core pick, the picture
-//! effect, the running core's options and inputs, and the keyboard bindings.
+//! The settings page. The middle column lists the functional groups and the
+//! right column shows the selected group's cards, so the page never becomes one
+//! endless scroll. The groups are: the game library, the appearance, the
+//! picture, the console cores, the inputs and the core downloader.
 
 use igui::igui_components::{
     Button, Card, Column, Component, NodeRef, Row, ScrollView, Select, Text,
 };
-use igui::igui_core::Edges;
-use igui::igui_theme::{space, Theme, Tone};
-use igui::igui_ui::{Align, Justify, MouseFilter};
+use igui::igui_core::{Color, Edges};
+use igui::igui_theme::{radius, space, Theme, Tone};
+use igui::igui_ui::{Align, Justify, MouseFilter, SizeBasis, SurfaceStyle};
 
-use crate::ui::model::{Action, EditTarget, MsaaKind, ShaderKind, ViewModel};
+use crate::ui::icons::{Icon as SvgIcon, IconName};
+use crate::ui::model::{Action, EditTarget, MsaaKind, SettingsGroup, ShaderKind, ViewModel};
 use crate::ui::theme::ThemeChoice;
 
 use super::components::{chip, chip_group, text_field};
 use super::Page;
 use super::ViewBridge;
+
+/// The widest the settings detail column grows, so its cards do not stretch
+/// across a wide window; it shrinks to fit a narrow one.
+const DETAIL_MAX_WIDTH: f32 = 720.0;
 
 /// The "download a core" card. The catalog is a local copy of the libretro
 /// buildbot's list (the built-in snapshot, or the cache `刷新下载源` writes);
@@ -137,27 +144,12 @@ fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBrid
     Card::new(theme)
         .gap(space::SM)
         .padding(Edges::all(space::SM))
-        .child(Text::subheading("下载核心", theme))
         .child(search)
         .child(list)
 }
 
-pub(super) fn settings_page(
-    theme: &'static dyn Theme,
-    model: &ViewModel,
-    actions: &ViewBridge,
-) -> Page {
-    let mut column = Column::new()
-        .gap(space::MD)
-        .padding(Edges::all(space::MD))
-        .mouse_filter(MouseFilter::Ignore)
-        .child(Text::title("设置", theme));
-    let mut body = Column::new()
-        .gap(space::MD)
-        .mouse_filter(MouseFilter::Ignore);
-
-    // The one game library: ROMs, database, screenshots, saves and cheats all
-    // live in this folder. There is only one; switching replaces it.
+/// The game-library card: the one library folder, and the switch button.
+fn library_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Card {
     let current = match model.library_root.as_deref() {
         Some(path) => Text::small(path, theme)
             .grow(1.0)
@@ -166,19 +158,18 @@ pub(super) fn settings_page(
         None => Text::small("还没有游戏库，选一个文件夹作为游戏库。", theme).tone(Tone::Muted),
     };
     let switch = actions.clone();
-    body = body.child(
-        Card::new(theme)
-            .gap(space::SM)
-            .padding(Edges::all(space::SM))
-            .child(Text::subheading("游戏库", theme))
-            .child(current)
-            .child(
-                Button::secondary("切换游戏库…", theme)
-                    .on_click(move |_tree, _id| switch.push(Action::SwitchLibrary)),
-            ),
-    );
+    Card::new(theme)
+        .gap(space::SM)
+        .padding(Edges::all(space::SM))
+        .child(current)
+        .child(
+            Button::secondary("切换游戏库…", theme)
+                .on_click(move |_tree, _id| switch.push(Action::SwitchLibrary)),
+        )
+}
 
-    // Appearance: the theme family and light / dark.
+/// The appearance card: the theme family and light / dark.
+fn appearance_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Card {
     let mut theme_chips = chip_group();
     for choice in ThemeChoice::ALL {
         let pick = actions.clone();
@@ -196,19 +187,61 @@ pub(super) fn settings_page(
                 .on_click(move |_tree, _id| pick.push(Action::SetLight(light))),
         );
     }
-    body = body.child(
-        Card::new(theme)
-            .gap(space::SM)
-            .padding(Edges::all(space::SM))
-            .child(Text::subheading("外观", theme))
-            .child(Text::caption("主题", theme).tone(Tone::Muted))
-            .child(theme_chips)
-            .child(Text::caption("明暗", theme).tone(Tone::Muted))
-            .child(look_chips),
-    );
+    Card::new(theme)
+        .gap(space::SM)
+        .padding(Edges::all(space::SM))
+        .child(Text::caption("主题", theme).tone(Tone::Muted))
+        .child(theme_chips)
+        .child(Text::caption("明暗", theme).tone(Tone::Muted))
+        .child(look_chips)
+}
 
-    // One core pick per console. The selected one is the core that would run
-    // the console now (the saved pick, or the manifest default).
+/// The game-picture post-process card.
+fn shader_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Card {
+    let mut shader_chips = Row::new().gap(space::XS);
+    for kind in ShaderKind::ALL {
+        let actions = actions.clone();
+        shader_chips = shader_chips.child(
+            chip(theme, kind.label(), model.shader == kind)
+                .on_click(move |_tree, _id| actions.push(Action::SetShader(kind))),
+        );
+    }
+    Card::new(theme)
+        .gap(space::SM)
+        .padding(Edges::all(space::SM))
+        .child(Text::subheading("画面效果", theme))
+        .child(shader_chips)
+        .child(Text::caption("对游戏画面做后处理，不影响界面。", theme).tone(Tone::Subtle))
+}
+
+/// The geometry anti-aliasing card. Off / 2x / 4x force a sample count; Auto
+/// uses 4x while idle and drops it while a game runs (the live image dominates).
+fn msaa_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Card {
+    let mut msaa_chips = Row::new().gap(space::XS);
+    for mode in MsaaKind::ALL {
+        let actions = actions.clone();
+        msaa_chips = msaa_chips.child(
+            chip(theme, mode.label(), model.msaa == mode)
+                .on_click(move |_tree, _id| actions.push(Action::SetMsaa(mode))),
+        );
+    }
+    Card::new(theme)
+        .gap(space::SM)
+        .padding(Edges::all(space::SM))
+        .child(Text::subheading("抗锯齿", theme))
+        .child(msaa_chips)
+        .child(
+            Text::caption(
+                "几何边缘的多重采样；「自动」在游戏运行时关闭以省 GPU。",
+                theme,
+            )
+            .tone(Tone::Subtle),
+        )
+}
+
+/// One core pick per console. The selected one is the core that would run the
+/// console now (the saved pick, or the manifest default).
+fn cores_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Card {
     let mut cores = Column::new().gap(space::SM);
     let mut any_core = false;
     for system in cgb_systems::SYSTEMS {
@@ -246,100 +279,53 @@ pub(super) fn settings_page(
         cores =
             cores.child(Text::small("没有可用核心（见 cores.json）。", theme).tone(Tone::Muted));
     }
-    body = body.child(
-        Card::new(theme)
-            .gap(space::SM)
-            .padding(Edges::all(space::SM))
-            .child(Text::subheading("模拟器核心", theme))
-            .child(cores),
-    );
+    Card::new(theme)
+        .gap(space::SM)
+        .padding(Edges::all(space::SM))
+        .child(Text::subheading("核心选择", theme))
+        .child(cores)
+}
 
-    // The game-picture post-process preset.
-    let mut shader_chips = Row::new().gap(space::XS);
-    for kind in ShaderKind::ALL {
-        let actions = actions.clone();
-        shader_chips = shader_chips.child(
-            chip(theme, kind.label(), model.shader == kind)
-                .on_click(move |_tree, _id| actions.push(Action::SetShader(kind))),
-        );
-    }
-    body = body.child(
-        Card::new(theme)
-            .gap(space::SM)
-            .padding(Edges::all(space::SM))
-            .child(Text::subheading("画面效果", theme))
-            .child(shader_chips)
-            .child(Text::caption("对游戏画面做后处理，不影响界面。", theme).tone(Tone::Subtle)),
-    );
-
-    // The running core's own options, when a game has been loaded.
-    if !model.core_options.is_empty() {
-        let mut options = Column::new().gap(space::XS);
-        for (index, option) in model.core_options.iter().enumerate() {
-            let previous = actions.clone();
-            let next = actions.clone();
-            options = options.child(
-                Row::new()
-                    .align(Align::Center)
-                    .gap(space::XS)
-                    .child(
-                        Text::small(option.label.as_str(), theme)
-                            .grow(1.0)
-                            .max_lines(1)
-                            .ellipsis(true),
-                    )
-                    .child(
-                        Button::ghost("‹", theme)
-                            .mini()
-                            .on_click(move |_tree, _id| {
-                                previous.push(Action::CycleCoreOption(index, -1))
-                            }),
-                    )
-                    .child(Text::caption(option.value.as_str(), theme).tone(Tone::Muted))
-                    .child(
-                        Button::ghost("›", theme)
-                            .mini()
-                            .on_click(move |_tree, _id| {
-                                next.push(Action::CycleCoreOption(index, 1))
-                            }),
-                    ),
-            );
-        }
-        body = body.child(
-            Card::new(theme)
-                .gap(space::SM)
-                .padding(Edges::all(space::SM))
-                .child(Text::subheading("核心选项", theme))
-                .child(options),
-        );
-    }
-
-    // Geometry anti-aliasing. Off / 2x / 4x force a sample count; Auto uses
-    // 4x while idle and drops it while a game runs (the live image dominates).
-    let mut msaa_chips = Row::new().gap(space::XS);
-    for mode in MsaaKind::ALL {
-        let actions = actions.clone();
-        msaa_chips = msaa_chips.child(
-            chip(theme, mode.label(), model.msaa == mode)
-                .on_click(move |_tree, _id| actions.push(Action::SetMsaa(mode))),
-        );
-    }
-    body = body.child(
-        Card::new(theme)
-            .gap(space::SM)
-            .padding(Edges::all(space::SM))
-            .child(Text::subheading("抗锯齿", theme))
-            .child(msaa_chips)
-            .child(
-                Text::caption(
-                    "几何边缘的多重采样；「自动」在游戏运行时关闭以省 GPU。",
-                    theme,
+/// The running core's own options, when a game has been loaded.
+fn core_options_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Card {
+    let mut options = Column::new().gap(space::XS);
+    for (index, option) in model.core_options.iter().enumerate() {
+        let previous = actions.clone();
+        let next = actions.clone();
+        options = options.child(
+            Row::new()
+                .align(Align::Center)
+                .gap(space::XS)
+                .child(
+                    Text::small(option.label.as_str(), theme)
+                        .grow(1.0)
+                        .max_lines(1)
+                        .ellipsis(true),
                 )
-                .tone(Tone::Subtle),
-            ),
-    );
+                .child(
+                    Button::ghost("‹", theme)
+                        .mini()
+                        .on_click(move |_tree, _id| {
+                            previous.push(Action::CycleCoreOption(index, -1))
+                        }),
+                )
+                .child(Text::caption(option.value.as_str(), theme).tone(Tone::Muted))
+                .child(
+                    Button::ghost("›", theme)
+                        .mini()
+                        .on_click(move |_tree, _id| next.push(Action::CycleCoreOption(index, 1))),
+                ),
+        );
+    }
+    Card::new(theme)
+        .gap(space::SM)
+        .padding(Edges::all(space::SM))
+        .child(Text::subheading("核心选项", theme))
+        .child(options)
+}
 
-    // Keyboard bindings, read-only for now.
+/// Keyboard bindings, read-only for now.
+fn bindings_card(theme: &'static dyn Theme, model: &ViewModel) -> Card {
     let mut bindings = Column::new().gap(space::XS);
     if model.bindings.is_empty() {
         bindings = bindings.child(Text::small("没有绑定。", theme).tone(Tone::Muted));
@@ -352,56 +338,160 @@ pub(super) fn settings_page(
         }
     }
     let title = if model.bindings_system.is_empty() {
-        "按键".to_string()
+        "键盘绑定".to_string()
     } else {
-        format!("按键（{}）", model.bindings_system)
+        format!("键盘绑定（{}）", model.bindings_system)
     };
-    body = body.child(
-        Card::new(theme)
-            .gap(space::SM)
-            .padding(Edges::all(space::SM))
-            .child(Text::subheading(title, theme))
-            .child(bindings)
-            .child(
-                Text::caption("键盘按机种分别保存；手柄走 gilrs 自动映射。", theme)
-                    .tone(Tone::Subtle),
+    Card::new(theme)
+        .gap(space::SM)
+        .padding(Edges::all(space::SM))
+        .child(Text::subheading(title, theme))
+        .child(bindings)
+        .child(
+            Text::caption("键盘按机种分别保存；手柄走 gilrs 自动映射。", theme).tone(Tone::Subtle),
+        )
+}
+
+/// The core's own input descriptors, when a game has been loaded: mGBA's
+/// shoulder buttons, an arcade stick's buttons, and so on.
+fn core_inputs_card(theme: &'static dyn Theme, model: &ViewModel) -> Card {
+    let mut inputs = Column::new().gap(space::XS);
+    for row in &model.core_inputs {
+        inputs = inputs.child(Text::small(
+            format!(
+                "端口 {} · 设备 {} · 索引 {} · id {}   —   {}",
+                row.port, row.device, row.index, row.id, row.description
             ),
-    );
-
-    // The core's own input descriptors, when a game has been loaded: mGBA's
-    // shoulder buttons, an arcade stick's buttons, and so on.
-    if !model.core_inputs.is_empty() {
-        let mut inputs = Column::new().gap(space::XS);
-        for row in &model.core_inputs {
-            inputs = inputs.child(Text::small(
-                format!(
-                    "端口 {} · 设备 {} · 索引 {} · id {}   —   {}",
-                    row.port, row.device, row.index, row.id, row.description
-                ),
-                theme,
-            ));
-        }
-        body = body.child(
-            Card::new(theme)
-                .gap(space::SM)
-                .padding(Edges::all(space::SM))
-                .child(Text::subheading("核心输入", theme))
-                .child(inputs),
-        );
+            theme,
+        ));
     }
+    Card::new(theme)
+        .gap(space::SM)
+        .padding(Edges::all(space::SM))
+        .child(Text::subheading("核心输入", theme))
+        .child(inputs)
+}
 
-    // Downloadable cores: search the catalog and fetch one into app data. Kept
-    // last so it does not push the everyday settings below the fold.
-    body = body.child(catalog_card(theme, model, actions));
+/// One entry in the group nav: the label, a muted note and the selected fill.
+fn group_item(
+    theme: &'static dyn Theme,
+    group: SettingsGroup,
+    active: SettingsGroup,
+    actions: &ViewBridge,
+) -> Column {
+    let actions = actions.clone();
+    let selected = group == active;
+    let mut row = Row::new()
+        .align(Align::Center)
+        .gap(space::XS)
+        .child(Text::small(group.label(), theme).grow(1.0));
+    if selected {
+        row = row.child(SvgIcon::new(
+            IconName::ChevronRight,
+            theme.palette().muted,
+            12.0,
+        ));
+    }
+    Column::new()
+        .gap(space::XXS)
+        .padding(Edges::new(space::SM, space::XS, space::SM, space::XS))
+        .dynamic_background(move |state| {
+            let fill = if selected {
+                theme.palette().selection
+            } else if state.hovered {
+                theme.palette().surface_hover
+            } else {
+                Color::TRANSPARENT
+            };
+            SurfaceStyle::new(fill).radius(radius::MD)
+        })
+        .on_click(move |_tree, _id| actions.push(Action::ShowSettingsGroup(group)))
+        .child(row)
+        .child(Text::caption(group.description(), theme).tone(Tone::Muted))
+}
 
-    // Only the settings bodies scroll; the title stays put.
+/// The middle column: the title and the group nav. The selected group's cards
+/// are mounted in the right column by [`settings_detail`].
+pub(super) fn settings_page(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &ViewBridge,
+) -> Page {
+    let mut column = Column::new()
+        .gap(space::MD)
+        .padding(Edges::all(space::MD))
+        .mouse_filter(MouseFilter::Ignore)
+        .child(Text::title("设置", theme));
+    let mut nav = Column::new()
+        .gap(space::XS)
+        .mouse_filter(MouseFilter::Ignore);
+    for group in SettingsGroup::ALL {
+        nav = nav.child(group_item(theme, group, model.settings_group, actions));
+    }
+    column = column.child(nav);
+    Page {
+        tree: column,
+        scroll: None,
+    }
+}
+
+/// The right column's settings detail: the title of the selected group and its
+/// cards, centered and capped so they do not stretch across a wide window. It
+/// owns the settings page's scroll.
+pub(super) fn settings_detail(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &ViewBridge,
+) -> Page {
+    let group = model.settings_group;
+    let mut body = Column::new()
+        .gap(space::MD)
+        .mouse_filter(MouseFilter::Ignore);
+    body = match group {
+        SettingsGroup::Library => body.child(library_card(theme, model, actions)),
+        SettingsGroup::Appearance => body.child(appearance_card(theme, model, actions)),
+        SettingsGroup::Display => body
+            .child(shader_card(theme, model, actions))
+            .child(msaa_card(theme, model, actions)),
+        SettingsGroup::Cores => {
+            let body = body.child(cores_card(theme, model, actions));
+            if model.core_options.is_empty() {
+                body
+            } else {
+                body.child(core_options_card(theme, model, actions))
+            }
+        }
+        SettingsGroup::Input => {
+            let body = body.child(bindings_card(theme, model));
+            if model.core_inputs.is_empty() {
+                body
+            } else {
+                body.child(core_inputs_card(theme, model))
+            }
+        }
+        SettingsGroup::Download => body.child(catalog_card(theme, model, actions)),
+    };
+
+    // Center the capped column; it shrinks below the cap on a narrow window.
+    let centered = Row::new()
+        .justify(Justify::Center)
+        .mouse_filter(MouseFilter::Ignore)
+        .child(body.basis(SizeBasis::Px(DETAIL_MAX_WIDTH)).shrink(1.0));
+
+    // Only the bodies scroll; the title stays put.
     let view = ScrollView::new(theme)
         .grow(1.0)
         .scrollbar(false)
-        .child(body);
+        .child(centered);
     let scroll = Some(view.state());
-    column = column.child(view);
 
+    let column = Column::new()
+        .gap(space::MD)
+        .padding(Edges::all(space::MD))
+        .grow(1.0)
+        .mouse_filter(MouseFilter::Ignore)
+        .child(Text::title(group.label(), theme))
+        .child(view);
     Page {
         tree: column,
         scroll,

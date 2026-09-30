@@ -2,8 +2,8 @@
 //!
 //! Three columns, following the old Electron front end: a narrow icon rail on
 //! the left picks what the middle column shows (the game library or settings);
-//! the right column is the console and is always mounted. A slim header and a
-//! status line top and tail the shell.
+//! the right column is the console, which the settings page and the screenshot
+//! preview take over. A slim header and a status line top and tail the shell.
 //!
 //! ```text
 //! Flex::column()                     <- layout root, one anchor-sized child
@@ -11,9 +11,9 @@
 //!        ├─ header
 //!        ├─ Flex::row()              <- the three columns
 //!        │    ├─ rail         (64px, shrink 0)   icon + label sections
-//!        │    ├─ middle       (draggable, shrink 0)  library grid / settings
+//!        │    ├─ middle       (draggable, shrink 0)  library grid / settings nav
 //!        │    ├─ resize handle (6px gutter)       drags the middle column
-//!        │    └─ play column  (grow 1)           the console, always
+//!        │    └─ right        (grow 1)           console / settings detail
 //!        └─ status bar
 //! ```
 //!
@@ -38,7 +38,8 @@
 //! - `screenshots` — the screenshot grid and its cover / reveal / delete
 //!   controls;
 //! - `saves` and `cheats` — the running game's save slots and cheat list;
-//! - `settings` — the settings page (library, cores, shader, options, keys);
+//! - `settings` — the settings page: the group nav in the middle column and the
+//!   selected group's cards in the right column;
 //! - `play` — the right column: the console, the immersive fullscreen view and
 //!   the screenshot preview it swaps in;
 //! - `tests` — the behaviour tests for all of the above.
@@ -72,7 +73,7 @@ use library::{library_grid_window, library_page};
 use play::play_column;
 use saves::saves_page;
 use screenshots::{screenshots_grid_window, screenshots_page};
-use settings::settings_page;
+use settings::{settings_detail, settings_page};
 
 #[cfg(test)]
 mod tests;
@@ -281,13 +282,37 @@ pub fn build(
                     resize_handle(theme, &mount.content_width, content_ref)
                         .ref_(&mount.resize_handle),
                 )
-                .child(play_column(theme, model, actions, &mount.info_label)),
+                .child(right_column(
+                    theme,
+                    model,
+                    actions,
+                    &mount.info_label,
+                    &mut scroll,
+                )),
         );
     let tree = Flex::column()
         .mouse_filter(MouseFilter::Ignore)
         .child(inner.child(status_bar(theme, model)))
         .into_tree();
     (tree, scroll)
+}
+
+/// The right column: normally the console, but the settings page takes it over
+/// (like the screenshot preview) so its groups get a wide canvas. A preview
+/// still wins, so it behaves the same as on every other page.
+fn right_column(
+    theme: &'static dyn Theme,
+    model: &ViewModel,
+    actions: &ViewBridge,
+    info_ref: &NodeRef,
+    scroll: &mut Option<ScrollViewState>,
+) -> Column {
+    if model.section == Section::Settings && model.preview.is_none() {
+        let page = settings_detail(theme, model, actions);
+        *scroll = page.scroll;
+        return page.tree;
+    }
+    play_column(theme, model, actions, info_ref)
 }
 
 /// The slim top bar: the app name and what the middle column is showing.

@@ -12,7 +12,7 @@ use super::library::*;
 use crate::ui::color::cover_color;
 use crate::ui::model::{
     BindingRow, CheatRow, Confirm, CoreRow, EditTarget, GameRow, MsaaKind, SaveSlotRow,
-    ScreenshotRow, ShaderKind, SortKey, SystemCount, TextureHandle,
+    ScreenshotRow, SettingsGroup, ShaderKind, SortKey, SystemCount, TextureHandle,
 };
 use crate::ui::theme::ThemeChoice;
 use cgb_systems::SystemId;
@@ -184,6 +184,7 @@ fn the_core_picker_raises_an_action() {
     let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Settings,
+        settings_group: SettingsGroup::Cores,
         cores: vec![
             CoreRow {
                 key: "mesen".to_string(),
@@ -958,6 +959,7 @@ fn the_settings_shader_presets_emit_actions() {
     let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Settings,
+        settings_group: SettingsGroup::Display,
         shader: ShaderKind::Off,
         ..ViewModel::default()
     };
@@ -971,6 +973,7 @@ fn the_settings_msaa_presets_emit_actions() {
     let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Settings,
+        settings_group: SettingsGroup::Display,
         msaa: MsaaKind::Auto,
         ..ViewModel::default()
     };
@@ -984,6 +987,7 @@ fn the_settings_core_options_cycle() {
     let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Settings,
+        settings_group: SettingsGroup::Cores,
         core_options: vec![crate::ui::model::CoreOptionRow {
             key: "region".to_string(),
             label: "Region".to_string(),
@@ -1007,10 +1011,13 @@ fn the_settings_core_options_cycle() {
     assert_eq!(actions.drain(), vec![Action::CycleCoreOption(0, 1)]);
 }
 
+/// Each settings group mounts only its own cards: the library folder under
+/// 游戏库, the core pick under 模拟器核心, the bindings under 按键与输入.
 #[test]
-fn the_settings_page_shows_the_library_and_cores() {
-    let model = ViewModel {
+fn the_settings_groups_show_their_own_cards() {
+    let model_for = |group: SettingsGroup| ViewModel {
         section: Section::Settings,
+        settings_group: group,
         library_root: Some("/roms/nes".to_string()),
         cores: vec![
             CoreRow {
@@ -1032,16 +1039,69 @@ fn the_settings_page_shows_the_library_and_cores() {
         }],
         ..ViewModel::default()
     };
-    let list = paint(&model);
-    let has = |needle: &str| {
+    let shows = |group: SettingsGroup, needle: &str| {
+        let list = paint(&model_for(group));
         list.commands().iter().any(|command| {
             matches!(command,
                     DrawCommand::DrawText { text, .. } if text.contains(needle))
         })
     };
-    assert!(has("/roms/nes"), "the library folder is shown");
-    assert!(has("Mesen"), "the selected core is shown in the pull-down");
-    assert!(has("X / K"), "the binding is shown");
+    assert!(
+        shows(SettingsGroup::Library, "/roms/nes"),
+        "the library folder is shown"
+    );
+    assert!(
+        shows(SettingsGroup::Cores, "Mesen"),
+        "the selected core is shown in the pull-down"
+    );
+    assert!(shows(SettingsGroup::Input, "X / K"), "the binding is shown");
+    assert!(
+        !shows(SettingsGroup::Library, "Mesen"),
+        "the core pick is not on the library group"
+    );
+}
+
+/// The settings are two-pane: the nav lives in the middle column and the
+/// selected group's cards are mounted in the right column.
+#[test]
+fn the_settings_group_cards_live_in_the_right_column() {
+    let model = ViewModel {
+        section: Section::Settings,
+        settings_group: SettingsGroup::Display,
+        ..ViewModel::default()
+    };
+    let list = paint(&model);
+    let x = |needle: &str| {
+        list.commands()
+            .iter()
+            .find_map(|command| match command {
+                DrawCommand::DrawText { text, position, .. } if text == needle => Some(position.x),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no text {needle:?}"))
+    };
+    let middle_end = RAIL_WIDTH + 320.0;
+    assert!(x("外观") < middle_end, "the nav sits in the middle column");
+    assert!(
+        x("抗锯齿") >= middle_end,
+        "the selected group's cards are in the right column"
+    );
+}
+
+/// A click on the group nav switches which group the right column shows.
+#[test]
+fn the_settings_nav_switches_the_group() {
+    let actions = ViewBridge::default();
+    let model = ViewModel {
+        section: Section::Settings,
+        ..ViewModel::default()
+    };
+    let (mut tree, list) = laid_out(&model, &actions);
+    click(&mut tree, text_position(&list, "外观"));
+    assert_eq!(
+        actions.drain(),
+        vec![Action::ShowSettingsGroup(SettingsGroup::Appearance)]
+    );
 }
 
 /// The appearance section switches the theme family and the light / dark look.
@@ -1050,6 +1110,7 @@ fn the_settings_page_switches_the_theme_and_appearance() {
     let actions = ViewBridge::default();
     let model = ViewModel {
         section: Section::Settings,
+        settings_group: SettingsGroup::Appearance,
         ..ViewModel::default()
     };
     let (mut tree, list) = laid_out(&model, &actions);
@@ -1201,6 +1262,7 @@ fn the_settings_page_scrolls_when_it_overflows() {
         .collect();
     let model = ViewModel {
         section: Section::Settings,
+        settings_group: SettingsGroup::Input,
         bindings,
         ..ViewModel::default()
     };

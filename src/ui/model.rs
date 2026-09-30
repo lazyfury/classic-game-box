@@ -8,7 +8,8 @@ use igui::igui_render::TextureId;
 use crate::ui::theme::ThemeChoice;
 
 /// Which page the middle column is showing. The console is the right column
-/// and is always there, so it is not a section.
+/// and is usually there, so it is not a section; the settings page takes the
+/// right column over for its group detail (like the screenshot preview does).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Section {
     Library,
@@ -36,6 +37,61 @@ impl Section {
             Section::Saves => "存档",
             Section::Cheats => "金手指",
             Section::Settings => "设置",
+        }
+    }
+}
+
+/// The functional groups the settings page is split into. The middle column
+/// lists them and the right column shows the selected group's cards, so a long
+/// settings page never becomes one endless scroll.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettingsGroup {
+    /// The one game library folder, and how to switch it.
+    Library,
+    /// Theme family and the light / dark look.
+    Appearance,
+    /// The picture post-process and the geometry anti-aliasing.
+    Display,
+    /// Per-console core picks and the running core's options.
+    Cores,
+    /// Keyboard bindings and the running core's input descriptors.
+    Input,
+    /// Searching and downloading cores from the catalog.
+    Download,
+}
+
+impl SettingsGroup {
+    /// Every group, in the order the middle column lists them.
+    pub const ALL: [SettingsGroup; 6] = [
+        SettingsGroup::Library,
+        SettingsGroup::Appearance,
+        SettingsGroup::Display,
+        SettingsGroup::Cores,
+        SettingsGroup::Input,
+        SettingsGroup::Download,
+    ];
+
+    /// The group's name, shown in the nav and as the detail title.
+    pub fn label(self) -> &'static str {
+        match self {
+            SettingsGroup::Library => "游戏库",
+            SettingsGroup::Appearance => "外观",
+            SettingsGroup::Display => "画面",
+            SettingsGroup::Cores => "模拟器核心",
+            SettingsGroup::Input => "按键与输入",
+            SettingsGroup::Download => "下载核心",
+        }
+    }
+
+    /// A one-line note under the nav label.
+    pub fn description(self) -> &'static str {
+        match self {
+            SettingsGroup::Library => "库文件夹与备份",
+            SettingsGroup::Appearance => "主题与明暗",
+            SettingsGroup::Display => "后处理与抗锯齿",
+            SettingsGroup::Cores => "按机种选核与核心选项",
+            SettingsGroup::Input => "键盘绑定与手柄",
+            SettingsGroup::Download => "从下载源获取更多核心",
         }
     }
 }
@@ -437,6 +493,8 @@ pub struct TextureHandle {
 #[derive(Clone, Debug)]
 pub struct ViewModel {
     pub section: Section,
+    /// Which settings group the settings page's right column shows.
+    pub settings_group: SettingsGroup,
     /// Platform chrome the header must clear (macOS title bar / traffic lights).
     pub safe_area: SafeArea,
     pub games: Vec<GameRow>,
@@ -560,6 +618,7 @@ impl Default for ViewModel {
     fn default() -> Self {
         Self {
             section: Section::Library,
+            settings_group: SettingsGroup::Library,
             safe_area: SafeArea::ZERO,
             games: Vec::new(),
             selected: None,
@@ -617,6 +676,8 @@ impl Default for ViewModel {
 pub enum Action {
     /// Show a page.
     Show(Section),
+    /// Show one settings group in the settings page's right column.
+    ShowSettingsGroup(SettingsGroup),
     /// Start the game at this library index.
     Play(usize),
     TogglePause,

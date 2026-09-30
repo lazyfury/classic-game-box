@@ -290,12 +290,12 @@ Flex::column()
   ├─ header                        标题 + 当前 section
   ├─ Flex::row()
   │    ├─ rail        64px, shrink 0     图标 + 文字的 section 按钮
-  │    ├─ middle      320px, shrink 0    游戏库 / 设置
-  │    └─ play column grow 1             画面常驻（永不卸载）
+  │    ├─ middle      320px, shrink 0    游戏库 / 截图 / 存档 / 金手指 / 设置导航
+  │    └─ right column grow 1            画面常驻；设置详情 / 截图预览会接管
   └─ status bar                     最后一条消息 + 存读档快捷键
 ```
 
-左栏三个 section：游戏库 / 截图 / 设置；**游玩不再是 section**——右栏画面常驻，跟 legacy 一样。
+左栏五个 section：游戏库 / 截图 / 存档 / 金手指 / 设置；**游玩不再是 section**——右栏画面常驻，跟 legacy 一样。
 
 **全屏游玩（`ViewModel::fullscreen`）**：有游戏在跑时切到只挂载右栏游戏视图的最小子树
 （标题 / 实时 FPS / 画面 / 控制条 / 核心），窗口走 `Fullscreen::Borderless`；
@@ -307,11 +307,11 @@ Esc 退出。这不是纯审美：库网格一屏就能给每帧加两三千条 
 |---|---|---|
 | 游戏库 | 单库（库根即唯一游戏库），库顶统计总数 + 各机种数量并可点选按机种筛选；扩展名过滤 `.nes/.gba/.gb/.gbc/.zip`、随中栏宽度 2/3/4 列的网格（真实封面或随机色块 + 机种 badge + 截图数/置顶/删除）、单击即玩；排序栏（名称/大小/最近/时长/加入 + 方向）；拖放 ROM 或“添加游戏文件…”会将文件**拷贝进游戏库目录**（`<root>/roms`，重名自动 ` (2)`，源文件保留）；“打开游戏库…”或设置页“切换游戏库…”切换整个库（不合并目录） | `Grid` + `ScrollView` + 本地 `Icon` |
 | 截图 | 跟随在玩游戏的截图收藏：缩略图网格、设为封面 / 在访达中显示 / 删除；点击大图预览（上/下张、Esc） | `Grid` + `ScrollView` + `FrameImage` |
-| 设置 | 每机种选核、键盘绑定、当前游戏库（切换） | `Card` + `Button` |
+| 设置 | 两栏：中栏是功能分组导航（游戏库 / 外观 / 画面 / 模拟器核心 / 按键与输入 / 下载核心），点分组，右栏显示该分组的卡片（单卡分组不再重复卡片标题，多卡分组各带小标题，右栏限宽 720px 居中并独立滚动）。分组内：切换游戏库、主题/明暗、后处理/抗锯齿、每机种选核 + 核心选项、键盘绑定 + 核心输入、下载核心 | `Card` + `Button` + `ScrollView` |
 
 右栏：`DrawImage`（`frame::FrameImage`）+ 暂停/复位/快速存读档/截图/设为封面 + 当前核心；
-预览截图时右栏显示大图。删除游戏或截图前有确认条。窗口在 macOS 用 full-size content view，
-header 预留安全区（标题栏高度 + 红绿灯宽度）。
+设置 section 时右栏显示所选分组的卡片，预览截图时右栏显示大图（预览优先）。删除游戏或截图前
+有确认条。窗口在 macOS 用 full-size content view，header 预留安全区（标题栏高度 + 红绿灯宽度）。
 
 游戏库用 `igui_components::Grid`，列数随中栏宽度 2/3/4 级（`ui::library_columns`；中栏由
 `igui_components::ResizeHandle` 拖动，宽度存在共享的 `Rc<Cell<f32>>`，拖动不重建树）。列数变化
@@ -382,7 +382,8 @@ cargo bench --bench ui -- --baseline benches/baseline.txt        # 回归门（�
 其中首次原始排版 `≈716µs`、`ScrollView` 同步触发的第二次排版 `≈400µs`；热排版只要 `≈4µs`，
 纯重绘 `≈56µs`。`ui/relayout/empty≈123µs` 说明成本来自挂载的卡片（视口约 12 张），不是外壳。
 `ui/scroll` 是**跨窗口**的重建帧（`≈1.4ms`）；窗口内的滚动走重绘路径（`ui/repaint≈56µs`）。
-设置页未虚拟化，随核心数线性增长（5000 核 `build≈41ms`）。
+设置页只挂载所选分组的卡片（不再是一串全量卡片），但该分组内未虚拟化，核心清单随核心数线性增长
+（5000 核 `build≈41ms`）。
 
 ---
 

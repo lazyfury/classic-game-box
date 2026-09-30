@@ -21,7 +21,8 @@ pub use icons::{clear_textures, rasterize_icon, set_texture, Icon, IconName};
 pub use model::{
     save_slot_label, Action, BindingRow, CatalogRow, CheatRow, Confirm, CoreOptionRow, CoreRow,
     EditTarget, GameRow, InputDescriptorRow, MissingCoreRow, MsaaKind, SafeArea, SaveSlotRow,
-    ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount, TextureHandle, ViewModel,
+    ScreenshotRow, Section, SettingsGroup, ShaderKind, SortKey, StatusKind, SystemCount,
+    TextureHandle, ViewModel,
 };
 pub use theme::{game_theme, ThemeChoice};
 pub use view::{
@@ -59,6 +60,9 @@ pub struct Ui {
     /// Which page `content_scroll` belongs to. A rebuild only carries the
     /// offset over while the page is unchanged.
     content_section: Section,
+    /// The settings group `content_scroll` belongs to (the settings page's
+    /// scroll lives in the right column). A group switch resets to the top.
+    content_settings_group: SettingsGroup,
     /// The offset to restore on the next layout, set by a rebuild. It is
     /// applied *after* the first sync, once the content height is known.
     scroll_target: Option<f32>,
@@ -85,6 +89,7 @@ impl Ui {
             open_tip: None,
             content_scroll,
             content_section: model.section,
+            content_settings_group: model.settings_group,
             scroll_target: None,
             repaint: true,
             mount,
@@ -102,7 +107,9 @@ impl Ui {
     /// on the resize handle is re-armed on the new tree. That keeps the drag
     /// alive when a rebuild is triggered mid-drag by a grid column change.
     pub fn rebuild(&mut self, theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) {
-        let previous = (self.content_section == model.section)
+        let same_page = self.content_section == model.section
+            && self.content_settings_group == model.settings_group;
+        let previous = same_page
             .then(|| self.content_scroll.as_ref().map(ScrollViewState::offset))
             .flatten();
         let dragging = igui::igui_ui::gui_state_of(&self.tree).and_then(|state| state.dragging);
@@ -130,6 +137,7 @@ impl Ui {
         };
         self.content_scroll = content_scroll;
         self.content_section = model.section;
+        self.content_settings_group = model.settings_group;
         self.repaint = true;
         if was_resizing {
             self.rearm_resize_drag(drag_last);
@@ -613,6 +621,43 @@ mod tests {
             ui.content_scroll.as_ref().map(ScrollViewState::offset),
             Some(0.0),
             "the settings page starts at the top"
+        );
+    }
+
+    /// Switching settings groups resets the detail scroll to the top, even
+    /// though the section (and so the scroll state) is the same.
+    #[test]
+    fn switching_settings_groups_resets_the_offset() {
+        let theme = default_theme(Mode::Dark);
+        let actions = ViewBridge::default();
+        let mut model = ViewModel {
+            section: Section::Settings,
+            settings_group: SettingsGroup::Input,
+            bindings: (0..40)
+                .map(|index| BindingRow {
+                    button: format!("按键 {index}"),
+                    keys: "X / K".to_string(),
+                })
+                .collect(),
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+        let mut ui = Ui::new(theme, &model, &actions);
+        ui.layout(viewport);
+        ui.content_scroll
+            .as_ref()
+            .expect("the settings detail scrolls")
+            .scroll_to(120.0);
+        ui.layout(viewport);
+        assert!(ui.content_scroll.as_ref().unwrap().offset() > 0.0);
+
+        model.settings_group = SettingsGroup::Display;
+        ui.rebuild(theme, &model, &actions);
+        ui.layout(viewport);
+        assert_eq!(
+            ui.content_scroll.as_ref().map(ScrollViewState::offset),
+            Some(0.0),
+            "a new group starts at the top"
         );
     }
 

@@ -208,6 +208,10 @@ impl super::App {
                     }
                     self.dirty = true;
                 }
+                Action::ShowSettingsGroup(group) => {
+                    self.model.settings_group = group;
+                    self.dirty = true;
+                }
                 Action::Play(index) => self.start_game(index),
                 Action::TogglePause => {
                     if let Some(session) = self.session.as_mut() {

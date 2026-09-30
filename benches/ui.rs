@@ -19,7 +19,7 @@
 //! only mounts the visible rows, so the per-frame cost should stay flat as the
 //! library grows; the benchmark is what proves it (or exposes it).
 
-use cgb_app::ui::{CoreRow, GameRow, Section, Ui, ViewBridge, ViewModel};
+use cgb_app::ui::{CoreRow, GameRow, Section, SettingsGroup, Ui, ViewBridge, ViewModel};
 use cgb_systems::SystemId;
 use igui::igui_bench::{black_box, finish, BenchRunner, RunConfig};
 use igui::igui_core::{Size, ViewportSize};
@@ -75,6 +75,7 @@ fn library_model(n: usize) -> ViewModel {
 fn settings_model(n: usize) -> ViewModel {
     ViewModel {
         section: Section::Settings,
+        settings_group: SettingsGroup::Cores,
         cores: (0..n)
             .map(|index| CoreRow {
                 key: format!("core{index}"),
