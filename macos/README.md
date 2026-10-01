@@ -41,6 +41,7 @@ macos/scripts/build.sh                              # cgb-mac + the Swift app
 macos/scripts/run.sh                                # open the library UI
 macos/scripts/run.sh /path/to/game.nes              # start a game
 macos/scripts/run.sh --library-dir ~/Games          # choose a library
+macos/scripts/package.sh                            # → dist/Classic Game Box (Swift).app
 ```
 
 Or by hand:
@@ -54,27 +55,31 @@ swift build --package-path macos  # macos/.build/debug/cgb-mac
 
 | path | what |
 |---|---|
-| `macos/rust/src/host.rs` | `MacGpuPlugin` (CAMetalLayer → wgpu surface → presenter), `MacTextMeasurePlugin` |
+| `macos/rust/src/host.rs` | `MacGpuPlugin` (CAMetalLayer → wgpu surface → presenter), `MacTextMeasurePlugin`, `MacClipboardPlugin`, `MacGamepadPlugin`, `MacHostWindow` |
 | `macos/rust/src/input.rs` | `MacEvent` → `igui_core::InputEvent`, key/modifier/button mapping |
 | `macos/rust/src/ffi.rs` | the `cgb_mac_*` C ABI |
 | `macos/rust/include/cgb_mac.h` | the header Swift imports (symlinked into the C target) |
-| `macos/Sources/ClassicGameBoxMac/HostView.swift` | the layer + AppKit event forwarding |
-| `macos/Sources/ClassicGameBoxMac/AppDelegate.swift` | window, `cgb_mac_start`, the frame timer |
+| `macos/Sources/ClassicGameBoxMac/HostView.swift` | the layer + AppKit event forwarding + drag & drop |
+| `macos/Sources/ClassicGameBoxMac/Gamepads.swift` | `GCController` → libretro snapshot |
+| `macos/Sources/ClassicGameBoxMac/AppDelegate.swift` | window, `cgb_mac_start`, event-driven frame scheduling |
+| `macos/packaging/Info.plist`, `macos/scripts/package.sh` | the `.app` bundle |
 
 ## Status
 
 Working: the library UI renders into Swift's Metal layer; pointer (click,
-double-click, drag, wheel) and keyboard (named keys, text, modifiers) are
-forwarded; resizing reconfigures the surface; dropped files import; the
-in-app fullscreen toggle is applied by Swift.
+double-click, drag, wheel), keyboard (named keys, text, modifiers) and IME
+preedit/commit are forwarded; the cursor and IME caret come from the UI;
+clipboard (Cmd+C/V) works; files can be dropped; resizing reconfigures the
+surface; the in-app fullscreen toggle is applied by Swift; gamepads are read
+through Apple's `GameController` framework (no `gilrs` in the embedded build).
+Frames are event-driven: any input schedules one, and the loop reschedules
+itself at 60 Hz only while the app wants more.
 
 Known gaps:
 
-- The frame timer presents at 60 Hz unconditionally; `cgb_mac_needs_frame`
-  exists but is unused, so an idle app still paints.
-- IME is a minimal `NSTextInputClient` (preedit / commit forwarded,
-  `hasMarkedText` always false); CJK composition is untested.
-- Clipboard (Cmd+C/V) is not wired, so text-field copy/paste does nothing.
+- IME is a minimal `NSTextInputClient` (`hasMarkedText` always false); CJK
+  composition is untested.
 - Audio goes through Rust `cpal` (as in the main app).
-- Packaging: a dev build links `target/debug/deps/libcgb_mac.dylib` by absolute
-  path; a release `.app` would copy/`@rpath` it.
+- Hardware-GL cores (N64 / PSP / PS1) are untested on this host.
+- The release `.app` bundles the Rust dylib under `Contents/Frameworks` with an
+  `@rpath`; a dev build links `target/debug/deps/libcgb_mac.dylib` directly.

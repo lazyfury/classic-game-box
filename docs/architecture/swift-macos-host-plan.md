@@ -56,6 +56,10 @@ The `winit` host does a few things this host does not yet.
 
 ## B. Frame pacing
 
+**Status:** implemented — the always-on timer is gone; a local `NSEvent`
+monitor schedules a frame for any input, and `tick` reschedules at 60 Hz only
+while `cgb_mac_needs_frame` is true.
+
 - **B1 · Event-driven ticking.** Today the timer presents at 60 Hz
   unconditionally. Use `cgb_mac_needs_frame`: keep a fast timer only while it
   is true (a running game / animation / download), otherwise present once after
@@ -67,6 +71,11 @@ The `winit` host does a few things this host does not yet.
   display rate; `cgb-app` already accumulates `dt`.
 
 ## C. Packaging
+
+**Status:** implemented — `macos/scripts/package.sh` builds a release Rust
+dylib + Swift binary and assembles `dist/Classic Game Box (Swift).app` with the
+dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
+`Contents/Resources`. B3 (CVDisplayLink) is still open.
 
 - **C1 · Link model.** Either statically link `libcgb_mac.a` (the crate already
   builds a `staticlib`) so no dylib needs bundling, or bundle

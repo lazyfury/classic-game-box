@@ -1,8 +1,10 @@
 // AppKit lifecycle: one window whose content view provides the CAMetalLayer
-// the Rust app renders into, plus a 60 Hz tick that asks Rust for frames.
+// the Rust app renders into. Frames are event-driven: any input schedules one,
+// and while the app wants more (a running game, an animation) it reschedules
+// itself at 60 Hz.
 //
-// Swift's only jobs are the window, the layer and (next) native event
-// forwarding — the UI and the emulator are Rust's.
+// Swift's only jobs are the window, the layer and native event forwarding —
+// the UI and the emulator are Rust's.
 
 import AppKit
 import Metal
@@ -14,7 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var view: HostView?
     private var app: OpaquePointer?
+    /// The pending one-shot frame timer, or nil when idle.
     private var timer: Timer?
+    /// The local event monitor that schedules a frame for any input.
+    private var eventMonitor: Any?
 
     init(options: LaunchOptions) {
         self.options = options
@@ -51,13 +56,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         gamepads.app = handle
         gamepads.start()
 
-        // A main-thread timer drives the frames. `cgb_mac_needs_frame` can
-        // later let an idle app skip work; for now every tick presents.
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            self?.tick()
+        // Frames are event-driven. The local monitor is the one place every
+        // input event passes through; it schedules a frame, and `tick` keeps
+        // rescheduling while the app still wants frames (a running game, an
+        // animation, a download).
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .any) { [weak self] event in
+            self?.requestFrame()
+            return event
         }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        requestFrame()
 
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -67,6 +74,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+            self.eventMonitor = nil
+        }
         timer?.invalidate()
         timer = nil
         if let app {
@@ -106,10 +117,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func tick() {
+        timer = nil
         guard let app else { return }
         cgb_mac_frame(app)
         view?.syncFrameState()
         syncFullscreen()
+        if cgb_mac_needs_frame(app) {
+            schedule(after: 1.0 / 60.0)
+        }
+    }
+
+    /// Ask for a frame as soon as the run loop is free (after the event that
+    /// prompted it is dispatched).
+    private func requestFrame() {
+        schedule(after: 0)
+    }
+
+    private func schedule(after delay: TimeInterval) {
+        guard timer == nil else { return }
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            self?.tick()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     /// Apply a fullscreen request the Rust app parked for the window.
