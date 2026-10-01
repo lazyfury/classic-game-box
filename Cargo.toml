@@ -1,7 +1,7 @@
 # Classic Game Box — a virtual workspace.
 #
 # The product is the Swift/macOS app in `macos/`; every Rust package here is a
-# library it embeds (or the secondary `winit` dev host). `crates/cgb-app` holds
+# library it embeds. `crates/cgb-app` holds
 # the shared UI + emulator logic; `crates/cgb-mac` is the Swift host's C ABI;
 # the rest are one-concern engine crates.
 
@@ -23,7 +23,7 @@ members = [
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
-# `wgpu` 24 / `winit` 0.30 (pulled in by igui and this app) require 1.76.
+# `wgpu` 24 and igui require Rust 1.76.
 rust-version = "1.76"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/lazyfury/classic-game-box"
@@ -34,14 +34,12 @@ repository = "https://github.com/lazyfury/classic-game-box"
 # pinned to the `v0.3.0` commit. The facade carries opt-in features; three
 # crates are not in the facade and are declared directly from the same source:
 #   * `igui_svg`   — icon vector fallback (no `svg` facade feature exists);
-#   * `igui_winit` — the window / input / IME / clipboard platform plugins;
 #   * `igui_core`  — for `cgb-input` (which must stay UI-free) and the in-app `ui`.
 # Bump the pin with e.g.
-#   `cargo update -p igui -p igui_svg -p igui_winit -p igui_core`.
+#   `cargo update -p igui -p igui_svg -p igui_core`.
 # ---------------------------------------------------------------------------
 igui = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0", default-features = false }
 igui_svg = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
-igui_winit = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
 igui_core = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
 igui_scene = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
 
@@ -67,7 +65,6 @@ libloading = "0.8"
 cc = "1"
 cpal = "0.15"
 ringbuf = "0.4"
-gilrs = "0.11"
 rusqlite = { version = "0.32", features = ["bundled"] }
 png = "0.17"
 dirs = "5"
@@ -81,7 +78,6 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # unconditional; the default `xdg-portal`/`async-std` features are Linux-only,
 # so drop them rather than pull a second async runtime into the lockfile.
 rfd = { version = "0.15", default-features = false }
-winit = "0.30"
 thiserror = "2"
 
 [profile.release]

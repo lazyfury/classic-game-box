@@ -13,7 +13,7 @@ name = "cgb_mac"
 crate-type = ["staticlib"]
 
 [dependencies]
-# The whole app (UI + emulator), without the bundled `winit` host.
+# The whole app (UI + emulator).
 cgb-app.workspace = true
 # The window / gamepad host contract.
 cgb-host.workspace = true
@@ -22,5 +22,5 @@ cgb-host.workspace = true
 igui = { workspace = true, features = ["ui", "app", "wgpu", "profile"] }
 # `GamepadSnapshot` for the Swift gamepad source.
 cgb-input.workspace = true
-# System clipboard for the text fields (the same crate `igui_winit` uses).
+# System clipboard for the text fields.
 arboard = "3"

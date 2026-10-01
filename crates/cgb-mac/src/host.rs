@@ -1,7 +1,7 @@
 //! The native macOS host: a wgpu surface over a Swift-provided `CAMetalLayer`,
 //! and the `igui_app` plugins the embedded runtime needs.
 //!
-//! This is the piece that replaces `igui_winit` for the Swift path. The window
+//! This is the native platform piece for the Swift path. The window
 //! (and its `CAMetalLayer`) is Swift's; here we only turn that layer into a
 //! `wgpu::Surface`, build the backend, and present each frame's `DrawList`.
 //!
@@ -379,8 +379,8 @@ impl Clipboard for MacClipboard {
 
 /// Registers the backend's real font metrics as the layout measurer.
 ///
-/// The `winit` host gets this from `igui_winit::TextMeasurePlugin`; the
-/// embedded host copies the ~20 lines so it needs no `igui_winit`.
+/// The embedded host provides text metrics directly, without a windowing
+/// backend dependency.
 #[derive(Default)]
 pub struct MacTextMeasurePlugin;
 

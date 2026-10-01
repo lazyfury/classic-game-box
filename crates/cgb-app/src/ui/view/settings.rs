@@ -348,7 +348,7 @@ fn bindings_card(theme: &'static dyn Theme, model: &ViewModel) -> Card {
         .child(Text::subheading(title, theme))
         .child(bindings)
         .child(
-            Text::caption("键盘按机种分别保存；手柄走 gilrs 自动映射。", theme).tone(Tone::Subtle),
+            Text::caption("键盘按机种分别保存；手柄由 macOS 自动映射。", theme).tone(Tone::Subtle),
         )
 }
 

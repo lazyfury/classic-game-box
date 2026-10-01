@@ -1,11 +1,10 @@
-//! The `winit` + `wgpu` host: the frame loop and the wiring between the UI,
-//! the libretro core, the audio device and the gamepad.
+//! The shared app frame loop and the wiring between the UI, the libretro core,
+//! the audio device and the host-provided gamepad.
 //!
 //! igui is event-driven by default; an emulator is not. While a game is
 //! running the loop schedules a redraw at the core's frame rate
-//! (`ControlFlow::WaitUntil`); with no game, or when paused, it falls back to
-//! `Wait` and does no work. See `docs/architecture/quill-native-migration.md`
-//! §8.
+//! (`CADisplayLink` on the Swift/macOS host); with no game, or when paused, it
+//! does no work.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -13,27 +12,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver};
 use std::time::{Duration, Instant};
-
-#[cfg(feature = "winit-host")]
-use igui::igui_app::{
-    App as IguiApp, AppBuilder, AppConfig, PlatformEvent, PlatformObserver, Plugin,
-};
-use igui::igui_app::{AppLogic, EventContext, EventResult, FrameContext, InitContext};
-#[cfg(feature = "winit-host")]
-use igui::igui_backend_wgpu::{FontConfig, FontMode};
-use igui::igui_backend_wgpu::{TextureEffect, WgpuBackend};
-use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, Rect, ViewportSize};
-use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, Severity, StageTimes};
-use igui::igui_render::{DrawList, PaintContext, TextureId};
-use igui::igui_theme::{Mode, Theme};
-use igui::igui_ui::{focused_caret, TextEdit, TextMeasurer};
-#[cfg(feature = "winit-host")]
-use igui_winit::{
-    ClipboardPlugin, GpuConfig, ImePlugin, KeyboardPlugin, PointerPlugin, SharedWindow,
-    TextMeasurePlugin, TitlebarMode, WgpuPlugin, WindowConfig,
-};
-#[cfg(feature = "winit-host")]
-use winit::event::WindowEvent;
 
 use crate::ui::{
     library_columns, save_slot_label, Action, BindingRow, CatalogRow, Confirm, CoreOptionRow,
@@ -52,6 +30,13 @@ use cgb_library::{
 };
 use cgb_paths::{seed_dir, seed_dir_recursive, Paths, Settings};
 use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
+use igui::igui_app::{AppLogic, EventContext, EventResult, FrameContext, InitContext};
+use igui::igui_backend_wgpu::{TextureEffect, WgpuBackend};
+use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, Rect, ViewportSize};
+use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, Severity, StageTimes};
+use igui::igui_render::{DrawList, PaintContext, TextureId};
+use igui::igui_theme::{Mode, Theme};
+use igui::igui_ui::{focused_caret, TextEdit, TextMeasurer};
 
 use crate::cli::{Args, CoreOverride};
 use crate::session::Session;
@@ -59,7 +44,6 @@ use crate::session::Session;
 mod cheats;
 mod cores;
 mod helpers;
-mod host;
 mod input;
 mod library;
 mod project;
@@ -76,10 +60,6 @@ pub(crate) use helpers::*;
 pub(crate) use project::*;
 
 /// The wgpu backend a platform graphics plugin publishes as a service.
-///
-/// A structural alias for `Rc<RefCell<WgpuBackend>>`, so it is the *same*
-/// service `igui_winit::SharedBackend` names: the embedded host can insert it
-/// without depending on `igui_winit`.
 pub type SharedBackend = Rc<RefCell<WgpuBackend>>;
 
 /// The shortest gap between grid column-count recomputations while the middle
@@ -179,93 +159,6 @@ const BUNDLED_J2ME: &str = "freej2me_plus";
 /// Resources (`ppsspp/`). The core reads them from `<system dir>/PPSSPP/`, so
 /// they are seeded there — without `compat.ini` it warns at init.
 const BUNDLED_PPSSPP: &str = "ppsspp";
-
-/// Runs the app on the `igui_app` plugin runtime (winit + wgpu + input).
-///
-/// **Deprecated.** The product is the Swift/macOS host (`macos/` +
-/// `crates/cgb-mac`). This `winit` host is kept only as a local dev fallback
-/// and is no longer kept in sync with the Swift host.
-#[cfg(feature = "winit-host")]
-pub fn run(args: Args) {
-    eprintln!("cgb: 注意：winit host 已废弃；主要产品是 macos/ 的 Swift host");
-    let app = App::new(args);
-    let drops = app.drop_sink();
-    let title = "Classic Game Box".to_string();
-    let size = (1100.0, 760.0);
-    IguiApp::new(AppConfig {
-        title: title.clone(),
-        size,
-        ..Default::default()
-    })
-    // The window: a transparent, title-less macOS title bar, with the platform
-    // IME enabled so the text fields can compose CJK.
-    .plugin(igui_winit::WinitPlugin::new(WindowConfig {
-        title,
-        size,
-        titlebar: TitlebarMode::Native,
-        ime: true,
-    }))
-    // The surface and backend, published as the `SharedBackend` service.
-    .plugin(WgpuPlugin::new(GpuConfig {
-        font: FontConfig {
-            mode: FontMode::System,
-            device_pixel_rasterization: true,
-            ..Default::default()
-        },
-        ..Default::default()
-    }))
-    .plugin(PointerPlugin)
-    .plugin(KeyboardPlugin)
-    .plugin(ImePlugin)
-    .plugin(TextMeasurePlugin)
-    .plugin(ClipboardPlugin)
-    .plugin(HostPlugin { drops })
-    .logic(app)
-    .build()
-    .run();
-}
-
-/// The embedded host drives the app itself; there is no bundled window host in
-/// this build (`--no-default-features`).
-#[cfg(not(feature = "winit-host"))]
-pub fn run(_args: Args) {
-    panic!("this build has no bundled window host; embed `cgb-app` via a platform host");
-}
-
-/// Bridges host platform events the app cares about into shared flags: files
-/// dropped on the window. (Window resizes are picked up from the presenter's
-/// viewport, so a repeated resize does not force a redundant re-layout.)
-#[cfg(feature = "winit-host")]
-struct HostPlugin {
-    drops: Rc<RefCell<Vec<PathBuf>>>,
-}
-
-#[cfg(feature = "winit-host")]
-impl Plugin for HostPlugin {
-    fn name(&self) -> &'static str {
-        "cgb-host"
-    }
-
-    fn build(&self, app: &mut AppBuilder) {
-        app.add_platform_observer(HostObserver {
-            drops: self.drops.clone(),
-        });
-    }
-}
-
-#[cfg(feature = "winit-host")]
-struct HostObserver {
-    drops: Rc<RefCell<Vec<PathBuf>>>,
-}
-
-#[cfg(feature = "winit-host")]
-impl PlatformObserver for HostObserver {
-    fn on_platform(&mut self, event: PlatformEvent<'_>, _out: &mut Vec<InputEvent>) {
-        if let Some(WindowEvent::DroppedFile(path)) = event.downcast_ref::<WindowEvent>() {
-            self.drops.borrow_mut().push(path.clone());
-        }
-    }
-}
 
 /// A fullscreen toggle waiting for the OS window animation to settle.
 ///
@@ -382,9 +275,7 @@ pub struct App {
     pending_core_prompt: Option<String>,
     /// Keyboard modifiers, so save-state hotkeys can tell save from load.
     modifiers: Modifiers,
-    /// Files dropped onto the window since the last frame. The winit runner
-    /// delivers one `DroppedFile` event per file (through the host's observer),
-    /// so they are buffered and added in one batch.
+    /// Files dropped onto the window since the last frame.
     pending_drops: Rc<RefCell<Vec<PathBuf>>>,
     /// The viewport the mounted tree was last laid out for. A resize only
     /// forces a re-layout when this actually changes (a fullscreen transition
@@ -610,27 +501,9 @@ impl AppLogic for App {
         if let Some(window) = ctx.service::<SharedHostWindow>() {
             self.window = Some(window.clone());
         }
-        #[cfg(feature = "winit-host")]
-        if self.window.is_none() {
-            if let Some(window) = ctx.service::<SharedWindow>() {
-                if let Some(window) = window.borrow().clone() {
-                    self.window = Some(Rc::new(host::WinitWindow(window)));
-                }
-            }
-        }
-        // A host that owns its gamepad API publishes its source; otherwise
-        // fall back to `gilrs`.
+        // A host that owns its gamepad API publishes its source.
         if let Some(gamepad) = ctx.service::<SharedGamepad>() {
             self.gamepads = Some(gamepad.clone());
-        }
-        #[cfg(feature = "gilrs")]
-        if self.gamepads.is_none() {
-            match cgb_input::Gamepads::new() {
-                Ok(gamepads) => {
-                    self.gamepads = Some(Rc::new(RefCell::new(host::GilrsGamepads(gamepads))));
-                }
-                Err(error) => eprintln!("cgb: 手柄不可用：{error}"),
-            }
         }
         if let Some(measurer) = ctx.service::<Rc<dyn TextMeasurer>>() {
             self.measurer = Some(measurer.clone());

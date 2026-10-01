@@ -1,22 +1,16 @@
 [package]
 name = "cgb-app"
-description = "Classic Game Box: the shared app library (UI + emulator) and the winit dev host."
+description = "Classic Game Box: the shared app library (UI + emulator)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-
-[[bin]]
-name = "classic-game-box"
-path = "src/main.rs"
 
 [dependencies]
 cgb-systems.workspace = true
 cgb-host.workspace = true
 cgb-libretro.workspace = true
 cgb-audio.workspace = true
-# The `gilrs` backend is a feature of `cgb-input` (off by default here); the
-# embedded Swift host turns it off and feeds gamepads from Swift.
 cgb-input.workspace = true
 cgb-paths.workspace = true
 cgb-cores.workspace = true
@@ -34,22 +28,8 @@ igui_scene.workspace = true
 igui_core.workspace = true
 rfd.workspace = true
 
-# The `winit` window / input / IME / text-metrics / clipboard plugins. Optional
-# so the embedded Swift/macOS host can build `cgb-app` with
-# `default-features = false` and no `winit` at all.
-igui_winit = { workspace = true, optional = true }
-winit = { workspace = true, optional = true }
-
-# ---------------------------------------------------------------------------
-# The bundled window host. On by default (the `classic-game-box` binary needs
-# it); the embedded Swift host turns it off.
-# ---------------------------------------------------------------------------
 [features]
-default = ["winit-host"]
-winit-host = ["dep:igui_winit", "dep:winit", "gilrs"]
-# The `gilrs` gamepad backend, for the `winit` host. The embedded host turns it
-# off and feeds gamepads from Swift instead.
-gilrs = ["cgb-input/gilrs"]
+default = []
 
 # The headless UI benchmark (`benches/ui.rs`) uses igui's measurement harness.
 [dev-dependencies]

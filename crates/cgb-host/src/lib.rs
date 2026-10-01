@@ -2,9 +2,7 @@
 //!
 //! `cgb-app` never names a windowing library or a gamepad backend: the window
 //! is a [`HostWindow`], the gamepad a [`GamepadSource`]. A platform host — the
-//! embedded Swift host (`cgb-mac`) or the bundled `winit` dev host — publishes
-//! its implementations as services; `cgb-app` falls back to its own
-//! `winit`/`gilrs` host when none is registered.
+//! embedded Swift host (`cgb-mac`) publishes its implementations as services.
 //!
 //! Keeping the traits here (rather than in `cgb-app`) is what lets a host
 //! depend on them without depending on the whole app.
@@ -26,8 +24,8 @@ pub type SharedHostWindow = Rc<dyn HostWindow>;
 
 /// A source of gamepad state, polled once per frame.
 ///
-/// The bundled host uses `gilrs`; the embedded host uses Swift's
-/// `GameController` and writes a `cgb_input::GamepadSnapshot`.
+/// The macOS host uses Swift's `GameController` and writes a
+/// `cgb_input::GamepadSnapshot`.
 pub trait GamepadSource {
     /// Merge the current gamepad state into `state`.
     fn poll(&mut self, state: &mut InputState);

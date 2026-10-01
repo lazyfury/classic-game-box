@@ -1,9 +1,8 @@
 //! Native event translation: AppKit events (delivered through the C ABI) →
 //! `igui_core::InputEvent`s.
 //!
-//! This is the embedded host's replacement for `igui_winit`'s
-//! `PointerPlugin` / `KeyboardPlugin` / `ImePlugin`. The mapping rules mirror
-//! `igui_winit::input` so the UI behaves the same on both hosts.
+//! This is the embedded host's native implementation of pointer, keyboard and
+//! IME input. The mapping rules are shared with the UI's expected input model.
 
 use igui::igui_app::{AppBuilder, PlatformEvent, PlatformObserver, Plugin};
 use igui::igui_core::{ImeEvent, InputEvent, Key, Modifiers, PointerButton, Vec2};
