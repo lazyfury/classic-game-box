@@ -115,6 +115,10 @@ The `winit` host does a few things this host does not yet.
 
 ## G. Swift-native gamepad (decided interface)
 
+**Status:** implemented — `cgb-input::GamepadSnapshot`, `cgb-app`'s
+`GamepadSource`/`SharedGamepad`, `MacGamepadPlugin` + `cgb_mac_gamepad_*`, and
+Swift `Gamepads.swift`. `gilrs` is off the embedded build.
+
 **Decision.** On this host the gamepad source is Swift, using Apple's
 `GameController` framework (`GCController`), not `gilrs`. Apple's own mapping
 is correct for the Xbox Wireless Controller over Bluetooth, which `gilrs`

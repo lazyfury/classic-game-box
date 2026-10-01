@@ -17,5 +17,7 @@ mod host;
 mod input;
 
 pub use ffi::*;
-pub use host::{MacClipboardPlugin, MacGpu, MacGpuPlugin, MacSurface, MacTextMeasurePlugin};
+pub use host::{
+    MacClipboardPlugin, MacGamepadPlugin, MacGpu, MacGpuPlugin, MacSurface, MacTextMeasurePlugin,
+};
 pub use input::MacInputPlugin;

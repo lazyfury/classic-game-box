@@ -46,7 +46,7 @@ use cgb_cores::{
     cache_path, download_core_with_progress, is_blocked, load_cores, register_downloaded,
     registry_path, update_catalog, write_catalog, Catalog, Platform, DEFAULT_SOURCE,
 };
-use cgb_input::{Gamepads, InputState, KeyboardBindings};
+use cgb_input::{InputState, KeyboardBindings};
 use cgb_library::{
     collect_games, decode_png, encode_png, import_roms, Game, ImportReport, Library,
 };
@@ -72,7 +72,7 @@ mod textures;
 mod window;
 
 pub(crate) use helpers::*;
-pub use host::{HostWindow, SharedHostWindow};
+pub use host::{GamepadSource, HostWindow, SharedGamepad, SharedHostWindow};
 pub(crate) use project::*;
 
 /// The wgpu backend a platform graphics plugin publishes as a service.
@@ -354,7 +354,7 @@ pub struct App {
     shader: ShaderKind,
     /// Geometry anti-aliasing (MSAA) mode.
     msaa: MsaaKind,
-    gamepads: Option<Gamepads>,
+    gamepads: Option<SharedGamepad>,
     session: Option<Session>,
     /// `--rom` path to start once the window exists.
     pending_rom: Option<PathBuf>,
@@ -560,13 +560,7 @@ impl App {
             rewinding: false,
             shader,
             msaa,
-            gamepads: match Gamepads::new() {
-                Ok(gamepads) => Some(gamepads),
-                Err(error) => {
-                    eprintln!("cgb: 手柄不可用：{error}");
-                    None
-                }
-            },
+            gamepads: None,
             session: None,
             pending_rom: args.rom,
             core_override: args.core,
@@ -617,6 +611,20 @@ impl AppLogic for App {
                 if let Some(window) = window.borrow().clone() {
                     self.window = Some(Rc::new(host::WinitWindow(window)));
                 }
+            }
+        }
+        // A host that owns its gamepad API publishes its source; otherwise
+        // fall back to `gilrs`.
+        if let Some(gamepad) = ctx.service::<SharedGamepad>() {
+            self.gamepads = Some(gamepad.clone());
+        }
+        #[cfg(feature = "gilrs")]
+        if self.gamepads.is_none() {
+            match cgb_input::Gamepads::new() {
+                Ok(gamepads) => {
+                    self.gamepads = Some(Rc::new(RefCell::new(host::GilrsGamepads(gamepads))));
+                }
+                Err(error) => eprintln!("cgb: 手柄不可用：{error}"),
             }
         }
         if let Some(measurer) = ctx.service::<Rc<dyn TextMeasurer>>() {

@@ -18,5 +18,7 @@ cgb-app = { path = "../..", default-features = false }
 # The plugin runtime + native backend the host assembles. `igui_core` /
 # `igui_render` / `igui_ui` come through the facade's features.
 igui = { workspace = true, features = ["ui", "app", "wgpu", "profile"] }
+# `GamepadSnapshot` for the Swift gamepad source.
+cgb-input.workspace = true
 # System clipboard for the text fields (the same crate `igui_winit` uses).
 arboard = "3"

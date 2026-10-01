@@ -100,6 +100,13 @@ impl InputState {
         set_bit(&mut self.gamepad, port, button, down);
     }
 
+    /// Replace a port's whole gamepad button mask at once.
+    pub fn set_gamepad_mask(&mut self, port: usize, mask: u16) {
+        if let Some(slot) = self.gamepad.get_mut(port) {
+            *slot = mask;
+        }
+    }
+
     /// Release everything on a port (focus loss, core switch).
     pub fn clear(&mut self, port: usize) {
         if let Some(mask) = self.keyboard.get_mut(port) {
@@ -124,6 +131,81 @@ fn set_bit(masks: &mut [u16; 2], port: usize, button: JoypadButton, down: bool) 
         *mask |= bit;
     } else {
         *mask &= !bit;
+    }
+}
+
+/// A host-provided gamepad state: per-port button masks and sticks.
+///
+/// A platform host that owns its own gamepad API (Swift's `GameController`)
+/// fills this in and hands it to the app, which applies it to the shared
+/// [`InputState`] once per frame. It is the snapshot twin of [`Gamepads`].
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GamepadSnapshot {
+    /// Buttons held per port, as a libretro joypad bitmask.
+    pub buttons: [u16; 2],
+    /// Analog sticks: `[port][stick][axis]`, libretro's convention.
+    pub analog: [[[i16; 2]; 2]; 2],
+    /// Whether a pad is connected on each port (informational).
+    pub connected: [bool; 2],
+}
+
+impl GamepadSnapshot {
+    /// Press or release one button.
+    pub fn set_button(&mut self, port: usize, button: JoypadButton, down: bool) {
+        let Some(mask) = self.buttons.get_mut(port) else {
+            return;
+        };
+        let bit = 1u16 << button.id();
+        if down {
+            *mask |= bit;
+        } else {
+            *mask &= !bit;
+        }
+    }
+
+    /// Set one analog axis.
+    pub fn set_analog(&mut self, port: usize, stick: usize, axis: usize, value: i16) {
+        if let Some(slot) = self
+            .analog
+            .get_mut(port)
+            .and_then(|port| port.get_mut(stick))
+            .and_then(|stick| stick.get_mut(axis))
+        {
+            *slot = value;
+        }
+    }
+
+    /// Mark a port connected or disconnected; disconnecting clears it.
+    pub fn connect(&mut self, port: usize, connected: bool) {
+        if let Some(slot) = self.connected.get_mut(port) {
+            *slot = connected;
+        }
+        if !connected {
+            self.clear(port);
+        }
+    }
+
+    /// Clear a port's buttons and sticks.
+    pub fn clear(&mut self, port: usize) {
+        if let Some(mask) = self.buttons.get_mut(port) {
+            *mask = 0;
+        }
+        if let Some(analog) = self.analog.get_mut(port) {
+            *analog = [[0; 2]; 2];
+        }
+    }
+
+    /// Write this snapshot into the gamepad half of `state` (the keyboard half
+    /// is left alone, so the two sources still OR).
+    pub fn apply(&self, state: &mut InputState) {
+        for port in 0..2 {
+            state.set_gamepad_mask(port, self.buttons[port]);
+            for stick in 0..2 {
+                for axis in 0..2 {
+                    state.set_analog(port, stick, axis, self.analog[port][stick][axis]);
+                }
+            }
+        }
     }
 }
 
@@ -284,6 +366,7 @@ impl Default for KeyboardBindings {
 }
 
 /// The `gilrs` connection and its port assignment.
+#[cfg(feature = "gilrs")]
 pub struct Gamepads {
     gilrs: gilrs::Gilrs,
     /// Which physical pad is on which libretro port, in connection order.
@@ -296,6 +379,7 @@ pub struct Gamepads {
     held: [u16; 2],
 }
 
+#[cfg(feature = "gilrs")]
 impl Gamepads {
     /// Connect to the platform's gamepad API. Failure is not fatal: the app
     /// falls back to keyboard.
@@ -448,9 +532,11 @@ impl Gamepads {
 }
 
 /// How far a stick or hat must move before it counts as a direction.
+#[cfg(feature = "gilrs")]
 const STICK_DEADZONE: f32 = 0.5;
 
 /// The (negative, positive) D-pad buttons an axis drives, if any.
+#[cfg(feature = "gilrs")]
 fn axis_buttons(axis: gilrs::Axis) -> Option<(JoypadButton, JoypadButton)> {
     use gilrs::Axis;
     use JoypadButton::*;
@@ -463,6 +549,7 @@ fn axis_buttons(axis: gilrs::Axis) -> Option<(JoypadButton, JoypadButton)> {
 }
 
 /// The (`stick`, `axis`) an analog axis means, if it is a stick.
+#[cfg(feature = "gilrs")]
 fn stick_of(axis: gilrs::Axis) -> Option<(usize, usize)> {
     use gilrs::Axis;
     Some(match axis {
@@ -476,6 +563,7 @@ fn stick_of(axis: gilrs::Axis) -> Option<(usize, usize)> {
 
 /// gilrs's normalized axis → libretro's i16. libretro's Y is positive down and
 /// gilrs's is positive up, so Y is negated.
+#[cfg(feature = "gilrs")]
 fn stick_value(axis: usize, value: f32) -> i16 {
     let scaled = (value.clamp(-1.0, 1.0) * 32767.0) as i16;
     if axis == 1 {
@@ -491,6 +579,7 @@ fn stick_value(axis: usize, value: f32) -> i16 {
 /// are read straight from the descriptor. Taken from a real pad (Microsoft
 /// `0x045E:0x02E0` over Bluetooth): `1=A 2=B 3=X 4=Y 5=右肩 6=左扳机 7=左肩
 /// 8=Start 13=右扳机`, and the Consumer-page `0x224` is Select.
+#[cfg(feature = "gilrs")]
 fn xbox_button(code: u32) -> Option<JoypadButton> {
     let page = code >> 16;
     let usage = code & 0xffff;
@@ -516,6 +605,7 @@ fn xbox_button(code: u32) -> Option<JoypadButton> {
 /// A is the right-hand one, so it is the **bottom** button that maps to libretro
 /// A (id 8) and the **right** one to B (id 0) — the same way the old front
 /// end's `gamepad.ts` did.
+#[cfg(feature = "gilrs")]
 fn button_of(button: gilrs::Button) -> Option<JoypadButton> {
     use gilrs::Button;
     use JoypadButton::*;
@@ -743,6 +833,7 @@ mod tests {
         assert!(state.is_down(0, JoypadButton::A));
     }
 
+    #[cfg(feature = "gilrs")]
     #[test]
     fn stick_axes_drive_the_dpad() {
         use gilrs::Axis;
@@ -769,6 +860,7 @@ mod tests {
         assert_eq!(state.analog(0, 0, 0), 0);
     }
 
+    #[cfg(feature = "gilrs")]
     #[test]
     fn stick_axes_are_analog_and_y_is_negated() {
         use gilrs::Axis;
@@ -784,6 +876,7 @@ mod tests {
     /// The legacy front end mapped the bottom face button (printed "A" on most
     /// pads) to the console's A, and the right face button to B. Pinned here so
     /// the two do not drift.
+    #[cfg(feature = "gilrs")]
     #[test]
     fn the_bottom_face_button_is_a_and_the_right_one_is_b() {
         use gilrs::Button;
@@ -794,6 +887,7 @@ mod tests {
     }
 
     /// The Xbox Wireless Controller's raw HID usages, taken from a real pad.
+    #[cfg(feature = "gilrs")]
     #[test]
     fn the_xbox_pad_maps_by_raw_hid_usage() {
         let usage = |page: u32, usage: u32| xbox_button((page << 16) | usage);
@@ -808,5 +902,32 @@ mod tests {
         assert_eq!(usage(0x09, 13), Some(JoypadButton::R)); // right trigger
         assert_eq!(usage(0x0c, 0x224), Some(JoypadButton::Select));
         assert_eq!(usage(0x09, 99), None);
+    }
+
+    #[test]
+    fn a_gamepad_snapshot_applies_buttons_and_sticks() {
+        let mut snapshot = GamepadSnapshot::default();
+        snapshot.set_button(0, JoypadButton::A, true);
+        snapshot.set_button(0, JoypadButton::Left, true);
+        snapshot.set_analog(0, 0, 1, -32767);
+        snapshot.set_analog(1, 1, 0, 16384);
+
+        let mut state = InputState::new();
+        // A keyboard press must survive the snapshot (the two sources OR).
+        state.set(0, JoypadButton::Up, true);
+        snapshot.apply(&mut state);
+
+        assert!(state.is_down(0, JoypadButton::A));
+        assert!(state.is_down(0, JoypadButton::Left));
+        assert!(state.is_down(0, JoypadButton::Up));
+        assert_eq!(state.analog(0, 0, 1), -32767);
+        assert_eq!(state.analog(1, 1, 0), 16384);
+
+        // Disconnecting a port clears its buttons and sticks, not the keyboard.
+        snapshot.connect(0, false);
+        snapshot.apply(&mut state);
+        assert!(!state.is_down(0, JoypadButton::A));
+        assert!(state.is_down(0, JoypadButton::Up));
+        assert_eq!(state.analog(0, 0, 1), 0);
     }
 }

@@ -60,6 +60,39 @@ uint32_t cgb_mac_cursor(const CgbMacApp *app);
 bool cgb_mac_caret(const CgbMacApp *app, float *out_x, float *out_y,
                    float *out_width, float *out_height);
 
+/* -------------------------------------------------------------------------
+ * Gamepad (Swift's GameController). libretro joypad ids are mirrored here so
+ * Swift never hardcodes them.
+ * ------------------------------------------------------------------------- */
+
+enum {
+    CGB_JOYPAD_B = 0,
+    CGB_JOYPAD_Y = 1,
+    CGB_JOYPAD_SELECT = 2,
+    CGB_JOYPAD_START = 3,
+    CGB_JOYPAD_UP = 4,
+    CGB_JOYPAD_DOWN = 5,
+    CGB_JOYPAD_LEFT = 6,
+    CGB_JOYPAD_RIGHT = 7,
+    CGB_JOYPAD_A = 8,
+    CGB_JOYPAD_X = 9,
+    CGB_JOYPAD_L = 10,
+    CGB_JOYPAD_R = 11,
+    CGB_JOYPAD_L2 = 12,
+    CGB_JOYPAD_R2 = 13,
+    CGB_JOYPAD_L3 = 14,
+    CGB_JOYPAD_R3 = 15
+};
+
+/* Replace one port's gamepad snapshot. `buttons`: bit i = CGB_JOYPAD_* i.
+ * Axes are -32768..32767, libretro convention (Y positive is down). */
+void cgb_mac_gamepad_state(CgbMacApp *app, uint32_t port, uint32_t buttons,
+                           int16_t left_x, int16_t left_y,
+                           int16_t right_x, int16_t right_y);
+
+/* Mark a gamepad port connected/disconnected; disconnect clears it. */
+void cgb_mac_gamepad_connected(CgbMacApp *app, uint32_t port, bool connected);
+
 /* Resize the drawable (physical pixels) and update the backing scale. */
 void cgb_mac_resize(CgbMacApp *app, uint32_t width, uint32_t height, double scale);
 

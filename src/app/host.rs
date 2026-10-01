@@ -6,7 +6,12 @@
 //! host implements it over AppKit, so `cgb-app` can build with
 //! `--no-default-features` and no `winit` at all.
 
+use std::cell::RefCell;
 use std::rc::Rc;
+
+#[cfg(feature = "gilrs")]
+use cgb_input::Gamepads;
+use cgb_input::InputState;
 
 /// What the app asks of the native window.
 pub trait HostWindow {
@@ -17,6 +22,31 @@ pub trait HostWindow {
 /// The host window a platform plugin publishes as the `SharedHostWindow`
 /// service.
 pub type SharedHostWindow = Rc<dyn HostWindow>;
+
+/// A source of gamepad state, polled once per frame.
+///
+/// The default source is `gilrs` ([`GilrsGamepads`]); a host that owns its own
+/// gamepad API (the Swift `GameController` host) publishes its own through the
+/// `SharedGamepad` service instead.
+pub trait GamepadSource {
+    /// Merge the current gamepad state into `state`.
+    fn poll(&mut self, state: &mut InputState);
+}
+
+/// The gamepad source a platform plugin publishes as the `SharedGamepad`
+/// service.
+pub type SharedGamepad = Rc<RefCell<dyn GamepadSource>>;
+
+/// The default `gilrs` gamepad source.
+#[cfg(feature = "gilrs")]
+pub(crate) struct GilrsGamepads(pub(crate) Gamepads);
+
+#[cfg(feature = "gilrs")]
+impl GamepadSource for GilrsGamepads {
+    fn poll(&mut self, state: &mut InputState) {
+        self.0.poll(state);
+    }
+}
 
 /// Adapts a `winit` window to [`HostWindow`] (the default host).
 #[cfg(feature = "winit-host")]

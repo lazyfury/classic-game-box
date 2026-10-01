@@ -428,6 +428,7 @@ version = "0.2.0"
 dependencies = [
  "arboard",
  "cgb-app",
+ "cgb-input",
  "igui",
 ]
 

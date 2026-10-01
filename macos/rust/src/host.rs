@@ -12,7 +12,8 @@ use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::rc::Rc;
 
-use cgb_app::app::{HostWindow, SharedBackend};
+use cgb_app::app::{GamepadSource, HostWindow, SharedBackend};
+use cgb_input::{GamepadSnapshot, InputState};
 use igui::igui_app::{App, AppBuilder, LifecycleObserver, Plugin, PresentOutcome, Presenter};
 use igui::igui_backend_wgpu::wgpu;
 use igui::igui_backend_wgpu::{FontConfig, FontMetrics, FontMode, WgpuBackend};
@@ -93,6 +94,44 @@ impl MacHostWindow {
 impl HostWindow for MacHostWindow {
     fn set_fullscreen(&self, on: bool) {
         self.request.set(Some(on));
+    }
+}
+
+/// The Swift gamepad source: a snapshot Swift fills through the C ABI and this
+/// applies to the shared [`InputState`] once per frame.
+struct MacGamepad {
+    snapshot: Rc<RefCell<GamepadSnapshot>>,
+}
+
+impl GamepadSource for MacGamepad {
+    fn poll(&mut self, state: &mut InputState) {
+        self.snapshot.borrow().apply(state);
+    }
+}
+
+/// Publishes the Swift gamepad source as the `SharedGamepad` service.
+pub struct MacGamepadPlugin {
+    source: Rc<RefCell<dyn GamepadSource>>,
+}
+
+impl MacGamepadPlugin {
+    /// Create the plugin and a handle to the snapshot Swift writes.
+    pub fn new() -> (Self, Rc<RefCell<GamepadSnapshot>>) {
+        let snapshot = Rc::new(RefCell::new(GamepadSnapshot::default()));
+        let source: Rc<RefCell<dyn GamepadSource>> = Rc::new(RefCell::new(MacGamepad {
+            snapshot: snapshot.clone(),
+        }));
+        (Self { source }, snapshot)
+    }
+}
+
+impl Plugin for MacGamepadPlugin {
+    fn name(&self) -> &'static str {
+        "cgb-mac-gamepad"
+    }
+
+    fn build(&self, app: &mut AppBuilder) {
+        app.insert_service(self.source.clone());
     }
 }
 

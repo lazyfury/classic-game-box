@@ -46,6 +46,7 @@ let package = Package(
                 .linkedFramework("Metal"),
                 .linkedFramework("MetalKit"),
                 .linkedFramework("QuartzCore"),
+                .linkedFramework("GameController"),
                 // `cgb-libretro`'s offscreen GL path (hardware cores) and the
                 // frameworks pulled in by the Rust `cpal` audio backend.
                 .linkedFramework("OpenGL"),

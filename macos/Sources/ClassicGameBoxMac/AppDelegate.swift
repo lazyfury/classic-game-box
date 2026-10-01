@@ -10,6 +10,7 @@ import CGBNative
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let options: LaunchOptions
+    private let gamepads = Gamepads()
     private var window: NSWindow?
     private var view: HostView?
     private var app: OpaquePointer?
@@ -47,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.app = handle
         view.app = handle
         view.onGeometryChange = { [weak self] in self?.resize() }
+        gamepads.app = handle
+        gamepads.start()
 
         // A main-thread timer drives the frames. `cgb_mac_needs_frame` can
         // later let an idle app skip work; for now every tick presents.

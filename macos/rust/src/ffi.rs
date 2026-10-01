@@ -7,11 +7,13 @@ use std::rc::Rc;
 
 use cgb_app::app::{App as CgbApp, SharedHostWindow};
 use cgb_app::cli::Args;
+use cgb_input::GamepadSnapshot;
 use igui::igui_app::{App as IguiApp, AppConfig, PlatformEvent};
 use igui::igui_core::{Cursor, ImeEvent, Vec2};
 
 use crate::host::{
-    MacClipboardPlugin, MacGpu, MacGpuPlugin, MacHostWindow, MacSurface, MacTextMeasurePlugin,
+    MacClipboardPlugin, MacGamepadPlugin, MacGpu, MacGpuPlugin, MacHostWindow, MacSurface,
+    MacTextMeasurePlugin,
 };
 use crate::input::{key_from_code, modifiers_from_bits, pointer_button, MacEvent, MacInputPlugin};
 
@@ -20,6 +22,7 @@ pub struct CgbMacApp {
     app: IguiApp,
     gpu: MacGpu,
     host_window: MacHostWindow,
+    gamepad: Rc<RefCell<GamepadSnapshot>>,
     drops: Rc<RefCell<Vec<PathBuf>>>,
 }
 
@@ -101,6 +104,7 @@ pub unsafe extern "C" fn cgb_mac_start(
     let drops = logic.drop_sink();
     let (gpu_plugin, gpu) = MacGpuPlugin::new();
     let host_window = MacHostWindow::default();
+    let (gamepad_plugin, gamepad) = MacGamepadPlugin::new();
 
     let mut builder = IguiApp::new(AppConfig {
         title: "Classic Game Box".to_string(),
@@ -111,6 +115,7 @@ pub unsafe extern "C" fn cgb_mac_start(
     .plugin(MacTextMeasurePlugin)
     .plugin(MacClipboardPlugin)
     .plugin(MacInputPlugin)
+    .plugin(gamepad_plugin)
     .logic(logic);
     builder.insert_service(MacSurface {
         layer,
@@ -128,6 +133,7 @@ pub unsafe extern "C" fn cgb_mac_start(
         app,
         gpu,
         host_window,
+        gamepad,
         drops,
     }))
 }
@@ -245,6 +251,56 @@ pub unsafe extern "C" fn cgb_mac_caret(
         unsafe { *out_height = rect.size.height };
     }
     true
+}
+
+// ---------------------------------------------------------------------------
+// Gamepad (Swift's GameController)
+// ---------------------------------------------------------------------------
+
+/// Replace one port's gamepad snapshot. `buttons`: bit i = `CGB_JOYPAD_*` i.
+/// Axes are `-32768..32767`, libretro's convention (Y positive is down).
+///
+/// # Safety
+///
+/// `app` must be a live pointer from `cgb_mac_start`.
+#[no_mangle]
+pub unsafe extern "C" fn cgb_mac_gamepad_state(
+    app: *mut CgbMacApp,
+    port: u32,
+    buttons: u32,
+    left_x: i16,
+    left_y: i16,
+    right_x: i16,
+    right_y: i16,
+) {
+    let Some(app) = (unsafe { app.as_mut() }) else {
+        return;
+    };
+    let mut snapshot = app.gamepad.borrow_mut();
+    if let Some(slot) = snapshot.buttons.get_mut(port as usize) {
+        *slot = buttons as u16;
+    }
+    if let Some(sticks) = snapshot.analog.get_mut(port as usize) {
+        sticks[0] = [left_x, left_y];
+        sticks[1] = [right_x, right_y];
+    }
+}
+
+/// Mark a gamepad port connected or disconnected; disconnecting clears it.
+///
+/// # Safety
+///
+/// `app` must be a live pointer from `cgb_mac_start`.
+#[no_mangle]
+pub unsafe extern "C" fn cgb_mac_gamepad_connected(
+    app: *mut CgbMacApp,
+    port: u32,
+    connected: bool,
+) {
+    let Some(app) = (unsafe { app.as_mut() }) else {
+        return;
+    };
+    app.gamepad.borrow_mut().connect(port as usize, connected);
 }
 
 /// Resize the drawable (physical pixels) and update the backing scale.

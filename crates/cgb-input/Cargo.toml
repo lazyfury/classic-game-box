@@ -9,4 +9,11 @@ license.workspace = true
 cgb-systems.workspace = true
 # No UI dependency: the crate defines its own `Key` (the app maps UI key
 # events into it), so it pulls in neither the facade nor `igui_core`.
-gilrs.workspace = true
+gilrs = { workspace = true, optional = true }
+
+[features]
+# The `gilrs` gamepad backend. On by default (the native `winit` host); the
+# embedded Swift host turns it off and feeds gamepads through a
+# [`GamepadSnapshot`] instead.
+default = ["gilrs"]
+gilrs = ["dep:gilrs"]

@@ -57,7 +57,7 @@ igui_scene = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
 cgb-systems = { path = "crates/cgb-systems" }
 cgb-libretro = { path = "crates/cgb-libretro" }
 cgb-audio = { path = "crates/cgb-audio" }
-cgb-input = { path = "crates/cgb-input" }
+cgb-input = { path = "crates/cgb-input", default-features = false }
 cgb-paths = { path = "crates/cgb-paths" }
 cgb-cores = { path = "crates/cgb-cores" }
 cgb-library = { path = "crates/cgb-library" }
@@ -95,6 +95,8 @@ thiserror = "2"
 cgb-systems.workspace = true
 cgb-libretro.workspace = true
 cgb-audio.workspace = true
+# The `gilrs` backend is a feature of `cgb-input` (off by default here); the
+# embedded host turns it off and feeds gamepads from Swift.
 cgb-input.workspace = true
 cgb-paths.workspace = true
 cgb-cores.workspace = true
@@ -124,7 +126,10 @@ winit = { workspace = true, optional = true }
 # ---------------------------------------------------------------------------
 [features]
 default = ["winit-host"]
-winit-host = ["dep:igui_winit", "dep:winit"]
+winit-host = ["dep:igui_winit", "dep:winit", "gilrs"]
+# The `gilrs` gamepad backend, for the `winit` host. The embedded host turns it
+# off and feeds gamepads from Swift instead.
+gilrs = ["cgb-input/gilrs"]
 
 # The headless UI benchmark (`benches/ui.rs`) uses igui's measurement harness.
 [dev-dependencies]

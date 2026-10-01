@@ -648,8 +648,8 @@ impl super::App {
     }
 
     pub(super) fn step_gamepad(&mut self) {
-        if let Some(gamepads) = self.gamepads.as_mut() {
-            gamepads.poll(&mut self.input);
+        if let Some(gamepads) = self.gamepads.clone() {
+            gamepads.borrow_mut().poll(&mut self.input);
         }
     }
 }
