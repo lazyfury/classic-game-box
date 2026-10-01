@@ -57,6 +57,20 @@ cargo run -- --rom mario.nes                  # 直接开始
 | Q4 | mGBA 接入 + 机种路由 | |
 | Q5 | 打包 `.app`、无头自检 | |
 
+## 实验：Swift/macOS host
+
+仓库里还有一条**实验性**前端：Swift 只做窗口与原生事件（`CAMetalLayer` + AppKit，
+**取代 winit**），igui UI、wgpu 渲染与 libretro 模拟器全部留在 Rust，经 C ABI 嵌入
+（`macos/` + `macos/rust`，crate `cgb-mac`）。嵌入版用 `cgb-app = { default-features = false }`，
+不编译 winit/gilrs；手柄走 Swift `GameController`。
+
+```bash
+macos/scripts/run.sh          # 开库界面
+macos/scripts/package.sh      # → dist/Classic Game Box (Swift).app
+```
+
+计划与剩余缺口见 [`docs/architecture/swift-macos-host-plan.md`](docs/architecture/swift-macos-host-plan.md)。
+
 ## 自研 FC 核心（legacy）
 
 `legacy/` 只保留自研 C++ FC / NES 核心（`packages/fc-core`）与它的 libretro 适配

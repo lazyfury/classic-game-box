@@ -117,6 +117,13 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   声音由 Java 子进程用 JavaSound 直接播到 CoreAudio，能出声但不听前端控制（暂停/音量）
   ——当前按“保持现状”收尾。已知缺口：
   **无即时存档（倒带已禁用）、键盘回调未接**（joypad 可玩，手机键盘已映射到手柄）。
+- **Swift/macOS host（实验）**：`macos/` 是一个实验性前端——Swift 只做窗口 /
+  `CAMetalLayer` / 原生事件（**取代 winit**），igui UI + wgpu 渲染 + libretro 模拟器全在 Rust
+  （`macos/rust`，crate `cgb-mac`，经 `cgb_mac_*` C ABI；FFI 边界**包含 UI**）。`cgb-app` 的窗口
+  依赖抽成 `HostWindow` trait，手柄抽成 `GamepadSource`；`igui_winit`/`winit`/`gilrs` 由 default
+  feature `winit-host` 打开，嵌入版用 `cgb-app = { default-features = false }`，**不编译
+  winit/gilrs**。手柄走 Swift `GameController`（快照经 `cgb_mac_gamepad_*` 回灌）。打包
+  `macos/scripts/package.sh`。计划与剩余缺口见 `docs/architecture/swift-macos-host-plan.md`。
 
 ## 硬规则
 
@@ -176,6 +183,8 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/ico
 | 原生 core 构建 / 加核心流程 | `cores/README.md`、`cores/build.sh.example`、`cores/*/build.sh` |
 | J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
 | 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`src/cli.rs` |
+| Swift/macOS host（实验：Swift 取代 winit） | `macos/`（Swift 窗口/事件）、`macos/rust/`（crate `cgb-mac`：surface + 事件 + C ABI）、`docs/architecture/swift-macos-host-plan.md` |
+| 窗口/手柄 host 抽象（`winit-host` feature） | `src/app/host.rs`（`HostWindow` / `GamepadSource`）、`src/app/mod.rs`（`App::init` 选源） |
 | 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `legacy/packages/fc-{core,libretro}`（只读） |
 
 ## 已知缺口（先记录，不擅自补）

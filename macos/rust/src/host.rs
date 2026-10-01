@@ -55,6 +55,11 @@ pub struct MacGpu {
 }
 
 impl MacGpu {
+    /// Whether the surface/backend came up (the lifecycle ran successfully).
+    pub fn is_ready(&self) -> bool {
+        self.state.borrow().is_some()
+    }
+
     /// Reconfigure the surface for a new drawable size / scale.
     pub fn resize(&self, width: u32, height: u32, scale: f64) {
         let mut guard = self.state.borrow_mut();

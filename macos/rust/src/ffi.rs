@@ -129,6 +129,13 @@ pub unsafe extern "C" fn cgb_mac_start(
     let mut app = builder.build();
     app.resumed();
 
+    // A missing backend means the Metal surface or wgpu device could not be
+    // created; surface it as a start failure so Swift can tell the user.
+    if !gpu.is_ready() {
+        eprintln!("cgb-mac: GPU 初始化失败（Metal surface / wgpu backend）");
+        return std::ptr::null_mut();
+    }
+
     Box::into_raw(Box::new(CgbMacApp {
         app,
         gpu,

@@ -31,6 +31,8 @@ crates/cgb-cores/src/         cores（cores.json 清单）/ catalog（buildbot�
 crates/cgb-library/src/       library（SQLite 库）/ import / saves / cheats / png_codec
 cores/cores.json              核心清单
 cores/<name>/build.sh         每个核心的原生构建（产出到 cores/dist/）
+macos/                        Swift/macOS host（实验）：SwiftPM 包（窗口/CAMetalLayer/事件）
+macos/rust/                   crate `cgb-mac`：CAMetalLayer→wgpu surface、事件、`cgb_mac_*` C ABI
 ```
 
 **禁读**：`target/`、`legacy/`（除非查历史决策）、`cores/sources/`、`cores/dist/`、
@@ -52,6 +54,11 @@ cgb-systems           → 无
 ```
 
 `src/ui` 不认识 libretro；`cgb-libretro` 不认识 UI / 音频设备；`crates/` 不反向依赖根 app。
+
+**host 抽象（实验路径）**：`cgb-app` 不直接依赖窗口/手柄实现——窗口经
+`src/app/host.rs` 的 `HostWindow` trait（服务 `SharedHostWindow`），手柄经 `GamepadSource`
+（服务 `SharedGamepad`）；默认由 `winit-host` feature 提供 winit + gilrs，嵌入版
+`cgb-app = { default-features = false }` 则一个都不编。`App` / `App::new` / `drop_sink` 为嵌入 host 公开。
 
 ## 2. 命令
 

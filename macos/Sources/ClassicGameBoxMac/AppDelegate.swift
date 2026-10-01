@@ -47,6 +47,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
 
         guard let handle = startRustApp(in: view) else {
+            let alert = NSAlert()
+            alert.messageText = "启动失败"
+            alert.informativeText = "无法创建 Metal / wgpu 渲染后端。"
+            alert.alertStyle = .critical
+            alert.runModal()
             NSApp.terminate(nil)
             return
         }
