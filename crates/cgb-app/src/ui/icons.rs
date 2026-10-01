@@ -46,6 +46,8 @@ pub enum IconName {
     ChevronLeft,
     /// A right chevron; the next screenshot.
     ChevronRight,
+    /// A down chevron; an expanded fold.
+    ChevronDown,
     /// A stack of books; the library section.
     Library,
     /// Two sliders; the settings section.
@@ -64,7 +66,7 @@ pub enum IconName {
 
 impl IconName {
     /// Every icon in the pack, for tests and iteration.
-    pub const ALL: [IconName; 18] = [
+    pub const ALL: [IconName; 19] = [
         IconName::Pin,
         IconName::Trash,
         IconName::ArrowUp,
@@ -76,6 +78,7 @@ impl IconName {
         IconName::Close,
         IconName::ChevronLeft,
         IconName::ChevronRight,
+        IconName::ChevronDown,
         IconName::Library,
         IconName::Settings2,
         IconName::Pencil,
@@ -99,6 +102,7 @@ impl IconName {
             IconName::Close => include_str!("../../../../assets/icons/x.svg"),
             IconName::ChevronLeft => include_str!("../../../../assets/icons/chevron-left.svg"),
             IconName::ChevronRight => include_str!("../../../../assets/icons/chevron-right.svg"),
+            IconName::ChevronDown => include_str!("../../../../assets/icons/chevron-down.svg"),
             IconName::Library => include_str!("../../../../assets/icons/library.svg"),
             IconName::Settings2 => include_str!("../../../../assets/icons/settings-2.svg"),
             IconName::Pencil => include_str!("../../../../assets/icons/pencil.svg"),

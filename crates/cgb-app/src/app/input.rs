@@ -253,6 +253,14 @@ impl super::App {
                     self.model.system_filter = system;
                     self.rebuild_game_rows();
                 }
+                Action::ToggleFilters => {
+                    self.model.filters_collapsed = !self.model.filters_collapsed;
+                    self.dirty = true;
+                }
+                Action::ToggleMissingCores => {
+                    self.model.missing_cores_collapsed = !self.model.missing_cores_collapsed;
+                    self.dirty = true;
+                }
                 Action::SelectCore(index) => self.select_core(index),
                 Action::StartCatalogSearch => self.start_edit(EditTarget::CatalogSearch),
                 Action::ClearCatalogSearch => self.clear_catalog_search(),

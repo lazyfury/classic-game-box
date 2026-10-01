@@ -361,6 +361,7 @@ fn the_stats_bar_counts_each_console_and_filters() {
     let actions = ViewBridge::default();
     let model = ViewModel {
         total_games: 3,
+        filters_collapsed: false,
         system_counts: vec![
             SystemCount {
                 system: SystemId::Nes,
@@ -396,6 +397,34 @@ fn the_stats_bar_counts_each_console_and_filters() {
         actions.drain(),
         vec![Action::FilterSystem(Some(SystemId::Gba))]
     );
+}
+
+/// A folded console filter hides its chips and keeps a clickable header that
+/// asks to unfold.
+#[test]
+fn the_console_filter_folds_away() {
+    let actions = ViewBridge::default();
+    let model = ViewModel {
+        total_games: 1,
+        filters_collapsed: true,
+        system_counts: vec![SystemCount {
+            system: SystemId::Nes,
+            count: 1,
+        }],
+        ..ViewModel::default()
+    };
+    let (mut tree, list) = laid_out(&model, &actions);
+    let has = |needle: &str| {
+        list.commands().iter().any(|command| {
+            matches!(command,
+                    DrawCommand::DrawText { text, .. } if text.contains(needle))
+        })
+    };
+    assert!(has("按模拟器筛选"), "the header stays");
+    assert!(!has("全部"), "the chips are folded away");
+    let point = text_position(&list, "按模拟器筛选");
+    click(&mut tree, point);
+    assert_eq!(actions.drain(), vec![Action::ToggleFilters]);
 }
 
 /// Covers are a stable colour per path, so a game keeps its colour between

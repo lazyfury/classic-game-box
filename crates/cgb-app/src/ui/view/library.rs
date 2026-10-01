@@ -95,9 +95,38 @@ pub(super) fn library_page(
     }
 }
 
+/// A clickable fold header: a chevron pointing right when collapsed, down when
+/// expanded, next to the caption. `heading` picks the text weight.
+fn fold_header(
+    theme: &'static dyn Theme,
+    caption: &str,
+    heading: bool,
+    collapsed: bool,
+    actions: &ViewBridge,
+    action: Action,
+) -> Button {
+    let icon = if collapsed {
+        IconName::ChevronRight
+    } else {
+        IconName::ChevronDown
+    };
+    let label = if heading {
+        Text::subheading(caption, theme)
+    } else {
+        Text::caption(caption, theme).tone(Tone::Muted)
+    };
+    let actions = actions.clone();
+    Button::ghost("", theme)
+        .mini()
+        .child(SvgIcon::new(icon, theme.palette().foreground, CARD_ICON))
+        .child(label)
+        .on_click(move |_tree, _id| actions.push(action))
+}
+
 /// The "missing core" card: one row per console the library has games for but
 /// no available core serves, each with a one-click download of the core the
-/// app recommends. `None` when every console can run.
+/// app recommends. `None` when every console can run. Foldable, since it is
+/// bulky and only shown while cores are missing.
 fn missing_cores_card(
     theme: &'static dyn Theme,
     model: &ViewModel,
@@ -105,6 +134,23 @@ fn missing_cores_card(
 ) -> Option<Card> {
     if model.missing_cores.is_empty() {
         return None;
+    }
+    let title = format!("缺少核心 ({})", model.missing_cores.len());
+    let header = fold_header(
+        theme,
+        &title,
+        true,
+        model.missing_cores_collapsed,
+        actions,
+        Action::ToggleMissingCores,
+    );
+    if model.missing_cores_collapsed {
+        return Some(
+            Card::new(theme)
+                .gap(0.0)
+                .padding(Edges::all(space::SM))
+                .child(header),
+        );
     }
     let mut rows = Column::new().gap(space::XS);
     for row in &model.missing_cores {
@@ -131,7 +177,7 @@ fn missing_cores_card(
         Card::new(theme)
             .gap(space::SM)
             .padding(Edges::all(space::SM))
-            .child(Text::subheading("缺少核心", theme))
+            .child(header)
             .child(
                 Text::caption("库里的游戏还缺少这些机种的核心，下载后即可运行。", theme)
                     .tone(Tone::Muted),
@@ -141,12 +187,27 @@ fn missing_cores_card(
 }
 
 /// The library's console filter: a chip per console present (with its count),
-/// then an “全部” chip. The total is shown by the page title, not here.
+/// then an “全部” chip. Foldable, since a large library has many consoles. The
+/// total is shown by the page title, not here.
 pub(super) fn stats_bar(
     theme: &'static dyn Theme,
     model: &ViewModel,
     actions: &ViewBridge,
 ) -> Flex {
+    let header = fold_header(
+        theme,
+        "按模拟器筛选",
+        false,
+        model.filters_collapsed,
+        actions,
+        Action::ToggleFilters,
+    );
+    if model.filters_collapsed {
+        return Flex::column()
+            .padding(Edges::ZERO)
+            .gap(space::XXXS)
+            .child(header);
+    }
     let mut filter_chips = chip_group();
     let all = actions.clone();
     filter_chips = filter_chips.child(
@@ -162,7 +223,11 @@ pub(super) fn stats_bar(
                 .on_click(move |_tree, _id| filter.push(Action::FilterSystem(Some(system)))),
         );
     }
-    chip_bar(theme, "按模拟器筛选", filter_chips)
+    Flex::column()
+        .padding(Edges::ZERO)
+        .gap(space::XXXS)
+        .child(header)
+        .child(filter_chips)
 }
 
 /// The library's sort controls: a chip per key, then a direction toggle.
