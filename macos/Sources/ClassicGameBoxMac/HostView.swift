@@ -287,8 +287,14 @@ final class HostView: NSView {
             super.keyDown(with: event)
             return
         }
-        withCharacters(event.charactersIgnoringModifiers) { characters in
-            cgb_mac_key_down(app, UInt32(event.keyCode), characters, modifierBits(event.modifierFlags))
+        // While the input method is composing (marked text), it owns the
+        // keyboard: Return commits the candidate, arrows pick, Escape cancels.
+        // Forwarding those keys to Rust as well would let the app act on them
+        // (e.g. commit the whole edit on Return) before the composition lands.
+        if !hasMarkedText() {
+            withCharacters(event.charactersIgnoringModifiers) { characters in
+                cgb_mac_key_down(app, UInt32(event.keyCode), characters, modifierBits(event.modifierFlags))
+            }
         }
         // Let AppKit run the input method (and call `insertText:` for plain
         // typing); we never insert text ourselves.
@@ -300,8 +306,11 @@ final class HostView: NSView {
             super.keyUp(with: event)
             return
         }
-        withCharacters(event.charactersIgnoringModifiers) { characters in
-            cgb_mac_key_up(app, UInt32(event.keyCode), characters)
+        // Match `keyDown`: a key suppressed while composing is not announced.
+        if !hasMarkedText() {
+            withCharacters(event.charactersIgnoringModifiers) { characters in
+                cgb_mac_key_up(app, UInt32(event.keyCode), characters)
+            }
         }
     }
 

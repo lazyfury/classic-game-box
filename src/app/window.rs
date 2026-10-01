@@ -84,6 +84,10 @@ impl super::App {
         if let Some(measurer) = self.measurer.clone() {
             self.ui.install_measurer(measurer);
         }
+        // A rebuild makes a fresh tree, which does not inherit the clipboard.
+        if let Some(clipboard) = self.clipboard.clone() {
+            self.ui.install_clipboard(clipboard);
+        }
         self.dirty = false;
     }
 

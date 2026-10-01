@@ -36,6 +36,7 @@ use igui::igui_render::PaintContext;
 use igui::igui_scene::SceneTree;
 use igui::igui_theme::Theme;
 use igui::igui_ui::{hovered_cursor, Control, DragPhase, TextMeasurer};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use cgb_libretro::SystemId;
@@ -237,6 +238,14 @@ impl Ui {
     pub fn install_measurer(&mut self, measurer: Rc<dyn TextMeasurer>) {
         igui::igui_ui::set_text_measurer(&mut self.tree, measurer.clone());
         self.overlays.set_text_measurer(measurer);
+    }
+
+    /// Install the host clipboard so the text fields can copy / cut / paste.
+    /// Call after [`Ui::new`] and after every [`Ui::rebuild`] (a rebuild makes a
+    /// fresh tree that does not inherit it).
+    pub fn install_clipboard(&mut self, clipboard: Rc<RefCell<dyn igui::igui_ui::Clipboard>>) {
+        igui::igui_ui::set_clipboard(&mut self.tree, clipboard.clone());
+        self.overlays.set_clipboard(clipboard);
     }
 
     /// Resolve geometry and flush deferred tree work.
@@ -564,6 +573,77 @@ mod tests {
 
         ui.route_ui_input(&InputEvent::TextInput { text: "c".into() });
         assert_eq!(actions.edit_text(), "abc");
+    }
+
+    /// The focused field reads its modifiers from the tree, so the host must
+    /// route `ModifiersChanged` before the key. Swallowing it (the old bug)
+    /// turned Ctrl+A into a plain `a`.
+    #[test]
+    fn a_text_field_sees_routed_modifiers_for_shortcuts() {
+        use igui::igui_core::{Key, Modifiers};
+
+        let theme = game_theme(Mode::Dark);
+        let actions = ViewBridge::default();
+        actions.set_edit(Rc::new(std::cell::RefCell::new(
+            igui::igui_ui::TextEdit::new("abc"),
+        )));
+        let model = ViewModel {
+            editing: Some(EditTarget::GameName(0)),
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+        let mut ui = Ui::new(theme, &model, &actions);
+        ui.layout(viewport);
+
+        ui.route_ui_input(&InputEvent::ModifiersChanged(Modifiers {
+            ctrl: true,
+            ..Modifiers::NONE
+        }));
+        ui.route_ui_input(&InputEvent::KeyDown {
+            key: Key::Character('a'),
+        });
+        // Select-all, then typing replaces the whole value.
+        ui.route_ui_input(&InputEvent::TextInput { text: "z".into() });
+        assert_eq!(actions.edit_text(), "z");
+    }
+
+    /// Copy / paste only work once a clipboard is installed on the tree; the
+    /// host must read the platform service and call [`Ui::install_clipboard`].
+    #[test]
+    fn a_text_field_copies_and_pastes_through_the_clipboard() {
+        use igui::igui_core::{Key, Modifiers};
+        use igui::igui_ui::MemoryClipboard;
+
+        let theme = game_theme(Mode::Dark);
+        let actions = ViewBridge::default();
+        actions.set_edit(Rc::new(std::cell::RefCell::new(
+            igui::igui_ui::TextEdit::new("abc"),
+        )));
+        let model = ViewModel {
+            editing: Some(EditTarget::GameName(0)),
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+        let mut ui = Ui::new(theme, &model, &actions);
+        ui.install_clipboard(Rc::new(std::cell::RefCell::new(MemoryClipboard::default())));
+        ui.layout(viewport);
+
+        ui.route_ui_input(&InputEvent::ModifiersChanged(Modifiers {
+            ctrl: true,
+            ..Modifiers::NONE
+        }));
+        // Select all, copy, overwrite, then paste the copied value back.
+        ui.route_ui_input(&InputEvent::KeyDown {
+            key: Key::Character('a'),
+        });
+        ui.route_ui_input(&InputEvent::KeyDown {
+            key: Key::Character('c'),
+        });
+        ui.route_ui_input(&InputEvent::TextInput { text: "z".into() });
+        ui.route_ui_input(&InputEvent::KeyDown {
+            key: Key::Character('v'),
+        });
+        assert_eq!(actions.edit_text(), "zabc");
     }
 
     /// A rebuild (a card click rebuilds the tree) must not jump the grid back

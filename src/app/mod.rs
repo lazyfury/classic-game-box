@@ -36,7 +36,7 @@ use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, Rect, ViewportSize};
 use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, Severity, StageTimes};
 use igui::igui_render::{DrawList, PaintContext, TextureId};
 use igui::igui_theme::{Mode, Theme};
-use igui::igui_ui::{focused_caret, TextEdit, TextMeasurer};
+use igui::igui_ui::{focused_caret, Clipboard, TextEdit, TextMeasurer};
 
 use crate::cli::{Args, CoreOverride};
 use crate::session::Session;
@@ -185,6 +185,9 @@ pub struct App {
     window: Option<SharedHostWindow>,
     /// The backend's real font metrics, published by `TextMeasurePlugin`.
     measurer: Option<Rc<dyn TextMeasurer>>,
+    /// The host clipboard, published by the platform's clipboard plugin; the
+    /// text fields read it through the tree so copy / cut / paste work.
+    clipboard: Option<Rc<RefCell<dyn Clipboard>>>,
     /// Whether this frame must lay out and paint; otherwise the previous draw
     /// list is replayed (a running game only changes its texture).
     repaint: bool,
@@ -420,6 +423,7 @@ impl App {
             backend: None,
             window: None,
             measurer: None,
+            clipboard: None,
             repaint: true,
             last_layout: Duration::ZERO,
             last_paint: Duration::ZERO,
@@ -508,6 +512,14 @@ impl AppLogic for App {
         if let Some(measurer) = ctx.service::<Rc<dyn TextMeasurer>>() {
             self.measurer = Some(measurer.clone());
         }
+        // The platform publishes a clipboard so the text fields can copy / cut /
+        // paste. Reading it here and installing it on the tree is what actually
+        // wires Ctrl/Cmd+C / X / V.
+        if let Some(clipboard) = ctx.service::<Rc<RefCell<dyn Clipboard>>>() {
+            let clipboard = clipboard.clone();
+            self.clipboard = Some(clipboard.clone());
+            self.ui.install_clipboard(clipboard);
+        }
         // The window exists now, so its platform chrome (the macOS title bar)
         // can be reserved in the header.
         self.model.safe_area = safe_area();
@@ -538,6 +550,11 @@ impl AppLogic for App {
     fn event(&mut self, _ctx: &EventContext<'_>, event: &InputEvent) -> EventResult {
         if let InputEvent::ModifiersChanged(modifiers) = event {
             self.modifiers = *modifiers;
+            // The focused text field reads the modifier state from the tree
+            // (its `on_key` callback runs with the tracked modifiers), so the
+            // change has to reach it — not just the app's own copy — or
+            // Ctrl/Cmd shortcuts (select all, copy, cut, paste) never fire.
+            self.ui.route_input(event);
             return EventResult::Ignored;
         }
         self.handle_hotkey(event);
