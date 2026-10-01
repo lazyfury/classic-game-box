@@ -276,35 +276,18 @@ checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 name = "cgb-app"
 version = "0.2.0"
 dependencies = [
- "cgb-audio",
- "cgb-cores",
- "cgb-host",
- "cgb-input",
- "cgb-library",
+ "arboard",
  "cgb-libretro",
- "cgb-paths",
- "cgb-systems",
+ "cpal",
+ "dirs",
  "igui",
  "igui_core",
  "igui_scene",
  "igui_svg",
+ "png 0.17.16",
  "rfd",
-]
-
-[[package]]
-name = "cgb-audio"
-version = "0.2.0"
-dependencies = [
- "cpal",
  "ringbuf",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "cgb-cores"
-version = "0.2.0"
-dependencies = [
- "cgb-systems",
+ "rusqlite",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -313,65 +296,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "cgb-host"
-version = "0.2.0"
-dependencies = [
- "cgb-input",
-]
-
-[[package]]
-name = "cgb-input"
-version = "0.2.0"
-dependencies = [
- "cgb-systems",
-]
-
-[[package]]
-name = "cgb-library"
-version = "0.2.0"
-dependencies = [
- "cgb-paths",
- "cgb-systems",
- "png 0.17.16",
- "rusqlite",
- "thiserror 2.0.20",
-]
-
-[[package]]
 name = "cgb-libretro"
 version = "0.2.0"
 dependencies = [
  "cc",
- "cgb-cores",
- "cgb-systems",
+ "cgb-app",
  "libloading",
  "thiserror 2.0.20",
 ]
-
-[[package]]
-name = "cgb-mac"
-version = "0.2.0"
-dependencies = [
- "arboard",
- "cgb-app",
- "cgb-host",
- "cgb-input",
- "igui",
-]
-
-[[package]]
-name = "cgb-paths"
-version = "0.2.0"
-dependencies = [
- "cgb-systems",
- "dirs",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cgb-systems"
-version = "0.2.0"
 
 [[package]]
 name = "clang-sys"

@@ -1,1 +1,1 @@
-../../../../crates/cgb-mac/include/cgb_mac.h
+../../../../src/mac/include/cgb_mac.h

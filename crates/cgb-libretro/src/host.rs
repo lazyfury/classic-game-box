@@ -24,7 +24,7 @@ use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicI16, AtomicPtr, AtomicU16, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use cgb_systems::{
+use crate::{
     RETRO_DEVICE_ANALOG, RETRO_DEVICE_ANALOG_BIT, RETRO_DEVICE_ID_ANALOG_X,
     RETRO_DEVICE_ID_ANALOG_Y, RETRO_DEVICE_ID_JOYPAD_MASK, RETRO_DEVICE_INDEX_ANALOG_LEFT,
     RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_JOYPAD, RETRO_DEVICE_JOYPAD_BIT,

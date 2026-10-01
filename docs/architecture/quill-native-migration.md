@@ -14,7 +14,7 @@
 >
 > **结构更新（Swift host 为主）**：产品改为 `macos/` 的 Swift app（AppKit + `CAMetalLayer`，
 > **取代 winit**）；Rust 侧全是 library crate，共享逻辑在 `crates/cgb-app`，嵌入 host 的
-> C ABI 在 `crates/cgb-mac`，工作区根 `Cargo.toml` 是**虚拟 manifest**。下文的目录树是
+> C ABI 在 `src/mac/`（根包 `cgb-app`），工作区根 `Cargo.toml` 同时是 workspace 与根包。下文的目录树是
 > 旧结构，以 [`swift-macos-host-plan.md`](swift-macos-host-plan.md) 与根 `AGENTS.md` 为准。
 
 ---

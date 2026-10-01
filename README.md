@@ -16,9 +16,9 @@ macOS 上的经典游戏机模拟器。**打开就能玩**：把 ROM 拖进窗�
 | 🎨 **界面** | Rust + [igui](https://github.com/lazyfury/igui)（应用内 `src/ui`），原生窗口，wgpu 上屏 |
 | 🧩 **核心** | 标准 libretro：**Mesen**（NES）、**mGBA**（GB / GBC / GBA） |
 | 🔌 **兼容层** | `crates/cgb-libretro` 直接 `dlopen` 原生 `.dylib`，实现 libretro frontend |
-| 🔊 **音频** | `crates/cgb-audio`：cpal 输出 + 无锁环形队列 |
-| 🕹 **输入** | 键盘 + `gilrs` 手柄（`crates/cgb-input`） |
-| 💾 **库与存档** | `crates/cgb-library`：SQLite 游戏库、设置、存档槽、`.srm` |
+| 🔊 **音频** | `src/audio`：cpal 输出 + 无锁环形队列 |
+| 🕹 **输入** | 键盘 + Swift `GameController` 手柄（快照在 `cgb-libretro` 的 `input.rs`） |
+| 💾 **库与存档** | `src/library`：SQLite 游戏库、设置、存档槽、`.srm` |
 
 **不做**：自研模拟器（它的源码在 `custom_nes_core/`）。本仓库只做 **UI 和 libretro 兼容**。
 
@@ -33,9 +33,10 @@ GitHub **git 依赖**引入（`Cargo.lock` 固定 commit），无需相邻 check
 ./scripts/build-cores.sh
 #    → cores/dist/mesen_libretro.dylib
 
-# 2. 构建并运行（根包即应用，`cargo run` 即可）
-cargo run                                     # 打开库界面
-cargo run -- --rom mario.nes                  # 直接开始
+# 2. 构建并运行（Rust 侧是库，Swift 才是入口）
+cargo build                                   # → target/debug/libcgb_app.a
+macos/scripts/run.sh                          # 打开库界面
+macos/scripts/run.sh /path/to/mario.nes       # 直接开始
 ```
 
 每个阶段的门槛：
@@ -52,17 +53,16 @@ cargo run -- --rom mario.nes                  # 直接开始
 |---|---|---|
 | Q0 | 计划、目录结构、Rust 工作区骨架 | ✅ |
 | Q1 | Mesen arm64 原生编译 + dlopen + 出画面 + 键盘 | 进行中 |
-| Q2 | 音频 + gilrs 手柄 + 存档槽 + `.srm` | |
+| Q2 | 音频 + Swift `GameController` 手柄 + 存档槽 + `.srm` | |
 | Q3 | 最小闭环 UI + 库 + 打开目录对话框 | |
 | Q4 | mGBA 接入 + 机种路由 | |
 | Q5 | 打包 `.app`、无头自检 | |
 
-## 实验：Swift/macOS host
+## macOS host（主要产品）
 
-仓库里还有一条**实验性**前端：Swift 只做窗口与原生事件（`CAMetalLayer` + AppKit，
-**取代 winit**），igui UI、wgpu 渲染与 libretro 模拟器全部留在 Rust，经 C ABI 嵌入
-（`macos/` + `crates/cgb-mac`，crate `cgb-mac`）。嵌入版用 `cgb-app = { default-features = false }`，
-不编译 winit/gilrs；手柄走 Swift `GameController`。
+前端在 `macos/`：Swift 只做窗口与原生事件（`CAMetalLayer` + AppKit），igui UI、
+wgpu 渲染与 libretro 模拟器全部留在 Rust（`src/mac/`，`cgb_mac_*` C ABI；产出
+`libcgb_app.a` 供 SwiftPM 静态链接）。手柄走 Swift `GameController`。
 
 ```bash
 macos/scripts/run.sh          # 开库界面

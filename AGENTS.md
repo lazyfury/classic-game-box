@@ -11,18 +11,16 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 
 ## 现状
 
-- **布局**：产品是 **Swift/macOS app**（`macos/`，AppKit + `CAMetalLayer` + 原生事件，
-  取代 winit），Rust 侧**全是 library crate**。共享的应用逻辑（UI + 模拟器）在
-  `crates/cgb-app`（`src/ui` + `src/app/*` 都在这里；它同时带着已废弃的 winit dev host
-  bin `classic-game-box`，仅作本地回退，不再与 Swift host 同步）；嵌入 host 的 C ABI 在
-  `crates/cgb-mac`，窗口/手柄 host 契约
-  （`HostWindow` / `GamepadSource`）在 `crates/cgb-host`。引擎/设备是独立子
-  crate：`crates/{cgb-systems,cgb-paths,cgb-cores,cgb-library,cgb-libretro,cgb-audio,
-  cgb-input}`。工作区根 `Cargo.toml` 是**虚拟 manifest**（无 `[package]`）。
+- **布局**：产品是 **Swift/macOS app**（`macos/`，AppKit + `CAMetalLayer` + 原生事件）。
+  Rust 侧两个包：**根包 `cgb-app`**（`src/`：`src/ui` + `src/app` 应用逻辑、`src/library`
+  游戏库、`src/paths`、`src/cores` 清单/下载、`src/audio`、`src/host` 契约、`src/mac` 是
+  Swift host 的 C ABI，产出 `libcgb_app.a` 供 Swift 链接）；**`crates/cgb-libretro`**
+  （libretro front end + `system.rs`/`joypad.rs`/`core_choice.rs`/`input.rs` 纯域类型）。
+  工作区根 `Cargo.toml` 同时是 workspace 与根包。
 - 分支 `refactor/app-root`（合并后可回 `main`）。
 - **Q0 完成**：计划、目录结构、Rust 工作区骨架、`cargo check/test/clippy` 全绿。
 - **Q1 完成**：Mesen 原生 arm64 编译 + dlopen + 出画面（`ui::frame::FrameImage`）+ 键盘。
-- **Q2 进行中**：音频（cpal）+ gilrs 手柄已接线，`.srm` 电池存档与即时存档槽
+- **Q2 进行中**：音频（cpal）+ Swift `GameController` 手柄已接线，`.srm` 电池存档与即时存档槽
   （`Session::{save,load}_state`，F5/F6 与 F1–F3/Shift+F1–F3），待人眼验收“能玩、能存读”。
 - **Q3 完成**：库模型重建——DB 是模型（`games` + `tags`/`game_tags` + `screenshots`），
   **单库、自包含、可切换**：`--library-dir` / “打开游戏库…”选定唯一库根，
@@ -44,9 +42,10 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   截图多选删除；中栏可拖动；全屏游玩（`ViewModel::fullscreen`，F11/play 列
   “全屏”按钮进入，Esc 退出；只挂载右栏游戏视图，库网格与侧栏不入树）。
   后处理用 `igui_backend_wgpu::TextureEffect`（`igui` 自 `v0.2.0` 提供）。
-- **运行时**：`cgb-app` 跑在 igui 的 `igui_app` 插件运行时上（`WinitPlugin` /
-  `WgpuPlugin` / `PointerPlugin` / `KeyboardPlugin` / `ImePlugin` / `TextMeasurePlugin` /
-  `ClipboardPlugin`），`App` 实现 `AppLogic`（`update/layout/paint`）。帧由
+- **运行时**：`cgb-app` 跑在 igui 的 `igui_app` 插件运行时上，平台插件由
+  `src/mac/`（Swift host）提供：`MacGpuPlugin`（CAMetalLayer → wgpu surface）/
+  `MacInputPlugin` / `MacTextMeasurePlugin` / `MacClipboardPlugin` /
+  `MacGamepadPlugin`；`App` 实现 `AppLogic`（`update/layout/paint`）。帧由
   `Session::advance(dt)` 的时间累积驱动，`needs_frame` 在跑游戏/带动画 overlay/倒带时为真。
   改名 / 搜索 / 标签编辑用上游 `igui_components::TextInput`（自带 caret/选区/IME 预编辑）。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
@@ -73,14 +72,14 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   全内建，常规游戏**无 BIOS**（仅 BS-X/Sufami Turbo 可选，未开放该扩展名）。
   倒带**保留**（state ~804 KB，与 mGBA 同量级）。`.bin` 仍归 Genesis，SNES 的
   `.bin` 用卡片「选择机种…」覆盖。真机：
-  `cargo run -p cgb-app -- --rom game.sfc`（`./cores/snes9x/build.sh` 构建）。
+  `macos/scripts/run.sh game.sfc`（`./cores/snes9x/build.sh` 构建）。
 - **N64 硬件加速（GL 路径）**：`SystemId::N64`（`.z64/.n64/.v64`）→
   ParaLLEl-N64 + GLideN64。`cgb-libretro` 实现 `SET_HW_RENDER`：用一个
   **离屏 CGL 4.1 core 上下文 + FBO**（`crates/cgb-libretro/src/gl.rs`）接管核心
   的 GL 渲染，每帧 `glReadPixels` 回读成 RGBA8，复用现有 `Frame`/`FrameImage`
   纹理路径。N64 关闭倒带（state 太大）。计划与进度见
   `docs/architecture/n64-gl-hw-render-plan.md`；真机验收：
-  `cargo run -p cgb-app -- --rom game.z64 --core parallel_n64`。
+  `macos/scripts/run.sh game.z64 --core parallel_n64`。
   **注意**：不要换成 Mupen64Plus-Next——它的 GLideN64 在这台 macOS 26 / M4 上
   渲染黑屏（RetroArch 里同样黑），ParaLLEl-N64 才正常。ParaLLEl-N64 带 arm64
   dynarec，速度也够。
@@ -94,7 +93,7 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   `cores/dist/ppsspp/`，app 启动时递归 seed 到 `<system>/PPSSPP/`；否则核心在
   `retro_init` 告警 “Core system files missing, expect bugs.”。**已完成人工验收**
   （真实 PSP 游戏出画面 + 声音）。真机：
-  `cargo run -p cgb-app -- --rom game.iso --core ppsspp`。
+  `macos/scripts/run.sh game.iso --core ppsspp`。
   **注意**：`CoreHost::drop` 必须先调核心的 `context_destroy()` 再
   `retro_unload_game()`（RetroArch 同序）；PPSSPP 在 `retro_unload_game` 里
   `delete ctx`，反序会空指针崩溃。
@@ -121,31 +120,29 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   声音由 Java 子进程用 JavaSound 直接播到 CoreAudio，能出声但不听前端控制（暂停/音量）
   ——当前按“保持现状”收尾。已知缺口：
   **无即时存档（倒带已禁用）、键盘回调未接**（joypad 可玩，手机键盘已映射到手柄）。
-- **Swift/macOS host（实验）**：`macos/` 是一个实验性前端——Swift 只做窗口 /
-  `CAMetalLayer` / 原生事件（**取代 winit**），igui UI + wgpu 渲染 + libretro 模拟器全在 Rust
-  （`crates/cgb-mac`，经 `cgb_mac_*` C ABI；FFI 边界**包含 UI**）。`cgb-app` 的窗口
-  依赖抽成 `HostWindow` trait，手柄抽成 `GamepadSource`；`igui_winit`/`winit`/`gilrs` 由 default
-  feature `winit-host` 打开，嵌入版用 `cgb-app = { default-features = false }`，**不编译
-  winit/gilrs**。手柄走 Swift `GameController`（快照经 `cgb_mac_gamepad_*` 回灌）。打包
-  `macos/scripts/package.sh`。计划与剩余缺口见 `docs/architecture/swift-macos-host-plan.md`。
+- **Swift/macOS host（主要产品）**：`macos/` 是产品前端——Swift 只做窗口 /
+  `CAMetalLayer` / 原生事件，igui UI + wgpu 渲染 + libretro 模拟器全在 Rust
+  （`src/mac/`，经 `cgb_mac_*` C ABI；FFI 边界**包含 UI**）。窗口依赖抽成
+  `HostWindow` trait（`src/host.rs`），手柄抽成 `GamepadSource`，走 Swift
+  `GameController`（快照经 `cgb_mac_gamepad_*` 回灌）。Rust 侧产出 `libcgb_app.a`，
+  SwiftPM 静态链接。打包 `macos/scripts/package.sh`。剩余缺口见
+  `docs/architecture/swift-macos-host-plan.md`。
 
 ## 硬规则
 
-1. **产品是 Swift/macOS app，Rust 全是 library。** 顶层只有 `Cargo.toml`（虚拟 workspace）、
-   `crates/`、`cores/`、`scripts/`、`assets/`、`docs/`、`custom_nes_core/`、`macos/`。不要往根目录
-   丢构建产物或临时文件。
+1. **产品是 Swift/macOS app；Rust 两个包。** 根包 `cgb-app`（`src/`）+ 成员包
+   `crates/cgb-libretro`。顶层只有 `Cargo.toml`、`src/`、`crates/`、`cores/`、`scripts/`、
+   `assets/`、`docs/`、`custom_nes_core/`、`macos/`。不要往根目录丢构建产物或临时文件。
 2. **只做 UI 与 libretro 兼容。** 不实现/移植自研模拟器；它已在 `custom_nes_core/`。
    新功能先问「libretro 有没有标准对应」。
 3. **libretro 是唯一对外契约。** 只加载标准 libretro core（`cores/cores.json`
    里声明的，含 Mesen、mGBA、nestopia 与自研的 `custom_nes_core`）；
    不使用 `fc_*` 私有扩展（`custom_nes_core` 会导出该扩展，但被忽略）。
    ABI 头是 `cores/libretro/libretro.h`；**不要整读**（≈8700 行），`rg` 定位再看。
-4. **依赖方向单向**：`crates/cgb-app`（共享逻辑）→ `{cgb-host, cgb-libretro, cgb-audio,
-   cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems}`；host（`crates/cgb-mac`
-   与 winit bin）→ `cgb-app` / `cgb-host`；`cgb-host` → `cgb-input`；应用内的
-   `crates/cgb-app/src/ui` 不认识 libretro；
-   `cgb-libretro` 不认识 UI 与音频设备（只暴露 `Frame` / `Vec<i16>`）。
-   `cgb-systems` 无依赖。`crates/` 里的子 crate 不得反向依赖根 app。
+4. **依赖方向单向**：根包 `cgb-app` → `cgb-libretro` + `igui`；`cgb-libretro` 不认识
+   UI、音频设备与游戏库（只暴露 `Frame` / `Vec<i16>` 与纯域类型）。
+   `src/ui` 不认识 libretro；应用逻辑与设备/库在 `src/{app,library,paths,cores,audio,host,mac}`。
+   成员包不得反向依赖根包（测试用的 dev-dependency 除外）。
 5. **igui 的边界**：`igui_core` / `igui_scene` / `igui_ui` / `igui_components`
    不得依赖 `web_sys`/`wgpu`/DOM。应用内 `src/ui` 只用 `igui_*` 的公开 API。
 6. **不写截图 / 录屏测试。** 用 `igui_backend_recording` 录 `DrawList` +
@@ -172,11 +169,15 @@ cargo test --workspace
 ```bash
 ./scripts/build-cores.sh                    # → cores/dist/*_libretro.dylib
 ./cores/custom_nes_core/build.sh            # → cores/dist/custom_nes_core_libretro.dylib
-cargo run -p cgb-app -- --rom /path/to/mario.nes
-cargo run -p cgb-app -- --rom mario.nes --core mesen           # 强制核心
-cargo run -p cgb-app -- --rom mario.nes --core ./mycore_libretro.dylib  # 任意模块
-cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/icons/render/cores）
+cargo build                                 # → target/debug/libcgb_app.a（Swift 链接）
+macos/scripts/run.sh                        # 开库界面
+macos/scripts/run.sh /path/to/mario.nes                       # 直接开始
+macos/scripts/run.sh mario.nes --core mesen                   # 强制核心
+macos/scripts/run.sh mario.nes --core ./mycore_libretro.dylib # 任意模块
 ```
+
+`cli` / `cores_cli` / `selfcheck` 仍是根包的公开模块，但当前没有独立 bin：
+宿主（Swift）通过 `cli::Args` 传入同样的参数；无头自检走 `cargo test`。
 
 ## 目录地图
 
@@ -186,13 +187,13 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/ico
 | 旧架构的来龙去脉（为什么用 wasm、为什么现在不用） | `docs/architecture/libretro-migration.md` |
 | crate 职责与依赖 | `crates/README.md` |
 | libretro frontend（dlopen / 回调 / 视频音频输入存档） | `crates/cgb-libretro/src/host.rs` |
-| 机种 / CoreSpec 选核、joypad id | `crates/cgb-systems/src/` |
-| UI 视图与帧循环 | `crates/cgb-app/src/ui/`（视图 + `ViewModel`）、`crates/cgb-app/src/app/`（`App` + `AppLogic` + `run` 的插件组装） |
+| 机种 / CoreSpec 选核、joypad id | `crates/cgb-libretro/src/{system,core_choice,joypad}.rs` |
+| UI 视图与帧循环 | `src/ui/`（视图 + `ViewModel`）、`src/app/`（`App` + `AppLogic` 组装） |
 | 原生 core 构建 / 加核心流程 | `cores/README.md`、`cores/build.sh.example`、`cores/*/build.sh` |
-| J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`crates/cgb-app/src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
-| 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
-| Swift/macOS host（主要产品：Swift 取代 winit） | `macos/`（Swift 窗口/事件）、`crates/cgb-mac/`（surface + 事件 + `cgb_mac_*` C ABI）、`docs/architecture/swift-macos-host-plan.md` |
-| 窗口/手柄 host 抽象（`winit-host` feature） | `crates/cgb-host/`（`HostWindow` / `GamepadSource`）、`crates/cgb-app/src/app/host.rs`（winit/gilrs 适配）、`crates/cgb-app/src/app/mod.rs`（`App::init` 选源） |
+| J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
+| 核心清单（启动选核） | `cores/cores.json`、`src/cores/`、`src/cli.rs` |
+| Swift/macOS host（主要产品） | `macos/`（Swift 窗口/事件）、`src/mac/`（surface + 事件 + `cgb_mac_*` C ABI）、`docs/architecture/swift-macos-host-plan.md` |
+| 窗口/手柄 host 抽象 | `src/host.rs`（`HostWindow` / `GamepadSource`）、`src/app/mod.rs`（`App::init` 取源） |
 | 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `custom_nes_core/`（只读；`src/` 布局单 CMake 项目） |
 
 ## 已知缺口（先记录，不擅自补）

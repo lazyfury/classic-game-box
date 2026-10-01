@@ -1,11 +1,11 @@
 // swift-tools-version:5.9
 //
-// Experimental Swift/macOS front end: AppKit window + MTKView renderer, with
-// the emulator (libretro host, audio, save paths) linked in from Rust via the
-// `cgb-ffi` C ABI. No winit, no wgpu, no igui on this path.
+// Experimental Swift/macOS front end: AppKit window + CAMetalLayer, with the
+// whole app (igui UI, wgpu renderer, libretro host, audio) linked in from Rust
+// via the `cgb_mac_*` C ABI.
 //
 // Build the Rust side first:
-//     cargo build -p cgb-ffi            # -> target/debug/libcgb_ffi.a
+//     cargo build                # -> target/debug/libcgb_app.a  (root package)
 //     swift build --package-path macos  # then this package
 //
 // `CGB_RUST_PROFILE` selects `debug` (default) or `release`.
@@ -40,7 +40,7 @@ let package = Package(
             dependencies: ["CGBNative"],
             path: "Sources/ClassicGameBoxMac",
             linkerSettings: [
-                .unsafeFlags(["-L", rustLibDir, "-lcgb_mac"]),
+                .unsafeFlags(["-L", rustLibDir, "-lcgb_app"]),
                 .linkedLibrary("c++"),
                 .linkedFramework("AppKit"),
                 .linkedFramework("Metal"),

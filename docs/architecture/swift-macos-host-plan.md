@@ -9,7 +9,7 @@ Authority: [`../../macos/README.md`](../../macos/README.md),
 
 ## Where it is
 
-Rust owns everything (`crates/cgb-mac`): the igui UI, the wgpu renderer and
+Rust owns everything (`src/mac/`): the igui UI, the wgpu renderer and
 `cgb-app` (library + libretro emulator). Swift owns the window only:
 `NSWindow` + `CAMetalLayer` + AppKit event forwarding
 (`macos/Sources/ClassicGameBoxMac`). `cgb-app` builds with
@@ -31,8 +31,8 @@ Metal/wgpu), the downloadable-core flow, and the IME candidate position.
 
 1. **Titlebar** — transparent + `fullSizeContentView` (the UI runs under it and
    reserves the traffic-light inset). Implemented.
-2. **Link model** — static (`libcgb_mac.a` into the Swift binary). Implemented.
-3. **Workspace** — `crates/cgb-mac` stays a workspace member.
+2. **Link model** — static (`libcgb_app.a` into the Swift binary). Implemented.
+3. **Workspace** — the app is the root package (`cgb-app`); the emulator boundary is the one member crate.
 4. **Host abstraction** — long-term; started as the `cgb-host` crate
    (`HostWindow` / `GamepadSource`), which `cgb-app` and the hosts share.
 
@@ -96,8 +96,8 @@ dylib + Swift binary and assembles `dist/Classic Game Box (Swift).app` with the
 dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
 `Contents/Resources`. B3 (CVDisplayLink) is still open.
 
-- **C1 · Link model.** **Done** — static: `crates/cgb-mac` builds only a
-  `staticlib`, SwiftPM links `libcgb_mac.a`, no dylib is bundled.
+- **C1 · Link model.** **Done** — static: `cgb-app` builds a
+  `staticlib` (`libcgb_app.a`), SwiftPM links it, no dylib is bundled.
 - **C2 · `macos/scripts/package.sh`.** Release build → `Classic Game Box.app`
   with `Info.plist`, the Rust lib (if dynamic), and `cores/dist` + `assets`
   under `Contents/Resources`. Ad-hoc codesign.
@@ -110,7 +110,7 @@ dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
 ## D. Tests & docs
 
 - **D1 · Unit tests.** **Done** — `GamepadSnapshot::apply` (cgb-input) and
-  `crates/cgb-mac/src/input.rs`'s pure mappings (named keys, character fallback,
+  `src/mac/input.rs`'s pure mappings (named keys, character fallback,
   modifier bits, pointer buttons, double-click, text/IME).
 - **D2 · Manual checklist.** Run `macos/scripts/run.sh` and confirm:
   1. The library renders; the grid scrolls; hovering a card shows the
@@ -124,7 +124,7 @@ dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
   6. Resize the window while playing: no jank, correct aspect ratio.
   7. Settings → download a core; it appears after a refresh.
   8. Hot-plug / unplug a gamepad: the port clears on unplug.
-- **D3 · Conventions.** Add `macos/` and `crates/cgb-mac` to `AGENTS.md`'s layout
+- **D3 · Conventions.** Add `macos/` and `src/mac/` to `AGENTS.md`'s layout
   and to `.pi/skills/cgb-rust/SKILL.md`; document the `winit-host` feature and
   the `cgb-app --no-default-features` rule.
 - **D4 · README.** Mention the Swift host as the experimental alternative front
@@ -147,7 +147,7 @@ dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
 
 ## G. Swift-native gamepad (decided interface)
 
-**Status:** implemented — `cgb-input::GamepadSnapshot`, `cgb-app`'s
+**Status:** implemented — `cgb_libretro::GamepadSnapshot`, `cgb-app`'s
 `GamepadSource`/`SharedGamepad`, `MacGamepadPlugin` + `cgb_mac_gamepad_*`, and
 Swift `Gamepads.swift`. `gilrs` is off the embedded build.
 

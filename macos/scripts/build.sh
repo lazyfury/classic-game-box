@@ -13,10 +13,10 @@ export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 
 cd "$ROOT"
 if [[ "$PROFILE" == "release" ]]; then
-    cargo build -p cgb-mac --release
+    cargo build --release
     swift build --package-path macos -c release
 else
-    cargo build -p cgb-mac
+    cargo build
     swift build --package-path macos
 fi
 

@@ -44,8 +44,8 @@ if [ "$(uname -s)" != "Darwin" ]; then
 	exit 1
 fi
 
-echo "==> cargo build --release -p cgb-mac"
-cargo build --release -p cgb-mac --manifest-path "$ROOT/Cargo.toml"
+echo "==> cargo build --release"
+cargo build --release --manifest-path "$ROOT/Cargo.toml"
 
 echo "==> swift build -c release"
 # The Swift package links the matching Rust profile.
