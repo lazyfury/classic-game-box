@@ -13,7 +13,8 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 - **布局**：产品是 **Swift/macOS app**（`macos/`，AppKit + `CAMetalLayer` + 原生事件，
   取代 winit），Rust 侧**全是 library crate**。共享的应用逻辑（UI + 模拟器）在
   `crates/cgb-app`（`src/ui` + `src/app/*` 都在这里；它同时带着次要的 winit dev host
-  bin `classic-game-box`）；嵌入 host 的 C ABI 在 `crates/cgb-mac`。引擎/设备是独立子
+  bin `classic-game-box`）；嵌入 host 的 C ABI 在 `crates/cgb-mac`，窗口/手柄 host 契约
+  （`HostWindow` / `GamepadSource`）在 `crates/cgb-host`。引擎/设备是独立子
   crate：`crates/{cgb-systems,cgb-paths,cgb-cores,cgb-library,cgb-libretro,cgb-audio,
   cgb-input}`。工作区根 `Cargo.toml` 是**虚拟 manifest**（无 `[package]`）。
 - 分支 `refactor/app-root`（合并后可回 `main`）。
@@ -137,9 +138,10 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
    里声明的，含 Mesen、mGBA、nestopia 与 legacy 的 `custom_nes_core`）；
    不使用 `fc_*` 私有扩展（`custom_nes_core` 会导出该扩展，但被忽略）。
    ABI 头是 `cores/libretro/libretro.h`；**不要整读**（≈8700 行），`rg` 定位再看。
-4. **依赖方向单向**：`crates/cgb-app`（共享逻辑）→ `{cgb-libretro, cgb-audio,
+4. **依赖方向单向**：`crates/cgb-app`（共享逻辑）→ `{cgb-host, cgb-libretro, cgb-audio,
    cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems}`；host（`crates/cgb-mac`
-   与 winit bin）→ `cgb-app`；应用内的 `crates/cgb-app/src/ui` 不认识 libretro；
+   与 winit bin）→ `cgb-app` / `cgb-host`；`cgb-host` → `cgb-input`；应用内的
+   `crates/cgb-app/src/ui` 不认识 libretro；
    `cgb-libretro` 不认识 UI 与音频设备（只暴露 `Frame` / `Vec<i16>`）。
    `cgb-systems` 无依赖。`crates/` 里的子 crate 不得反向依赖根 app。
 5. **igui 的边界**：`igui_core` / `igui_scene` / `igui_ui` / `igui_components`
@@ -187,7 +189,7 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/ico
 | J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`crates/cgb-app/src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
 | 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
 | Swift/macOS host（主要产品：Swift 取代 winit） | `macos/`（Swift 窗口/事件）、`crates/cgb-mac/`（surface + 事件 + `cgb_mac_*` C ABI）、`docs/architecture/swift-macos-host-plan.md` |
-| 窗口/手柄 host 抽象（`winit-host` feature） | `src/app/host.rs`（`HostWindow` / `GamepadSource`）、`src/app/mod.rs`（`App::init` 选源） |
+| 窗口/手柄 host 抽象（`winit-host` feature） | `crates/cgb-host/`（`HostWindow` / `GamepadSource`）、`crates/cgb-app/src/app/host.rs`（winit/gilrs 适配）、`crates/cgb-app/src/app/mod.rs`（`App::init` 选源） |
 | 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `legacy/packages/fc-{core,libretro}`（只读） |
 
 ## 已知缺口（先记录，不擅自补）

@@ -12,7 +12,8 @@ use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::rc::Rc;
 
-use cgb_app::app::{GamepadSource, HostWindow, SharedBackend};
+use cgb_app::app::SharedBackend;
+use cgb_host::{GamepadSource, HostWindow};
 use cgb_input::{GamepadSnapshot, InputState};
 use igui::igui_app::{App, AppBuilder, LifecycleObserver, Plugin, PresentOutcome, Presenter};
 use igui::igui_backend_wgpu::wgpu;

@@ -22,7 +22,7 @@ let rustLibDir = ProcessInfo.processInfo.environment["CGB_RUST_LIB_DIR"]
 let package = Package(
     name: "ClassicGameBoxMac",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v14)
     ],
     products: [
         .executable(name: "cgb-mac", targets: ["ClassicGameBoxMac"])

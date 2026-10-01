@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 cgb-systems.workspace = true
+cgb-host.workspace = true
 cgb-libretro.workspace = true
 cgb-audio.workspace = true
 # The `gilrs` backend is a feature of `cgb-input` (off by default here); the

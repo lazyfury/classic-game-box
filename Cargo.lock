@@ -357,6 +357,7 @@ version = "0.2.0"
 dependencies = [
  "cgb-audio",
  "cgb-cores",
+ "cgb-host",
  "cgb-input",
  "cgb-library",
  "cgb-libretro",
@@ -390,6 +391,13 @@ dependencies = [
  "thiserror 2.0.20",
  "ureq",
  "zip",
+]
+
+[[package]]
+name = "cgb-host"
+version = "0.2.0"
+dependencies = [
+ "cgb-input",
 ]
 
 [[package]]
@@ -428,6 +436,7 @@ version = "0.2.0"
 dependencies = [
  "arboard",
  "cgb-app",
+ "cgb-host",
  "cgb-input",
  "igui",
 ]

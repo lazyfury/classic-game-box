@@ -71,8 +71,8 @@ mod tests;
 mod textures;
 mod window;
 
+pub use cgb_host::{GamepadSource, HostWindow, SharedGamepad, SharedHostWindow};
 pub(crate) use helpers::*;
-pub use host::{GamepadSource, HostWindow, SharedGamepad, SharedHostWindow};
 pub(crate) use project::*;
 
 /// The wgpu backend a platform graphics plugin publishes as a service.

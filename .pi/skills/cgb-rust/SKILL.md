@@ -31,6 +31,7 @@ crates/cgb-paths/src/         paths（目录布局）+ settings（设置 JSON）
 crates/cgb-cores/src/         cores（cores.json 清单）/ catalog（buildbot）/ download
 crates/cgb-library/src/       library（SQLite 库）/ import / saves / cheats / png_codec
 crates/cgb-mac/               嵌入 host（crate cgb-mac）：CAMetalLayer→wgpu surface、事件、`cgb_mac_*` C ABI
+crates/cgb-host/src/lib.rs    窗口/手柄 host 契约：`HostWindow` / `GamepadSource`（无 winit/gilrs 依赖）
 cores/cores.json              核心清单
 cores/<name>/build.sh         每个核心的原生构建（产出到 cores/dist/）
 macos/                        Swift app（主要产品）：SwiftPM 包（窗口/CAMetalLayer/事件/手柄）
@@ -45,7 +46,8 @@ igui 的源码可看相邻 `../igui/crates/`，只读需要的模块。
 ```
 crates/cgb-app (src/)  → { cgb-libretro, cgb-audio, cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems }
 cgb-app/src/ui         → cgb-systems, igui_*
-crates/cgb-mac         → cgb-app (default-features = false), cgb-input, igui, arboard
+crates/cgb-mac         → cgb-app (default-features = false), cgb-host, cgb-input, igui, arboard
+cgb-host              → cgb-input (InputState)
 cgb-libretro          → cgb-systems, libloading
 cgb-input             → cgb-systems, gilrs（自带 `Key`，不依赖 UI）
 cgb-audio             → cpal, ringbuf

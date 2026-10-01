@@ -1,14 +1,18 @@
 // AppKit lifecycle: one window whose content view provides the CAMetalLayer
-// the Rust app renders into. Frames are event-driven: any input schedules one,
-// and while the app wants more (a running game, an animation) it reschedules
-// itself at 60 Hz.
+// the Rust app renders into.
+//
+// Frames are event-driven: any input schedules one, and while the app wants
+// more (a running game, an animation) a `CADisplayLink` drives them at the
+// display's refresh. Resizes are coalesced to one surface reconfigure per
+// frame.
 //
 // Swift's only jobs are the window, the layer and native event forwarding —
 // the UI and the emulator are Rust's.
 
 import AppKit
-import Metal
 import CGBNative
+import Metal
+import QuartzCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let options: LaunchOptions
@@ -16,10 +20,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var view: HostView?
     private var app: OpaquePointer?
-    /// The pending one-shot frame timer, or nil when idle.
+    /// A pending one-shot frame (idle input), or nil.
     private var timer: Timer?
+    /// Drives frames while the app wants them (macOS 14+).
+    private var displayLink: CADisplayLink?
     /// The local event monitor that schedules a frame for any input.
     private var eventMonitor: Any?
+    /// The geometry the surface was last configured for, so a live resize
+    /// coalesces to one reconfigure per frame.
+    private var lastPixelSize: (UInt32, UInt32)?
+    private var lastScale: Double?
 
     init(options: LaunchOptions) {
         self.options = options
@@ -32,13 +42,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let view = HostView(frame: contentRect)
         self.view = view
 
+        // A transparent, full-size title bar: the UI runs under it and leaves
+        // room for the traffic lights (`safe_area` in `cgb-app`).
         let window = NSWindow(
             contentRect: contentRect,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        window.title = "Classic Game Box (Swift host)"
+        window.title = "Classic Game Box"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.contentView = view
         window.acceptsMouseMovedEvents = true
         window.center()
@@ -57,14 +71,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         self.app = handle
         view.app = handle
-        view.onGeometryChange = { [weak self] in self?.resize() }
+        view.onGeometryChange = { [weak self] in self?.requestFrame() }
         gamepads.app = handle
         gamepads.start()
 
-        // Frames are event-driven. The local monitor is the one place every
-        // input event passes through; it schedules a frame, and `tick` keeps
-        // rescheduling while the app still wants frames (a running game, an
-        // animation, a download).
+        if #available(macOS 14.0, *) {
+            let link = view.displayLink(target: self, selector: #selector(displayTick))
+            link.add(to: .main, forMode: .common)
+            link.isPaused = true
+            displayLink = link
+        }
+        // Every input event passes through this monitor; it schedules a frame,
+        // and `runFrame` keeps the display link running while the app wants
+        // more frames (a running game, an animation, a download).
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .any) { [weak self] event in
             self?.requestFrame()
             return event
@@ -83,8 +102,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSEvent.removeMonitor(eventMonitor)
             self.eventMonitor = nil
         }
+        displayLink?.invalidate()
+        displayLink = nil
         timer?.invalidate()
         timer = nil
+        // The wgpu surface borrows the CAMetalLayer, so the Rust app must be
+        // torn down while `view` (and its layer) is still alive. `view` is
+        // released only after this method returns.
         if let app {
             cgb_mac_destroy(app)
             self.app = nil
@@ -115,36 +139,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func resize() {
-        guard let app, let view else { return }
-        let (width, height) = view.pixelSize
-        cgb_mac_resize(app, width, height, view.scaleFactor)
+    @objc private func displayTick() {
+        runFrame()
     }
 
-    private func tick() {
+    private func timerTick() {
         timer = nil
+        runFrame()
+    }
+
+    private func runFrame() {
         guard let app else { return }
+        applyResizeIfNeeded()
         cgb_mac_frame(app)
         view?.syncFrameState()
         syncFullscreen()
-        if cgb_mac_needs_frame(app) {
-            schedule(after: 1.0 / 60.0)
-        }
+        setContinuous(cgb_mac_needs_frame(app))
     }
 
     /// Ask for a frame as soon as the run loop is free (after the event that
-    /// prompted it is dispatched).
+    /// prompted it is dispatched). While the display link is running it will
+    /// present at the next refresh anyway.
     private func requestFrame() {
+        if let displayLink, !displayLink.isPaused {
+            return
+        }
         schedule(after: 0)
     }
 
     private func schedule(after delay: TimeInterval) {
         guard timer == nil else { return }
         let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
-            self?.tick()
+            self?.timerTick()
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+    }
+
+    /// Start or stop the continuous driver (the display link).
+    private func setContinuous(_ on: Bool) {
+        displayLink?.isPaused = !on
+    }
+
+    /// Reconfigure the surface for the current geometry, at most once a frame.
+    private func applyResizeIfNeeded() {
+        guard let app, let view else { return }
+        let size = view.pixelSize
+        let scale = view.scaleFactor
+        if lastPixelSize?.0 != size.0 || lastPixelSize?.1 != size.1 || lastScale != scale {
+            lastPixelSize = size
+            lastScale = scale
+            cgb_mac_resize(app, size.0, size.1, scale)
+        }
     }
 
     /// Apply a fullscreen request the Rust app parked for the window.

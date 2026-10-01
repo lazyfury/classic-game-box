@@ -5,8 +5,9 @@ use std::ffi::{c_char, c_void, CStr};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use cgb_app::app::{App as CgbApp, SharedHostWindow};
+use cgb_app::app::App as CgbApp;
 use cgb_app::cli::Args;
+use cgb_host::SharedHostWindow;
 use cgb_input::GamepadSnapshot;
 use igui::igui_app::{App as IguiApp, AppConfig, PlatformEvent};
 use igui::igui_core::{Cursor, ImeEvent, Vec2};

@@ -8,13 +8,15 @@ license.workspace = true
 
 [lib]
 name = "cgb_mac"
-# A C library the Swift package links (`staticlib`), and a dylib for testing
-# the ABI from a C harness without the Swift toolchain.
-crate-type = ["staticlib", "cdylib"]
+# Static so the Swift binary is self-contained: SwiftPM's `-lcgb_mac` picks the
+# `.a` and no dylib has to be bundled or `@rpath`-fixed.
+crate-type = ["staticlib"]
 
 [dependencies]
 # The whole app (UI + emulator), without the bundled `winit` host.
 cgb-app.workspace = true
+# The window / gamepad host contract.
+cgb-host.workspace = true
 # The plugin runtime + native backend the host assembles. `igui_core` /
 # `igui_render` / `igui_ui` come through the facade's features.
 igui = { workspace = true, features = ["ui", "app", "wgpu", "profile"] }

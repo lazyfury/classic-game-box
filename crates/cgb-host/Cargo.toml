@@ -1,0 +1,11 @@
+[package]
+name = "cgb-host"
+description = "The host contract between the app and whatever owns the window and devices."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# `InputState` is the gamepad target; `cgb-input` stays UI-free.
+cgb-input.workspace = true

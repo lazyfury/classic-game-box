@@ -8,7 +8,8 @@ secondary `winit` dev host).
 | crate | type | responsibility |
 |---|---|---|
 | `cgb-app` | lib + bin | the shared app: igui UI, `App`/`AppLogic`, `Session`, feature handlers; the `classic-game-box` bin is the secondary `winit` dev host |
-| `cgb-mac` | staticlib/cdylib | the Swift host: a `CAMetalLayer` → wgpu surface, native-event translation, the `cgb_mac_*` C ABI |
+| `cgb-host` | lib | the host contract: `HostWindow` / `GamepadSource` traits, shared by the app and the hosts |
+| `cgb-mac` | staticlib | the Swift host: a `CAMetalLayer` → wgpu surface, native-event translation, the `cgb_mac_*` C ABI |
 | `cgb-systems` | lib | system/core registry, joypad ids (dependency-free) |
 | `cgb-paths` | lib | file layout (`Paths`) + settings (`Settings`) |
 | `cgb-cores` | lib | `cores.json` manifest, buildbot catalog, runtime downloader |
@@ -20,16 +21,17 @@ secondary `winit` dev host).
 Dependency direction:
 
 ```
-cgb-mac  → cgb-app (default-features = false), cgb-input, igui, arboard
-cgb-app  → cgb-libretro, cgb-audio, cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems
+cgb-mac  → cgb-app (default-features = false), cgb-host, cgb-input, igui, arboard
+cgb-app  → cgb-host, cgb-libretro, cgb-audio, cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems
+cgb-host → cgb-input
 device crates / cgb-libretro → cgb-systems
 cgb-systems → nothing
 ```
 
 `cgb-app` never names a windowing library: the window is a `HostWindow` trait
-and the gamepad a `GamepadSource` (`crates/cgb-app/src/app/host.rs`). The
-default `winit-host` feature provides the `winit` + `gilrs` implementations;
-the embedded host builds with `--no-default-features` and provides its own.
+and the gamepad a `GamepadSource`, both from `cgb-host`. The default
+`winit-host` feature provides the `winit` + `gilrs` implementations; the
+embedded host builds with `--no-default-features` and provides its own.
 
 The app's own layout is under [`cgb-app/src`](cgb-app/src): `app/` (state,
 frame loop, feature handlers, host traits), `ui/` (views built from a pure

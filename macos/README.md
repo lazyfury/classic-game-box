@@ -64,22 +64,29 @@ swift build --package-path macos  # macos/.build/debug/cgb-mac
 | `macos/Sources/ClassicGameBoxMac/AppDelegate.swift` | window, `cgb_mac_start`, event-driven frame scheduling |
 | `macos/packaging/Info.plist`, `macos/scripts/package.sh` | the `.app` bundle |
 
+The Rust host lives at **`crates/cgb-mac`**: the workspace is a virtual manifest
+and every Rust package is a library the Swift app embeds.
+
 ## Status
 
 Working: the library UI renders into Swift's Metal layer; pointer (click,
 double-click, drag, wheel), keyboard (named keys, text, modifiers) and IME
 preedit/commit are forwarded; the cursor and IME caret come from the UI;
-clipboard (Cmd+C/V) works; files can be dropped; resizing reconfigures the
-surface; the in-app fullscreen toggle is applied by Swift; gamepads are read
-through Apple's `GameController` framework (no `gilrs` in the embedded build).
-Frames are event-driven: any input schedules one, and the loop reschedules
-itself at 60 Hz only while the app wants more.
+clipboard (Cmd+C/V) works; files can be dropped; resizing is coalesced; the
+in-app fullscreen toggle is applied by Swift; gamepads are read through Apple's
+`GameController` framework (no `gilrs` in the build). Frames are event-driven:
+any input schedules one, and a `CADisplayLink` drives them while the app wants
+more. The Rust host is linked **statically**, so the app is self-contained.
+The title bar is transparent + full-size (the UI runs under it).
+
+Verified on hardware: PSP, N64 and PS1 (the offscreen-CGL path coexists with
+Metal/wgpu), the downloadable-core flow, and the IME candidate position.
 
 Known gaps:
 
 - IME is a minimal `NSTextInputClient` (`hasMarkedText` always false); CJK
   composition is untested.
 - Audio goes through Rust `cpal` (as in the main app).
-- Hardware-GL cores (N64 / PSP / PS1) are untested on this host.
-- The release `.app` bundles the Rust dylib under `Contents/Frameworks` with an
-  `@rpath`; a dev build links `target/debug/deps/libcgb_mac.dylib` directly.
+- Double-pressing the pad's Select can trip macOS's screen-recording shortcut;
+  not remapped yet.
+- Key filtering may need per-emulator config (deferred).

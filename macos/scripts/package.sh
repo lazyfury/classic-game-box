@@ -1,29 +1,27 @@
 #!/usr/bin/env bash
 #
-# Packages the experimental Swift/macOS host as a `.app`.
+# Packages the Swift/macOS host as a `.app`.
 #
 #     macos/scripts/package.sh            # release build, then assemble dist/
 #     macos/scripts/package.sh --open     # ... and launch it afterwards
 #
-# The bundle holds:
-#   Contents/MacOS/cgb-mac                       the Swift host
-#   Contents/Frameworks/libcgb_mac.dylib         the Rust app (UI + emulator)
+# The Rust host is linked **statically** into the Swift binary, so the bundle
+# is self-contained:
+#   Contents/MacOS/cgb-mac                       the app (Swift + Rust)
 #   Contents/Resources/cores/{cores.json,*.dylib}
 #   Contents/Resources/assets/…
 #   Contents/Resources/{freej2me_plus,ppsspp}/…  when built
 #
 # `cgb-app` looks for cores first in app data, then in the bundle's
-# `Resources/cores` (`resource_dir` / `resolve_module` in `src/app`), so the app
-# runs from Finder without a repo checkout.
+# `Resources/cores` (`resource_dir` / `resolve_module` in `crates/cgb-app`), so
+# the app runs from Finder without a repo checkout.
 #
-# The Rust dylib is bundled and referenced by `@rpath`; `codesign` is ad-hoc
-# (`-`), enough for a locally built app to launch.
+# `codesign` is ad-hoc (`-`), enough for a locally built app to launch.
 
 set -euo pipefail
 
 APP_NAME="Classic Game Box (Swift)"
 BINARY="cgb-mac"
-LIB="libcgb_mac.dylib"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST="$ROOT/dist"
@@ -32,6 +30,9 @@ PLIST="$ROOT/macos/packaging/Info.plist"
 CORES_DIST="$ROOT/cores/dist"
 CORES_JSON="$ROOT/cores/cores.json"
 ASSETS="$ROOT/assets"
+
+# Match the Swift package's deployment target (see macos/Package.swift).
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 
 open_after=false
 if [ "${1:-}" = "--open" ]; then
@@ -51,31 +52,16 @@ echo "==> swift build -c release"
 CGB_RUST_PROFILE=release swift build --package-path "$ROOT/macos" -c release
 
 BUILT_SWIFT="$ROOT/macos/.build/release/$BINARY"
-RUST_LIB="$ROOT/target/release/deps/$LIB"
-if [ ! -f "$RUST_LIB" ]; then
-	RUST_LIB="$ROOT/target/release/$LIB"
-fi
-if [ ! -f "$RUST_LIB" ]; then
-	echo "找不到 $LIB（先跑 cargo build --release -p cgb-mac）" >&2
+if [ ! -f "$BUILT_SWIFT" ]; then
+	echo "找不到 $BUILT_SWIFT（先跑 swift build -c release）" >&2
 	exit 1
 fi
 
 echo "==> 组装 $APP"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILT_SWIFT" "$APP/Contents/MacOS/$BINARY"
 cp "$PLIST" "$APP/Contents/Info.plist"
-cp "$RUST_LIB" "$APP/Contents/Frameworks/$LIB"
-
-# Point the Rust dylib at @rpath and the Swift binary at the bundled copy.
-install_name_tool -id "@rpath/$LIB" "$APP/Contents/Frameworks/$LIB"
-old_ref="$(otool -L "$APP/Contents/MacOS/$BINARY" | awk '/libcgb_mac\.dylib/ {print $1; exit}')"
-if [ -n "$old_ref" ] && [ "$old_ref" != "@rpath/$LIB" ]; then
-	install_name_tool -change "$old_ref" "@rpath/$LIB" "$APP/Contents/MacOS/$BINARY"
-fi
-if ! otool -l "$APP/Contents/MacOS/$BINARY" | grep -q '@executable_path/../Frameworks'; then
-	install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/$BINARY"
-fi
 
 echo "==> 打包 cores"
 if [ -f "$CORES_JSON" ]; then

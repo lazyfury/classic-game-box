@@ -9,6 +9,7 @@
 resolver = "2"
 members = [
     "crates/cgb-app",
+    "crates/cgb-host",
     "crates/cgb-libretro",
     "crates/cgb-systems",
     "crates/cgb-audio",
@@ -48,6 +49,7 @@ igui_scene = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
 # Internal crates. One concern each; see docs/architecture/quill-native-migration.md.
 # ---------------------------------------------------------------------------
 cgb-app = { path = "crates/cgb-app", default-features = false }
+cgb-host = { path = "crates/cgb-host" }
 cgb-mac = { path = "crates/cgb-mac" }
 cgb-systems = { path = "crates/cgb-systems" }
 cgb-libretro = { path = "crates/cgb-libretro" }

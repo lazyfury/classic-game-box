@@ -9,17 +9,33 @@ Authority: [`../../macos/README.md`](../../macos/README.md),
 
 ## Where it is
 
-Rust owns everything (`crates/cgb-mac`, crate `cgb-mac`): the igui UI, the wgpu
-renderer and `cgb-app` (library + libretro emulator). Swift owns the window
-only: `NSWindow` + `CAMetalLayer` + a 60 Hz tick + AppKit event forwarding
+Rust owns everything (`crates/cgb-mac`): the igui UI, the wgpu renderer and
+`cgb-app` (library + libretro emulator). Swift owns the window only:
+`NSWindow` + `CAMetalLayer` + AppKit event forwarding
 (`macos/Sources/ClassicGameBoxMac`). `cgb-app` builds with
-`--no-default-features`, so no `winit` is compiled on this path.
+`--no-default-features`, so no `winit` is compiled on this path; the Rust host
+is linked **statically** into the Swift binary.
 
-Working: library UI renders into Swift's layer; pointer (move/down/up/double-
-click/drag/wheel/leave), keyboard (named + character keys, text, modifiers),
-basic IME preedit/commit, dropped files (FFI only), resize, fullscreen
-(polled), gamepad (currently `gilrs` inside `cgb-app` — moving to Swift, see
-§G), audio (Rust `cpal`).
+Working: the library UI renders into Swift's layer; pointer (move/down/up/
+double-click/drag/wheel/leave), keyboard (named + character keys, text,
+modifiers) and IME preedit/commit are forwarded; the cursor and IME caret come
+from the UI; clipboard works; files can be dropped; resizing is coalesced;
+fullscreen is applied by Swift; gamepads use Swift's `GameController` (no
+`gilrs` in the build); frames are event-driven with a `CADisplayLink` while the
+app wants them; audio goes through Rust `cpal`.
+
+Verified on hardware: PSP, N64 and PS1 (the offscreen-CGL path coexists with
+Metal/wgpu), the downloadable-core flow, and the IME candidate position.
+
+## Decisions (settled)
+
+1. **Titlebar** — transparent + `fullSizeContentView` (the UI runs under it and
+   reserves the traffic-light inset). Implemented.
+2. **Link model** — static (`libcgb_mac.a` into the Swift binary). Implemented.
+3. **Workspace** — `crates/cgb-mac` stays a workspace member.
+4. **Host abstraction** — long-term; started as the `cgb-host` crate
+   (`HostWindow` / `GamepadSource`), which `cgb-app` and the hosts share.
+
 
 ## A. Native-API parity (do first)
 
@@ -45,14 +61,15 @@ The `winit` host does a few things this host does not yet.
   `draggingEntered` / `draggingUpdated` / `performDragOperation` to forward the
   URLs.
 - **A5 · Key repeat.** `NSEvent.isARepeat` is dropped; forward it so held
-  arrows/backspace can repeat if the UI wants that. Low priority.
+  arrows/backspace can repeat if the UI wants that. Low priority. **Deferred** —
+  key filtering may need per-emulator config; leave a note and revisit when a
+  test hits it. (Repeat itself is already forwarded: `HostView.keyDown` does not
+  filter `isARepeat`.)
 - **A6 · Scroll sign.** Verify wheel/trackpad direction against `winit`'s
   `wheel_pixels` convention (`y > 0` scrolls down); tune the line→point factor.
-- **A7 · Titlebar / safe area.** The app reserves space for the macOS chrome
-  (`safe_area()` in `cgb-app`). Decide the Swift window chrome — the latest
-  commit set the `winit` path to `TitlebarMode::Native`; match it here
-  (`titlebarAppearsTransparent`, `fullSizeContentView`, or a normal titlebar)
-  and confirm the header clears the traffic lights.
+  **Leave as is** (implemented, not to be changed).
+- **A7 · Titlebar / safe area.** **Done** — transparent title bar +
+  `.fullSizeContentView`, matching `safe_area()` in `cgb-app`.
 
 ## B. Frame pacing
 
@@ -66,9 +83,10 @@ while `cgb_mac_needs_frame` is true.
   each input event and on resize, and stop ticking when idle.
 - **B2 · Repaint after input.** When idle, an event must trigger exactly one
   `cgb_mac_frame`.
-- **B3 · vsync (optional).** Replace the `Timer` with a `CVDisplayLink` (or
-  `CADisplayLink`) for steadier pacing. Note the core's frame rate is not the
-  display rate; `cgb-app` already accumulates `dt`.
+- **B3 · vsync.** **Done** — `NSView.displayLink` (`CADisplayLink`, macOS 14+)
+  drives frames while `cgb_mac_needs_frame` is true; input still schedules a
+  one-shot frame. The core's frame rate is not the display rate; `cgb-app`
+  accumulates `dt`.
 
 ## C. Packaging
 
@@ -77,24 +95,22 @@ dylib + Swift binary and assembles `dist/Classic Game Box (Swift).app` with the
 dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
 `Contents/Resources`. B3 (CVDisplayLink) is still open.
 
-- **C1 · Link model.** Either statically link `libcgb_mac.a` (the crate already
-  builds a `staticlib`) so no dylib needs bundling, or bundle
-  `libcgb_mac.dylib` into `Contents/Frameworks` with an `@rpath` and an
-  `install_name`. Static is simpler for an app that is one process.
+- **C1 · Link model.** **Done** — static: `crates/cgb-mac` builds only a
+  `staticlib`, SwiftPM links `libcgb_mac.a`, no dylib is bundled.
 - **C2 · `macos/scripts/package.sh`.** Release build → `Classic Game Box.app`
   with `Info.plist`, the Rust lib (if dynamic), and `cores/dist` + `assets`
   under `Contents/Resources`. Ad-hoc codesign.
 - **C3 · Resource resolution.** `cgb-app::resource_dir()` already looks in
   `Contents/Resources`; confirm `cores/cores.json`, the minimal core set and
   the arcade/J2ME/PPSSPP assets resolve from the bundle.
-- **C4 · Downloadable cores.** Downloaded cores land in app data, as in the
-  main app; verify the settings page's download flow works through this host.
+- **C4 · Downloadable cores.** **Verified** — the settings page's download flow
+  works through this host.
 
 ## D. Tests & docs
 
-- **D1 · Unit tests.** `crates/cgb-mac/src/input.rs` is pure mapping — add tests for
-  `key_from_code`, `modifiers_from_bits`, `pointer_button` and
-  `MacEvent::to_input` (double-click, wheel).
+- **D1 · Unit tests.** `GamepadSnapshot::apply` is tested. `crates/cgb-mac/src/input.rs`
+  is pure mapping — still to add tests for `key_from_code`, `modifiers_from_bits`,
+  `pointer_button` and `MacEvent::to_input` (double-click, wheel).
 - **D2 · Manual checklist.** A short visual acceptance list (library renders,
   click opens a game, keys play, resize, fullscreen, drop a ROM, save/load).
 - **D3 · Conventions.** Add `macos/` and `crates/cgb-mac` to `AGENTS.md`'s layout
@@ -105,22 +121,18 @@ dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
 
 ## E. Hardware-GL cores
 
-- **E1.** N64 / PSP / PS1 render through `cgb-libretro`'s offscreen CGL context
-  on the thread running `retro_run`. Here that is the main thread, shared with
-  Metal/wgpu. Verify one of them end to end (and that `CoreHost::drop` ordering
-  still holds).
+- **E1.** **Verified** — PSP, N64 and PS1 all render through `cgb-libretro`'s
+  offscreen CGL context on the main thread, shared with Metal/wgpu.
 
 ## F. Robustness
 
-- **F1 · Surface lifetime.** The `CAMetalLayer` must outlive the wgpu surface.
-  Swift keeps `HostView` alive until `applicationWillTerminate` destroys the
-  Rust app; make this explicit and assert it (destroy the app before releasing
-  the view).
-- **F2 · Startup errors.** `cgb_mac_start` returns null only on a null layer;
-  surface/backend failures are only `eprintln!` today. Surface them to Swift
-  (an `NSAlert`) so a GPU failure is visible.
-- **F3 · Event coalescing.** A live resize fires many `cgb_mac_resize` calls;
-  coalesce to one surface reconfigure per tick if it shows up as jank.
+- **F1 · Surface lifetime.** **Done** — `applicationWillTerminate` destroys the
+  Rust app while `view` (and its layer) is still alive; `view` is released only
+  after.
+- **F2 · Startup errors.** **Done** — a missing backend returns NULL from
+  `cgb_mac_start` and Swift shows an `NSAlert`.
+- **F3 · Event coalescing.** **Done** — `applyResizeIfNeeded` reconfigures the
+  surface at most once a frame.
 
 ## G. Swift-native gamepad (decided interface)
 
@@ -231,17 +243,50 @@ the source applies; `connected` sets/clears the flag and zeroes that port.
 ### Testing
 
 - **G4.** Unit-test `GamepadSnapshot::apply` and the mask write in `cgb-input`.
-- **G5.** Manual: hot-plug an Xbox pad, check buttons / sticks / triggers;
-  unplug and confirm the port clears; confirm `gilrs` is absent from the
-  release binary (`nm` / `otool`).
+- **G5.** **Verified** — hot-plug, buttons / sticks / triggers, and the port
+  clears on unplug; `gilrs` is absent from the embedded binary.
+  **Known quirk:** double-pressing the pad's Select (`buttonOptions`) can trip
+  macOS's screen-recording shortcut; not remapped yet.
+
+## H. Experimental: a game in its own window
+
+**Goal.** Run a game in a **separate `NSWindow`** instead of the play column
+inside the library window, plus a **separate-window OpenGL mode** that shows
+the core's own GL output directly.
+
+**Why.** The library shell is heavy; a dedicated game window is the natural
+"player" surface (and a path to a borderless / fullscreen game window that is
+independent of the UI). Hardware cores (N64/PSP/PS1) already render into an
+offscreen CGL FBO; an OpenGL mode could present that FBO directly instead of
+the readback → wgpu-texture path.
+
+**Design sketch.**
+
+- The runtime has one `Presenter`; a second window needs a second surface. Two
+  shapes:
+  1. **Companion runtime for the game** — a second `cgb-mac` instance that owns
+     the game surface and drives `Session`, while the main instance keeps the
+     UI. Needs the app state split (UI vs session).
+  2. **Multi-surface host** — extend `cgb-mac` to register a second
+     `CAMetalLayer` + presenter for the game and have `cgb-app` render the play
+     view to it. One app instance; more host plumbing.
+- Swift creates the second window/layer and calls
+  `cgb_mac_open_game_window(layer, w, h, scale)` / `cgb_mac_close_game_window()`.
+- **OpenGL mode**: `cgb-libretro` already owns an offscreen CGL context for
+  `SET_HW_RENDER`. A dedicated window could either keep the readback path but
+  present to the second surface (cheap to try), or create the GL context on the
+  game window's `NSOpenGLView` / `CAOpenGLLayer` and let the core render there
+  (no readback, no wgpu) — the real "OpenGL mode".
+
+**Open questions.**
+
+- Which shape (companion runtime vs multi-surface)?
+- Does OpenGL mode bypass `igui`/wgpu for the game view only, keeping the UI in
+  wgpu?
+- Window chrome for the game window (borderless? title bar? controls overlay?).
+
+**Status:** planned, not started.
 
 ## Open questions
 
-1. **Titlebar** — transparent + full-size content (matching the app's
-   traffic-light inset), or a plain native titlebar?
-2. **Link model** — static into the Swift binary, or a bundled dylib?
-3. **Workspace** — keep `crates/cgb-mac` a workspace member (the whole-workspace
-   build compiles it), or exclude it and build it only from
-   `macos/scripts/*.sh`?
-4. **`cgb-app` surface** — is the `HostWindow` trait + `winit-host` feature the
-   right permanent shape, or should the host abstraction move to its own crate?
+All four are now settled (see **Decisions** above).
