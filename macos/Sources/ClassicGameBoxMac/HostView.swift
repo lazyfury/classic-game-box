@@ -25,6 +25,11 @@ final class HostView: NSView {
     private var lastCursorCode: UInt32 = 0
     /// The focused text caret (logical, origin top-left), for the IME.
     private var caretRect: NSRect?
+    /// The current IME preedit (marked) text, empty when not composing.
+    private var composedText = ""
+    /// The marked text's range. The document lives in Rust, so this is
+    /// best-effort: the composition is reported from offset 0.
+    private var markedRangeValue = NSRange(location: NSNotFound, length: 0)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -307,6 +312,8 @@ final class HostView: NSView {
 extension HostView: NSTextInputClient {
     func insertText(_ string: Any, replacementRange: NSRange) {
         guard let app else { return }
+        composedText = ""
+        markedRangeValue = NSRange(location: NSNotFound, length: 0)
         let text = Self.plainString(string)
         text.withCString { cgb_mac_text(app, $0) }
     }
@@ -314,6 +321,8 @@ extension HostView: NSTextInputClient {
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         guard let app else { return }
         let text = Self.plainString(string)
+        composedText = text
+        markedRangeValue = NSRange(location: 0, length: (text as NSString).length)
         text.withCString {
             cgb_mac_ime(
                 app,
@@ -327,26 +336,39 @@ extension HostView: NSTextInputClient {
 
     func unmarkText() {
         guard let app else { return }
+        composedText = ""
+        markedRangeValue = NSRange(location: NSNotFound, length: 0)
         cgb_mac_ime(app, 1, nil, -1, -1)
     }
 
     func selectedRange() -> NSRange {
-        NSRange(location: NSNotFound, length: 0)
+        // The selection within the composition (the document selection is
+        // Rust's).
+        guard hasMarkedText() else {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        return NSRange(location: (composedText as NSString).length, length: 0)
     }
 
     func markedRange() -> NSRange {
-        NSRange(location: NSNotFound, length: 0)
+        markedRangeValue
     }
 
     func hasMarkedText() -> Bool {
-        false
+        !composedText.isEmpty
     }
 
     func attributedSubstring(
         forProposedRange range: NSRange,
         actualRange: NSRangePointer?
     ) -> NSAttributedString? {
-        nil
+        guard hasMarkedText() else { return nil }
+        let clamped = NSIntersectionRange(range, markedRangeValue)
+        guard clamped.length > 0 else { return nil }
+        actualRange?.pointee = clamped
+        return NSAttributedString(
+            string: (composedText as NSString).substring(with: clamped)
+        )
     }
 
     func validAttributesForMarkedText() -> [NSAttributedString.Key] {

@@ -108,11 +108,21 @@ dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
 
 ## D. Tests & docs
 
-- **D1 · Unit tests.** `GamepadSnapshot::apply` is tested. `crates/cgb-mac/src/input.rs`
-  is pure mapping — still to add tests for `key_from_code`, `modifiers_from_bits`,
-  `pointer_button` and `MacEvent::to_input` (double-click, wheel).
-- **D2 · Manual checklist.** A short visual acceptance list (library renders,
-  click opens a game, keys play, resize, fullscreen, drop a ROM, save/load).
+- **D1 · Unit tests.** **Done** — `GamepadSnapshot::apply` (cgb-input) and
+  `crates/cgb-mac/src/input.rs`'s pure mappings (named keys, character fallback,
+  modifier bits, pointer buttons, double-click, text/IME).
+- **D2 · Manual checklist.** Run `macos/scripts/run.sh` and confirm:
+  1. The library renders; the grid scrolls; hovering a card shows the
+     pointing-hand cursor.
+  2. Double-clicking a card opens the game; keys and gamepad play it; the
+     in-app fullscreen toggle (and Esc) work.
+  3. Dropping a ROM file on the window imports it.
+  4. Rename / tags: the text field takes typing, Cmd+C/V, and CJK IME
+     composition (candidate window on the caret).
+  5. Save (F5) and load (F6) a state; quit and relaunch keeps the `.srm`.
+  6. Resize the window while playing: no jank, correct aspect ratio.
+  7. Settings → download a core; it appears after a refresh.
+  8. Hot-plug / unplug a gamepad: the port clears on unplug.
 - **D3 · Conventions.** Add `macos/` and `crates/cgb-mac` to `AGENTS.md`'s layout
   and to `.pi/skills/cgb-rust/SKILL.md`; document the `winit-host` feature and
   the `cgb-app --no-default-features` rule.

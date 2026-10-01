@@ -84,8 +84,9 @@ Metal/wgpu), the downloadable-core flow, and the IME candidate position.
 
 Known gaps:
 
-- IME is a minimal `NSTextInputClient` (`hasMarkedText` always false); CJK
-  composition is untested.
+- IME tracks the composition (`hasMarkedText` / `markedRange` / preedit), but
+  the text buffer lives in Rust, so `attributedSubstring` / `characterIndex` are
+  best-effort; full CJK composition is still to be eyeballed.
 - Audio goes through Rust `cpal` (as in the main app).
 - Double-pressing the pad's Select can trip macOS's screen-recording shortcut;
   not remapped yet.

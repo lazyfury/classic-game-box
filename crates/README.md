@@ -7,7 +7,7 @@ secondary `winit` dev host).
 
 | crate | type | responsibility |
 |---|---|---|
-| `cgb-app` | lib + bin | the shared app: igui UI, `App`/`AppLogic`, `Session`, feature handlers; the `classic-game-box` bin is the secondary `winit` dev host |
+| `cgb-app` | lib + bin | the shared app: igui UI, `App`/`AppLogic`, `Session`, feature handlers; the `classic-game-box` bin is a **deprecated** `winit` dev host (not kept in sync) |
 | `cgb-host` | lib | the host contract: `HostWindow` / `GamepadSource` traits, shared by the app and the hosts |
 | `cgb-mac` | staticlib | the Swift host: a `CAMetalLayer` → wgpu surface, native-event translation, the `cgb_mac_*` C ABI |
 | `cgb-systems` | lib | system/core registry, joypad ids (dependency-free) |

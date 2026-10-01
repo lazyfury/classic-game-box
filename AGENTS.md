@@ -12,8 +12,9 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 
 - **布局**：产品是 **Swift/macOS app**（`macos/`，AppKit + `CAMetalLayer` + 原生事件，
   取代 winit），Rust 侧**全是 library crate**。共享的应用逻辑（UI + 模拟器）在
-  `crates/cgb-app`（`src/ui` + `src/app/*` 都在这里；它同时带着次要的 winit dev host
-  bin `classic-game-box`）；嵌入 host 的 C ABI 在 `crates/cgb-mac`，窗口/手柄 host 契约
+  `crates/cgb-app`（`src/ui` + `src/app/*` 都在这里；它同时带着已废弃的 winit dev host
+  bin `classic-game-box`，仅作本地回退，不再与 Swift host 同步）；嵌入 host 的 C ABI 在
+  `crates/cgb-mac`，窗口/手柄 host 契约
   （`HostWindow` / `GamepadSource`）在 `crates/cgb-host`。引擎/设备是独立子
   crate：`crates/{cgb-systems,cgb-paths,cgb-cores,cgb-library,cgb-libretro,cgb-audio,
   cgb-input}`。工作区根 `Cargo.toml` 是**虚拟 manifest**（无 `[package]`）。

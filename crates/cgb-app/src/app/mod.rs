@@ -181,8 +181,13 @@ const BUNDLED_J2ME: &str = "freej2me_plus";
 const BUNDLED_PPSSPP: &str = "ppsspp";
 
 /// Runs the app on the `igui_app` plugin runtime (winit + wgpu + input).
+///
+/// **Deprecated.** The product is the Swift/macOS host (`macos/` +
+/// `crates/cgb-mac`). This `winit` host is kept only as a local dev fallback
+/// and is no longer kept in sync with the Swift host.
 #[cfg(feature = "winit-host")]
 pub fn run(args: Args) {
+    eprintln!("cgb: 注意：winit host 已废弃；主要产品是 macos/ 的 Swift host");
     let app = App::new(args);
     let drops = app.drop_sink();
     let title = "Classic Game Box".to_string();

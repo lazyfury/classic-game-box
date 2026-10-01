@@ -157,3 +157,69 @@ pub fn pointer_button(tag: u32) -> PointerButton {
         _ => PointerButton::Left,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use igui::igui_core::{ImeEvent, InputEvent, Key, PointerButton, Vec2};
+
+    #[test]
+    fn named_keys_map_by_code() {
+        assert_eq!(key_from_code(0x24, None), Some(Key::Enter));
+        assert_eq!(key_from_code(0x35, None), Some(Key::Escape));
+        assert_eq!(key_from_code(0x33, None), Some(Key::Backspace));
+        assert_eq!(key_from_code(0x7B, None), Some(Key::ArrowLeft));
+        assert_eq!(key_from_code(0x60, None), Some(Key::F5));
+    }
+
+    #[test]
+    fn printable_keys_fall_back_to_the_character() {
+        assert_eq!(key_from_code(0x00, Some("a")), Some(Key::Character('a')));
+        // A hotkey like Cmd+C still carries its character.
+        assert_eq!(key_from_code(0x08, Some("c")), Some(Key::Character('c')));
+        assert_eq!(key_from_code(0x00, None), None);
+    }
+
+    #[test]
+    fn modifier_bits_map() {
+        let modifiers = modifiers_from_bits(0b1011);
+        assert!(modifiers.shift && modifiers.ctrl && !modifiers.alt && modifiers.meta);
+        assert_eq!(modifiers_from_bits(0), Modifiers::NONE);
+    }
+
+    #[test]
+    fn pointer_buttons_map() {
+        assert_eq!(pointer_button(0), PointerButton::Left);
+        assert_eq!(pointer_button(1), PointerButton::Right);
+        assert_eq!(pointer_button(2), PointerButton::Middle);
+        assert_eq!(pointer_button(9), PointerButton::Left);
+    }
+
+    #[test]
+    fn a_double_click_reports_both_events() {
+        let event = MacEvent::PointerDown {
+            position: Vec2::new(1.0, 2.0),
+            button: PointerButton::Left,
+            click_count: 2,
+        };
+        assert!(matches!(
+            event.to_input().as_slice(),
+            [
+                InputEvent::PointerDown { .. },
+                InputEvent::DoubleClick { .. }
+            ]
+        ));
+    }
+
+    #[test]
+    fn text_and_ime_translate() {
+        assert_eq!(
+            MacEvent::Text("a".into()).to_input(),
+            vec![InputEvent::TextInput { text: "a".into() }]
+        );
+        assert_eq!(
+            MacEvent::Ime(ImeEvent::Disabled).to_input(),
+            vec![InputEvent::Ime(ImeEvent::Disabled)]
+        );
+    }
+}
