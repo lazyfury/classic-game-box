@@ -47,6 +47,19 @@ bool cgb_mac_needs_frame(const CgbMacApp *app);
  */
 int32_t cgb_mac_take_fullscreen(CgbMacApp *app);
 
+/*
+ * The cursor the UI wants: an igui_core::Cursor discriminant (0 default,
+ * 1 pointer, 2 text, 3 col-resize, 4 row-resize, 5 grab, 6 grabbing).
+ */
+uint32_t cgb_mac_cursor(const CgbMacApp *app);
+
+/*
+ * The focused text caret in logical viewport points (origin top-left), for
+ * placing the IME candidate window. Returns false when there is none.
+ */
+bool cgb_mac_caret(const CgbMacApp *app, float *out_x, float *out_y,
+                   float *out_width, float *out_height);
+
 /* Resize the drawable (physical pixels) and update the backing scale. */
 void cgb_mac_resize(CgbMacApp *app, uint32_t width, uint32_t height, double scale);
 

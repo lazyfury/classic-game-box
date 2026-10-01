@@ -18,7 +18,7 @@ use igui::igui_backend_wgpu::wgpu;
 use igui::igui_backend_wgpu::{FontConfig, FontMetrics, FontMode, WgpuBackend};
 use igui::igui_core::{Color, FontWeight, Size, ViewportSize};
 use igui::igui_render::{DrawList, RenderBackend};
-use igui::igui_ui::TextMeasurer;
+use igui::igui_ui::{Clipboard, MemoryClipboard, TextMeasurer};
 
 /// The `CAMetalLayer` Swift hands over, with its pixel geometry.
 ///
@@ -280,6 +280,55 @@ impl Presenter for MacPresenter {
         drop(backend);
         texture.present();
         PresentOutcome::Presented
+    }
+}
+
+/// Registers the system clipboard (with an in-process fallback) for the text
+/// fields' copy / cut / paste.
+#[derive(Default)]
+pub struct MacClipboardPlugin;
+
+impl Plugin for MacClipboardPlugin {
+    fn name(&self) -> &'static str {
+        "cgb-mac-clipboard"
+    }
+
+    fn build(&self, app: &mut AppBuilder) {
+        let clipboard: Rc<RefCell<dyn Clipboard>> = Rc::new(RefCell::new(MacClipboard::new()));
+        app.insert_service(clipboard);
+    }
+}
+
+/// The macOS pasteboard, with an in-process fallback when it cannot be opened.
+struct MacClipboard {
+    inner: RefCell<Option<arboard::Clipboard>>,
+    fallback: MemoryClipboard,
+}
+
+impl MacClipboard {
+    fn new() -> Self {
+        Self {
+            inner: RefCell::new(arboard::Clipboard::new().ok()),
+            fallback: MemoryClipboard::default(),
+        }
+    }
+}
+
+impl Clipboard for MacClipboard {
+    fn get(&self) -> Option<String> {
+        if let Some(clipboard) = self.inner.borrow_mut().as_mut() {
+            if let Ok(text) = clipboard.get_text() {
+                return Some(text);
+            }
+        }
+        self.fallback.get()
+    }
+
+    fn set(&mut self, text: &str) {
+        self.fallback.set(text);
+        if let Some(clipboard) = self.inner.borrow_mut().as_mut() {
+            let _ = clipboard.set_text(text.to_string());
+        }
     }
 }
 

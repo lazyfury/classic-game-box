@@ -18,3 +18,5 @@ cgb-app = { path = "../..", default-features = false }
 # The plugin runtime + native backend the host assembles. `igui_core` /
 # `igui_render` / `igui_ui` come through the facade's features.
 igui = { workspace = true, features = ["ui", "app", "wgpu", "profile"] }
+# System clipboard for the text fields (the same crate `igui_winit` uses).
+arboard = "3"

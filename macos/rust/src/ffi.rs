@@ -8,9 +8,11 @@ use std::rc::Rc;
 use cgb_app::app::{App as CgbApp, SharedHostWindow};
 use cgb_app::cli::Args;
 use igui::igui_app::{App as IguiApp, AppConfig, PlatformEvent};
-use igui::igui_core::{ImeEvent, Vec2};
+use igui::igui_core::{Cursor, ImeEvent, Vec2};
 
-use crate::host::{MacGpu, MacGpuPlugin, MacHostWindow, MacSurface, MacTextMeasurePlugin};
+use crate::host::{
+    MacClipboardPlugin, MacGpu, MacGpuPlugin, MacHostWindow, MacSurface, MacTextMeasurePlugin,
+};
 use crate::input::{key_from_code, modifiers_from_bits, pointer_button, MacEvent, MacInputPlugin};
 
 /// A running embedded app. Opaque to C (`CgbMacApp`).
@@ -107,6 +109,7 @@ pub unsafe extern "C" fn cgb_mac_start(
     })
     .plugin(gpu_plugin)
     .plugin(MacTextMeasurePlugin)
+    .plugin(MacClipboardPlugin)
     .plugin(MacInputPlugin)
     .logic(logic);
     builder.insert_service(MacSurface {
@@ -182,6 +185,66 @@ pub unsafe extern "C" fn cgb_mac_take_fullscreen(app: *mut CgbMacApp) -> i32 {
         Some(false) => 0,
         None => -1,
     }
+}
+
+/// The cursor the UI wants (an `igui_core::Cursor` discriminant), or `0`
+/// (default arrow) when the app is not running.
+///
+/// # Safety
+///
+/// `app` must be a live pointer from `cgb_mac_start`.
+#[no_mangle]
+pub unsafe extern "C" fn cgb_mac_cursor(app: *const CgbMacApp) -> u32 {
+    unsafe { app.as_ref() }
+        .and_then(|app| app.app.cursor())
+        .map_or(0, cursor_code)
+}
+
+/// Map a core cursor to its ABI discriminant (the order of `Cursor`'s
+/// variants).
+fn cursor_code(cursor: Cursor) -> u32 {
+    match cursor {
+        Cursor::Default => 0,
+        Cursor::Pointer => 1,
+        Cursor::Text => 2,
+        Cursor::ColResize => 3,
+        Cursor::RowResize => 4,
+        Cursor::Grab => 5,
+        Cursor::Grabbing => 6,
+    }
+}
+
+/// The focused text caret in logical viewport points (origin top-left), for
+/// placing the IME candidate window. Returns false when there is none.
+///
+/// # Safety
+///
+/// `app` must be a live pointer from `cgb_mac_start`; the out pointers must be
+/// writable `f32`s or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn cgb_mac_caret(
+    app: *const CgbMacApp,
+    out_x: *mut f32,
+    out_y: *mut f32,
+    out_width: *mut f32,
+    out_height: *mut f32,
+) -> bool {
+    let Some(rect) = (unsafe { app.as_ref() }).and_then(|app| app.app.caret()) else {
+        return false;
+    };
+    if !out_x.is_null() {
+        unsafe { *out_x = rect.left() };
+    }
+    if !out_y.is_null() {
+        unsafe { *out_y = rect.top() };
+    }
+    if !out_width.is_null() {
+        unsafe { *out_width = rect.size.width };
+    }
+    if !out_height.is_null() {
+        unsafe { *out_height = rect.size.height };
+    }
+    true
 }
 
 /// Resize the drawable (physical pixels) and update the backing scale.

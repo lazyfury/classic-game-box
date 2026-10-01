@@ -105,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func tick() {
         guard let app else { return }
         cgb_mac_frame(app)
+        view?.syncFrameState()
         syncFullscreen()
     }
 

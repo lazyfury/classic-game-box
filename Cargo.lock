@@ -426,6 +426,7 @@ dependencies = [
 name = "cgb-mac"
 version = "0.2.0"
 dependencies = [
+ "arboard",
  "cgb-app",
  "igui",
 ]

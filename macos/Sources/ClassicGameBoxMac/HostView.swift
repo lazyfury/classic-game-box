@@ -21,6 +21,11 @@ final class HostView: NSView {
     /// can reconfigure its surface.
     var onGeometryChange: (() -> Void)?
 
+    /// The cursor last applied, so a steady pointer does not re-set it.
+    private var lastCursorCode: UInt32 = 0
+    /// The focused text caret (logical, origin top-left), for the IME.
+    private var caretRect: NSRect?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -28,6 +33,7 @@ final class HostView: NSView {
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.framebufferOnly = true
         layer = metalLayer
+        registerForDraggedTypes([.fileURL])
         updateLayerGeometry()
     }
 
@@ -87,6 +93,67 @@ final class HostView: NSView {
             height: bounds.height * scale
         )
         onGeometryChange?()
+    }
+
+    // MARK: - Per-frame host state
+
+    /// Apply what the app wants of the native side after a frame: the cursor
+    /// and the IME caret position.
+    func syncFrameState() {
+        guard let app else { return }
+
+        let code = cgb_mac_cursor(app)
+        if code != lastCursorCode {
+            lastCursorCode = code
+            Self.cursor(for: code).set()
+        }
+
+        var x: Float = 0
+        var y: Float = 0
+        var width: Float = 0
+        var height: Float = 0
+        if cgb_mac_caret(app, &x, &y, &width, &height) {
+            caretRect = NSRect(x: CGFloat(x), y: CGFloat(y), width: CGFloat(width), height: CGFloat(height))
+        } else {
+            caretRect = nil
+        }
+    }
+
+    private static func cursor(for code: UInt32) -> NSCursor {
+        switch code {
+        case 1: return .pointingHand
+        case 2: return .iBeam
+        case 3: return .resizeLeftRight
+        case 4: return .resizeUpDown
+        case 5: return .openHand
+        case 6: return .closedHand
+        default: return .arrow
+        }
+    }
+
+    // MARK: - Drag & drop
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let app else { return false }
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        guard let urls = sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: options
+        ) as? [URL] else {
+            return false
+        }
+        for url in urls {
+            url.path.withCString { cgb_mac_dropped_file(app, $0) }
+        }
+        return !urls.isEmpty
     }
 
     // MARK: - Geometry helpers
@@ -287,7 +354,16 @@ extension HostView: NSTextInputClient {
     }
 
     func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
-        .zero
+        guard let caretRect, let window, caretRect.height > 0 else { return .zero }
+        // The caret is logical with the origin at the top-left; AppKit view
+        // coordinates put it at the bottom-left.
+        let viewRect = NSRect(
+            x: caretRect.minX,
+            y: bounds.height - caretRect.maxY,
+            width: max(caretRect.width, 1),
+            height: caretRect.height
+        )
+        return window.convertToScreen(convert(viewRect, to: nil))
     }
 
     func characterIndex(for point: NSPoint) -> Int {
