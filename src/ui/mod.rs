@@ -363,6 +363,21 @@ impl Ui {
         self.repaint = true;
     }
 
+    /// Open the per-game core picker: the cores that run the game's console,
+    /// with the game's own pick ticked (`game.core` is `None` when it follows
+    /// the console's pick).
+    pub fn open_game_core_menu(
+        &mut self,
+        theme: &'static dyn Theme,
+        game: &GameRow,
+        position: Vec2,
+        cores: &[CoreRow],
+        actions: &ViewBridge,
+    ) {
+        view::menus::game_core_menu(theme, &mut self.overlays, game, position, cores, actions);
+        self.repaint = true;
+    }
+
     /// Open a modal confirmation for a destructive action. Confirming runs
     /// `on_confirm`; Escape / clicking outside cancels.
     pub fn confirm_destructive(
@@ -498,6 +513,7 @@ mod tests {
     use super::*;
     use cgb_libretro::SystemId;
     use igui::igui_core::{InputEvent, PointerButton, Size, Vec2};
+    use igui::igui_render::DrawCommand;
     use igui::igui_theme::{default_theme, Mode};
 
     fn game(index: usize) -> GameRow {
@@ -506,6 +522,7 @@ mod tests {
             name: format!("Game {index}"),
             file_name: format!("game{index}.nes"),
             system: SystemId::Nes,
+            core: None,
             path: format!("/roms/game{index}.nes"),
             size: 0,
             pinned: false,
@@ -889,5 +906,159 @@ mod tests {
         // Tab continues from that control instead of restarting.
         assert!(ui.move_focus(false));
         assert_ne!(igui::igui_ui::focused(ui.tree()), Some(focused));
+    }
+
+    fn painted(ui: &Ui) -> igui::igui_render::DrawList {
+        let mut ctx = PaintContext::new();
+        ui.paint(&mut ctx);
+        ctx.into_draw_list()
+    }
+
+    fn painted_text(ui: &Ui) -> Vec<String> {
+        painted(ui)
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::DrawText { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn text_position(ui: &Ui, needle: &str) -> Vec2 {
+        painted(ui)
+            .commands()
+            .iter()
+            .find_map(|command| match command {
+                DrawCommand::DrawText { text, position, .. } if text == needle => Some(*position),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no painted text {needle:?}"))
+    }
+
+    /// A card's context menu offers「选择核心…」, and the picker lists the
+    /// console's cores with the game's own choice ticked. Clicking one records
+    /// the pick as an action.
+    #[test]
+    fn the_card_menu_opens_a_per_game_core_picker() {
+        let theme = default_theme(Mode::Dark);
+        let actions = ViewBridge::default();
+        let cores = vec![
+            CoreRow {
+                key: "mesen".to_string(),
+                name: "Mesen".to_string(),
+                system: SystemId::Nes,
+                selected: true,
+            },
+            CoreRow {
+                key: "nestopia".to_string(),
+                name: "Nestopia".to_string(),
+                system: SystemId::Nes,
+                selected: false,
+            },
+            CoreRow {
+                key: "mgba".to_string(),
+                name: "mGBA".to_string(),
+                system: SystemId::Gba,
+                selected: false,
+            },
+        ];
+        let mut game = game(0);
+        game.core = Some("nestopia".to_string());
+        let model = ViewModel {
+            section: Section::Library,
+            games: vec![game.clone()],
+            cores,
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+        let mut ui = Ui::new(theme, &model, &actions);
+
+        // The card menu carries the entry.
+        ui.open_game_menu(theme, &game, 0, Vec2::new(120.0, 120.0), &actions);
+        ui.layout(viewport);
+        let texts = painted_text(&ui);
+        assert!(
+            texts.iter().any(|text| text == "选择核心…"),
+            "the card menu offers the picker: {texts:?}"
+        );
+
+        // The picker filters to the console and ticks the game's own pick.
+        ui.close_overlays();
+        ui.open_game_core_menu(
+            theme,
+            &game,
+            Vec2::new(120.0, 120.0),
+            &model.cores,
+            &actions,
+        );
+        ui.layout(viewport);
+        let texts = painted_text(&ui);
+        assert!(texts.iter().any(|text| text == "Nestopia ✓"), "{texts:?}");
+        assert!(texts.iter().any(|text| text == "Mesen"), "{texts:?}");
+        assert!(
+            texts.iter().any(|text| text == "默认（跟随机种设置）"),
+            "the override can be cleared: {texts:?}"
+        );
+        assert!(
+            !texts.iter().any(|text| text == "mGBA"),
+            "another console's core is not offered: {texts:?}"
+        );
+
+        // Clicking a core asks the host to remember it.
+        let point = text_position(&ui, "Mesen");
+        for event in [
+            InputEvent::PointerDown {
+                position: point,
+                button: PointerButton::Left,
+            },
+            InputEvent::PointerUp {
+                position: point,
+                button: PointerButton::Left,
+            },
+        ] {
+            ui.route_input(&event);
+        }
+        assert_eq!(
+            actions.drain(),
+            vec![Action::SetGameCore {
+                id: 0,
+                core: Some("mesen".to_string()),
+            }]
+        );
+    }
+
+    /// A game that follows its console's pick ticks the clear-override entry.
+    #[test]
+    fn a_game_with_no_core_pick_ticks_the_console_default() {
+        let theme = default_theme(Mode::Dark);
+        let actions = ViewBridge::default();
+        let model = ViewModel {
+            section: Section::Library,
+            games: vec![game(0)],
+            cores: vec![CoreRow {
+                key: "nestopia".to_string(),
+                name: "Nestopia".to_string(),
+                system: SystemId::Nes,
+                selected: false,
+            }],
+            ..ViewModel::default()
+        };
+        let viewport = ViewportSize::new(Size::new(1100.0, 760.0));
+        let mut ui = Ui::new(theme, &model, &actions);
+        ui.open_game_core_menu(
+            theme,
+            &model.games[0],
+            Vec2::new(120.0, 120.0),
+            &model.cores,
+            &actions,
+        );
+        ui.layout(viewport);
+        let texts = painted_text(&ui);
+        assert!(
+            texts.iter().any(|text| text == "默认（跟随机种设置）✓"),
+            "the console default is ticked: {texts:?}"
+        );
+        assert!(texts.iter().any(|text| text == "Nestopia"), "{texts:?}");
     }
 }

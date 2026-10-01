@@ -59,6 +59,7 @@ pub(crate) fn game_row(game: Game, cover: Option<TextureHandle>) -> GameRow {
         name: game.name,
         file_name: game.file_name,
         system: game.system,
+        core: game.core,
         path: game.path,
         size: game.size,
         pinned: game.pinned,

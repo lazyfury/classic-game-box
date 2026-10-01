@@ -114,7 +114,7 @@ fn fold_header(
         .mini()
         .child(SvgIcon::new(icon, theme.palette().foreground, CARD_ICON))
         .child(Text::subheading(caption, theme))
-        .on_click(move |_tree, _id| actions.push(action))
+        .on_click(move |_tree, _id| actions.push(action.clone()))
 }
 
 /// The "missing core" card: one row per console the library has games for but

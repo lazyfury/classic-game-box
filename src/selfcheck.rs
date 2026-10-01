@@ -239,6 +239,7 @@ fn sample_game(index: usize) -> crate::ui::GameRow {
         name: format!("Game {index}"),
         file_name: format!("game{index}.nes"),
         system: SystemId::Nes,
+        core: None,
         path: format!("/roms/game{index}.nes"),
         size: (index as u64 + 1) * 4096,
         pinned: index % 17 == 0,

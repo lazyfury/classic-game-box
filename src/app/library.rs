@@ -298,6 +298,39 @@ impl super::App {
         self.dirty = true;
     }
 
+    /// Remember which core a single game runs, by manifest key, overriding the
+    /// console's pick in Settings. The library is the source of truth; the
+    /// in-memory rows are refreshed so the next launch uses it. `None` clears
+    /// the override.
+    pub(super) fn set_game_core(&mut self, id: i64, core: Option<String>) {
+        let Some(path) = self
+            .game_source
+            .iter()
+            .find(|game| game.id == id)
+            .map(|game| game.path.clone())
+        else {
+            return;
+        };
+        if let Some(library) = &self.library {
+            if let Err(error) = library.set_core(&path, core.as_deref()) {
+                self.model
+                    .set_status(format!("设置核心失败：{error}"), StatusKind::Error);
+                self.dirty = true;
+                return;
+            }
+        }
+        if let Some(game) = self.game_source.iter_mut().find(|game| game.id == id) {
+            game.core = core.clone();
+        }
+        self.rebuild_game_rows();
+        let message = match &core {
+            Some(key) => format!("已指定核心：{key}"),
+            None => "已恢复为机种默认核心".to_string(),
+        };
+        self.model.set_status(message, StatusKind::Success);
+        self.dirty = true;
+    }
+
     /// Rebuild the library rows from [`App::game_source`], applying the saved
     /// sort order. Pinned games always come first; the sort key only orders
     /// within the pinned and unpinned groups. Cheap enough to run on every sort

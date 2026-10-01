@@ -520,8 +520,18 @@ impl AppLogic for App {
         self.rebuild_screenshot_rows();
         // A `--rom` on the command line starts eagerly, before the first frame.
         if let Some(pending) = self.pending_rom.take() {
-            let system = system_for_path(&pending.to_string_lossy());
-            self.start_path(&pending, system);
+            let path = pending.to_string_lossy();
+            // A file already in the library keeps its per-game console and core
+            // picks; otherwise the extension decides.
+            let (system, core) = match self
+                .game_source
+                .iter()
+                .find(|game| game.path == path.as_ref())
+            {
+                Some(game) => (game.system, game.core.clone()),
+                None => (system_for_path(&path), None),
+            };
+            self.start_path(&pending, system, core.as_deref());
         }
     }
 

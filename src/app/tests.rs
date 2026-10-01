@@ -7,6 +7,7 @@ fn db_game(name: &str, size: u64, pinned: bool) -> Game {
         file_name: format!("{name}.nes"),
         name: name.to_string(),
         system: cgb_libretro::SystemId::Nes,
+        core: None,
         size,
         mtime_ms: 0,
         added_at: 0,

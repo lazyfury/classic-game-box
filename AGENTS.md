@@ -32,6 +32,9 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   库顶统计总数量 + 按机种分别计数并点选筛选；
   置顶；排序（名称/大小/最近/时长/加入）；标签；截图（F12 / ⇧F12 设封面）+ 真实封面；
   卡片 SVG 图标 + 截图收藏页 + 大图预览。
+  单游戏可用卡片右键的**「选择核心…」**覆盖该游戏用的核心（存在库 `games.core`，
+  `Library::set_core`，`None` 即跟随该机种设置；rescan 不覆盖）。优先级：
+  `--core` > 游戏覆盖 > 机种设置 > 清单首个核心。
 - **性能**：DrawList 复用（运行游戏不重排重绘）+ 图标纹理化 + 库网格可见行虚拟化；
   `CGB_PERF=1` 打点。
 - **Q5 打包**：`scripts/package-macos.sh` / `scripts/release.sh` 出 macOS `.app` + zip

@@ -278,6 +278,9 @@ pub struct GameRow {
     /// The actual file name (`mario.nes`).
     pub file_name: String,
     pub system: SystemId,
+    /// The core this game runs, by manifest key, or `None` to follow the
+    /// console's pick.
+    pub core: Option<String>,
     pub path: String,
     pub size: u64,
     /// Whether the game is pinned to the top of the library.
@@ -675,7 +678,7 @@ impl Default for ViewModel {
 }
 
 /// What the user asked for, drained by the app after routing input.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     /// Show a page.
     Show(Section),
@@ -798,6 +801,17 @@ pub enum Action {
     SetGameSystem {
         id: i64,
         system: SystemId,
+    },
+    /// Open the per-game core picker at `position` (from a card's menu).
+    OpenGameCoreMenu {
+        id: i64,
+        position: Vec2,
+    },
+    /// Run this game with `core` (a manifest key), overriding the console's
+    /// pick. `None` clears the override. Persisted in the library.
+    SetGameCore {
+        id: i64,
+        core: Option<String>,
     },
     /// A single click on a card. The host turns two in quick succession into a
     /// "play" (a card needs a double click; the play button uses [`Action::Play`]).

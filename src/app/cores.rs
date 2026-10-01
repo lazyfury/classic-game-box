@@ -302,11 +302,15 @@ impl super::App {
         self.rebuild_settings_view();
     }
 
-    /// Resolve which core runs this ROM. `--core` wins over the saved pick,
-    /// which wins over the manifest's first core for the console. A key is
-    /// looked up in the merged manifests; a `--core <path>` module is used as
-    /// given.
-    pub(super) fn resolve_core(&self, system: SystemId) -> Result<CoreSpec, String> {
+    /// Resolve which core runs this ROM. `--core` wins over the game's own
+    /// pick, which wins over the console's saved pick, which wins over the
+    /// manifest's first core for the console. A key is looked up in the merged
+    /// manifests; a `--core <path>` module is used as given.
+    pub(super) fn resolve_core(
+        &self,
+        system: SystemId,
+        game_core: Option<&str>,
+    ) -> Result<CoreSpec, String> {
         let spec = match &self.core_override {
             Some(CoreOverride::Key(key)) => choose_core(&self.cores, system, Some(key))
                 .ok_or_else(|| {
@@ -315,8 +319,11 @@ impl super::App {
             Some(CoreOverride::Module(module)) => {
                 return Ok(CoreSpec::custom(module.clone(), system));
             }
-            None => choose_core(&self.cores, system, self.settings.core_key(system))
-                .ok_or_else(|| format!("{} 没有可用核心（见 cores.json）", system.short()))?,
+            None => {
+                let key = game_core.or_else(|| self.settings.core_key(system));
+                choose_core(&self.cores, system, key)
+                    .ok_or_else(|| format!("{} 没有可用核心（见 cores.json）", system.short()))?
+            }
         };
         let mut spec = spec.clone();
         spec.module = self.find_module(&spec.module);

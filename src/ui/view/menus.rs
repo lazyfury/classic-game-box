@@ -30,7 +30,7 @@ pub fn game_menu(
     overlays.menu_at(position, move |tree, node| {
         let item = |label: &str, action: Action| {
             let actions = actions.clone();
-            MenuItem::new(label, theme).on_click(move |_tree, _id| actions.push(action))
+            MenuItem::new(label, theme).on_click(move |_tree, _id| actions.push(action.clone()))
         };
         let menu = Menu::new(theme)
             .item(item("开始游戏", Action::Play(index)))
@@ -38,6 +38,13 @@ pub fn game_menu(
             .item(item(
                 "选择机种…",
                 Action::OpenSystemMenu {
+                    id: game_id,
+                    position,
+                },
+            ))
+            .item(item(
+                "选择核心…",
+                Action::OpenGameCoreMenu {
                     id: game_id,
                     position,
                 },
@@ -130,6 +137,67 @@ pub fn system_menu(
     });
 }
 
+/// Open the per-game core picker: every core that runs the game's console,
+/// with the game's own pick ticked. The first item clears the override so the
+/// console's pick in Settings applies again. `game.core` is the game's stored
+/// core key (`None` when it follows the console).
+pub fn game_core_menu(
+    theme: &'static dyn Theme,
+    overlays: &mut Overlays,
+    game: &GameRow,
+    position: Vec2,
+    cores: &[CoreRow],
+    actions: &ViewBridge,
+) {
+    let game_id = game.id;
+    let rows: Vec<(String, String)> = cores
+        .iter()
+        .filter(|core| core.system == game.system)
+        .map(|core| (core.key.clone(), core.name.clone()))
+        .collect();
+    // A stored key that no longer names a core for this console (it was
+    // removed, or the console changed) reads as "follow the console's pick".
+    let picked = game
+        .core
+        .clone()
+        .filter(|current| rows.iter().any(|(key, _)| key == current));
+    // Replaces the card menu this was opened from.
+    overlays.close_all();
+    let actions = actions.clone();
+    overlays.menu_at(position, move |tree, node| {
+        let mut menu = Menu::new(theme);
+        let default_label = if picked.is_none() {
+            "默认（跟随机种设置）✓".to_string()
+        } else {
+            "默认（跟随机种设置）".to_string()
+        };
+        menu = menu.item({
+            let actions = actions.clone();
+            MenuItem::new(default_label, theme).on_click(move |_tree, _id| {
+                actions.push(Action::SetGameCore {
+                    id: game_id,
+                    core: None,
+                })
+            })
+        });
+        for (key, name) in rows.clone() {
+            let label = if picked.as_deref() == Some(key.as_str()) {
+                format!("{name} ✓")
+            } else {
+                name
+            };
+            let actions = actions.clone();
+            menu = menu.item(MenuItem::new(label, theme).on_click(move |_tree, _id| {
+                actions.push(Action::SetGameCore {
+                    id: game_id,
+                    core: Some(key.clone()),
+                })
+            }));
+        }
+        tree.add_child(node, menu);
+    });
+}
+
 /// Open a modal confirmation for a destructive action. Confirming runs
 /// `on_confirm`; Escape / clicking outside cancels.
 pub fn confirm_destructive(
@@ -142,7 +210,7 @@ pub fn confirm_destructive(
     let id = overlays.confirm(title, message);
     overlays.destructive(id, true);
     let actions = actions.clone();
-    overlays.on_confirm(id, move || actions.push(on_confirm));
+    overlays.on_confirm(id, move || actions.push(on_confirm.clone()));
 }
 
 /// Open a modal confirmation that is not destructive (e.g. offering to
@@ -157,5 +225,5 @@ pub fn confirm_action(
 ) {
     let id = overlays.confirm(title, message);
     let actions = actions.clone();
-    overlays.on_confirm(id, move || actions.push(on_confirm));
+    overlays.on_confirm(id, move || actions.push(on_confirm.clone()));
 }

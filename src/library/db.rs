@@ -17,7 +17,7 @@ use super::error::LibraryError;
 
 /// The schema this build understands, stored in `PRAGMA user_version`. A
 /// database with a higher number was written by a newer build.
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 /// One ROM found on disk. What a scan produces; the database reconciles it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,6 +77,9 @@ pub struct Game {
     /// The display name, initialised from the file stem and editable.
     pub name: String,
     pub system: SystemId,
+    /// The core this one game runs, by manifest key, or `None` to follow the
+    /// console's pick. Set from a card's "选择核心…" menu.
+    pub core: Option<String>,
     pub size: u64,
     pub mtime_ms: i64,
     pub added_at: i64,
@@ -102,6 +105,7 @@ impl Game {
             file_name: disk.file_name.clone(),
             name: stem_of(&disk.file_name),
             system: disk.system,
+            core: None,
             size: disk.size,
             mtime_ms: disk.mtime_ms,
             added_at: 0,
@@ -169,6 +173,9 @@ impl Library {
         }
         if version < 3 {
             self.migrate_tags()?;
+        }
+        if version < 4 {
+            self.migrate_game_core()?;
         }
         self.conn
             .execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"), [])?;
@@ -256,6 +263,15 @@ impl Library {
              );
              CREATE INDEX IF NOT EXISTS game_tags_by_tag ON game_tags (tag_id);",
         )?;
+        Ok(())
+    }
+
+    /// v4: the per-game core override.
+    fn migrate_game_core(&self) -> Result<(), LibraryError> {
+        if !self.has_column("games", "core")? {
+            self.conn
+                .execute("ALTER TABLE games ADD COLUMN core TEXT", [])?;
+        }
         Ok(())
     }
 
@@ -354,7 +370,8 @@ impl Library {
             "SELECT g.id, g.path, g.file_name, g.name, g.system, g.size, g.mtime_ms,
                     g.added_at, g.last_played_at, g.play_count, g.play_seconds, g.pinned,
                     g.cover_id,
-                    (SELECT COUNT(*) FROM screenshots s WHERE s.game_id = g.id)
+                    (SELECT COUNT(*) FROM screenshots s WHERE s.game_id = g.id),
+                    g.core
              FROM games g
              ORDER BY g.pinned DESC, g.last_played_at DESC, g.name COLLATE NOCASE",
         )?;
@@ -366,6 +383,7 @@ impl Library {
                 file_name: row.get(2)?,
                 name: row.get(3)?,
                 system: SystemId::from_key(&system),
+                core: row.get(14)?,
                 size: row.get::<_, i64>(5)?.max(0) as u64,
                 mtime_ms: row.get(6)?,
                 added_at: row.get(7)?,
@@ -478,6 +496,18 @@ impl Library {
         self.conn.execute(
             "UPDATE games SET system = ?2 WHERE path = ?1",
             params![path, system.key()],
+        )?;
+        Ok(())
+    }
+
+    /// Remember the core this one game runs, by manifest key, overriding the
+    /// console's pick. `None` clears the override so the console's pick in
+    /// Settings applies again. A rescan never overwrites it: [`Library::sync`]
+    /// refreshes only the file name, size and mtime of a known path.
+    pub fn set_core(&self, path: &str, core: Option<&str>) -> Result<(), LibraryError> {
+        self.conn.execute(
+            "UPDATE games SET core = ?2 WHERE path = ?1",
+            params![path, core],
         )?;
         Ok(())
     }
@@ -1110,6 +1140,34 @@ mod tests {
         // A rescan refreshes metadata only; the console pick sticks.
         library.sync(&[disk("/roms/disc.chd")]).unwrap();
         assert_eq!(library.games().unwrap()[0].system, SystemId::Psp);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_per_game_core_pick_survives_a_rescan_and_clears() {
+        let root = temp_dir("core");
+        let library = Library::open(&root.join("library.db")).unwrap();
+        library.sync(&[disk("/roms/mario.nes")]).unwrap();
+        assert_eq!(library.games().unwrap()[0].core, None);
+
+        library
+            .set_core("/roms/mario.nes", Some("nestopia"))
+            .unwrap();
+        assert_eq!(
+            library.games().unwrap()[0].core.as_deref(),
+            Some("nestopia")
+        );
+
+        // A rescan refreshes metadata only; the core pick sticks.
+        library.sync(&[disk("/roms/mario.nes")]).unwrap();
+        assert_eq!(
+            library.games().unwrap()[0].core.as_deref(),
+            Some("nestopia")
+        );
+
+        // Clearing it falls back to the console's pick.
+        library.set_core("/roms/mario.nes", None).unwrap();
+        assert_eq!(library.games().unwrap()[0].core, None);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

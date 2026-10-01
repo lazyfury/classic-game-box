@@ -58,6 +58,7 @@ fn game_row(name: &str, path: &str) -> GameRow {
         name: name.to_string(),
         file_name: path.rsplit('/').next().unwrap_or(path).to_string(),
         system: SystemId::Nes,
+        core: None,
         path: path.to_string(),
         size: 0,
         pinned: false,

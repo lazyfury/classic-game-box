@@ -180,6 +180,20 @@ impl super::App {
                     opened_overlay = true;
                 }
                 Action::SetGameSystem { id, system } => self.set_game_system(id, system),
+                Action::OpenGameCoreMenu { id, position } => {
+                    if let Some(game) = self.model.games.iter().find(|game| game.id == id).cloned()
+                    {
+                        self.ui.open_game_core_menu(
+                            self.theme,
+                            &game,
+                            position,
+                            &self.model.cores,
+                            &self.actions,
+                        );
+                    }
+                    opened_overlay = true;
+                }
+                Action::SetGameCore { id, core } => self.set_game_core(id, core),
                 Action::CardActivate(index) => self.card_activate(index),
                 Action::Show(section) => {
                     let changed = self.model.section != section;
@@ -521,11 +535,12 @@ impl super::App {
         };
         self.model.editing = None;
         self.model.selected = Some(index);
-        self.start_path(Path::new(&game.path), game.system);
+        self.start_path(Path::new(&game.path), game.system, game.core.as_deref());
     }
 
-    /// Start a ROM by path: read it, pick a core, build a [`Session`].
-    pub(super) fn start_path(&mut self, rom_path: &Path, system: SystemId) {
+    /// Start a ROM by path: read it, pick a core, build a [`Session`]. `core`
+    /// is the game's own core pick, if it has one.
+    pub(super) fn start_path(&mut self, rom_path: &Path, system: SystemId, core: Option<&str>) {
         // The keyboard now feeds this console's binding set. The system comes
         // from the library row: a per-game pick can override the extension.
         self.active_system = system;
@@ -539,7 +554,7 @@ impl super::App {
             }
         };
 
-        let spec = match self.resolve_core(system) {
+        let spec = match self.resolve_core(system, core) {
             Ok(spec) => spec,
             Err(status) => {
                 self.model.set_status(status, StatusKind::Info);
