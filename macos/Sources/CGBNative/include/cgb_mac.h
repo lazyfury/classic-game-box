@@ -1,1 +1,1 @@
-../../../rust/include/cgb_mac.h
+../../../../crates/cgb-mac/include/cgb_mac.h

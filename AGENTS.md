@@ -10,11 +10,12 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 
 ## 现状
 
-- **布局**：应用是**根包** `cgb-app`（bin `classic-game-box`），代码在根 `src/`；
-  UI 是应用内 `src/ui` 模块，应用逻辑按功能拆在 `src/app/{library,screenshots,saves,
-  cheats,settings,cores,input,textures,window,project,helpers}.rs`（参照 `../archiver`）。
-  引擎/设备仍是独立子 crate：`crates/{cgb-systems,cgb-paths,cgb-cores,cgb-library,
-  cgb-libretro,cgb-audio,cgb-input}`。
+- **布局**：产品是 **Swift/macOS app**（`macos/`，AppKit + `CAMetalLayer` + 原生事件，
+  取代 winit），Rust 侧**全是 library crate**。共享的应用逻辑（UI + 模拟器）在
+  `crates/cgb-app`（`src/ui` + `src/app/*` 都在这里；它同时带着次要的 winit dev host
+  bin `classic-game-box`）；嵌入 host 的 C ABI 在 `crates/cgb-mac`。引擎/设备是独立子
+  crate：`crates/{cgb-systems,cgb-paths,cgb-cores,cgb-library,cgb-libretro,cgb-audio,
+  cgb-input}`。工作区根 `Cargo.toml` 是**虚拟 manifest**（无 `[package]`）。
 - 分支 `refactor/app-root`（合并后可回 `main`）。
 - **Q0 完成**：计划、目录结构、Rust 工作区骨架、`cargo check/test/clippy` 全绿。
 - **Q1 完成**：Mesen 原生 arm64 编译 + dlopen + 出画面（`ui::frame::FrameImage`）+ 键盘。
@@ -119,7 +120,7 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   **无即时存档（倒带已禁用）、键盘回调未接**（joypad 可玩，手机键盘已映射到手柄）。
 - **Swift/macOS host（实验）**：`macos/` 是一个实验性前端——Swift 只做窗口 /
   `CAMetalLayer` / 原生事件（**取代 winit**），igui UI + wgpu 渲染 + libretro 模拟器全在 Rust
-  （`macos/rust`，crate `cgb-mac`，经 `cgb_mac_*` C ABI；FFI 边界**包含 UI**）。`cgb-app` 的窗口
+  （`crates/cgb-mac`，经 `cgb_mac_*` C ABI；FFI 边界**包含 UI**）。`cgb-app` 的窗口
   依赖抽成 `HostWindow` trait，手柄抽成 `GamepadSource`；`igui_winit`/`winit`/`gilrs` 由 default
   feature `winit-host` 打开，嵌入版用 `cgb-app = { default-features = false }`，**不编译
   winit/gilrs**。手柄走 Swift `GameController`（快照经 `cgb_mac_gamepad_*` 回灌）。打包
@@ -127,16 +128,18 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 
 ## 硬规则
 
-1. **根目录以 Rust 为主。** 顶层只有 `Cargo.toml`、`crates/`、`cores/`、`scripts/`、
-   `assets/`、`docs/`、`legacy/`。不要往根目录丢构建产物或临时文件。
+1. **产品是 Swift/macOS app，Rust 全是 library。** 顶层只有 `Cargo.toml`（虚拟 workspace）、
+   `crates/`、`cores/`、`scripts/`、`assets/`、`docs/`、`legacy/`、`macos/`。不要往根目录
+   丢构建产物或临时文件。
 2. **只做 UI 与 libretro 兼容。** 不实现/移植自研模拟器；它已在 `legacy/`。
    新功能先问「libretro 有没有标准对应」。
 3. **libretro 是唯一对外契约。** 只加载标准 libretro core（`cores/cores.json`
    里声明的，含 Mesen、mGBA、nestopia 与 legacy 的 `custom_nes_core`）；
    不使用 `fc_*` 私有扩展（`custom_nes_core` 会导出该扩展，但被忽略）。
    ABI 头是 `cores/libretro/libretro.h`；**不要整读**（≈8700 行），`rg` 定位再看。
-4. **依赖方向单向**：`cgb-app`（根包，`src/`）→ `{cgb-libretro, cgb-audio,
-   cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems}`；应用内的 `src/ui` 不认识 libretro；
+4. **依赖方向单向**：`crates/cgb-app`（共享逻辑）→ `{cgb-libretro, cgb-audio,
+   cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems}`；host（`crates/cgb-mac`
+   与 winit bin）→ `cgb-app`；应用内的 `crates/cgb-app/src/ui` 不认识 libretro；
    `cgb-libretro` 不认识 UI 与音频设备（只暴露 `Frame` / `Vec<i16>`）。
    `cgb-systems` 无依赖。`crates/` 里的子 crate 不得反向依赖根 app。
 5. **igui 的边界**：`igui_core` / `igui_scene` / `igui_ui` / `igui_components`
@@ -179,11 +182,11 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/ico
 | crate 职责与依赖 | `crates/README.md` |
 | libretro frontend（dlopen / 回调 / 视频音频输入存档） | `crates/cgb-libretro/src/host.rs` |
 | 机种 / CoreSpec 选核、joypad id | `crates/cgb-systems/src/` |
-| UI 视图与帧循环 | `src/ui/`（视图 + `ViewModel`）、`src/app/`（`App` + `AppLogic` + `run` 的插件组装） |
+| UI 视图与帧循环 | `crates/cgb-app/src/ui/`（视图 + `ViewModel`）、`crates/cgb-app/src/app/`（`App` + `AppLogic` + `run` 的插件组装） |
 | 原生 core 构建 / 加核心流程 | `cores/README.md`、`cores/build.sh.example`、`cores/*/build.sh` |
-| J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
-| 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`src/cli.rs` |
-| Swift/macOS host（实验：Swift 取代 winit） | `macos/`（Swift 窗口/事件）、`macos/rust/`（crate `cgb-mac`：surface + 事件 + C ABI）、`docs/architecture/swift-macos-host-plan.md` |
+| J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`crates/cgb-app/src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
+| 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
+| Swift/macOS host（主要产品：Swift 取代 winit） | `macos/`（Swift 窗口/事件）、`crates/cgb-mac/`（surface + 事件 + `cgb_mac_*` C ABI）、`docs/architecture/swift-macos-host-plan.md` |
 | 窗口/手柄 host 抽象（`winit-host` feature） | `src/app/host.rs`（`HostWindow` / `GamepadSource`）、`src/app/mod.rs`（`App::init` 选源） |
 | 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `legacy/packages/fc-{core,libretro}`（只读） |
 

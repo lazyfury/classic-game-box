@@ -9,7 +9,7 @@ Authority: [`../../macos/README.md`](../../macos/README.md),
 
 ## Where it is
 
-Rust owns everything (`macos/rust`, crate `cgb-mac`): the igui UI, the wgpu
+Rust owns everything (`crates/cgb-mac`, crate `cgb-mac`): the igui UI, the wgpu
 renderer and `cgb-app` (library + libretro emulator). Swift owns the window
 only: `NSWindow` + `CAMetalLayer` + a 60 Hz tick + AppKit event forwarding
 (`macos/Sources/ClassicGameBoxMac`). `cgb-app` builds with
@@ -92,12 +92,12 @@ dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
 
 ## D. Tests & docs
 
-- **D1 · Unit tests.** `macos/rust/src/input.rs` is pure mapping — add tests for
+- **D1 · Unit tests.** `crates/cgb-mac/src/input.rs` is pure mapping — add tests for
   `key_from_code`, `modifiers_from_bits`, `pointer_button` and
   `MacEvent::to_input` (double-click, wheel).
 - **D2 · Manual checklist.** A short visual acceptance list (library renders,
   click opens a game, keys play, resize, fullscreen, drop a ROM, save/load).
-- **D3 · Conventions.** Add `macos/` and `macos/rust` to `AGENTS.md`'s layout
+- **D3 · Conventions.** Add `macos/` and `crates/cgb-mac` to `AGENTS.md`'s layout
   and to `.pi/skills/cgb-rust/SKILL.md`; document the `winit-host` feature and
   the `cgb-app --no-default-features` rule.
 - **D4 · README.** Mention the Swift host as the experimental alternative front
@@ -240,7 +240,7 @@ the source applies; `connected` sets/clears the flag and zeroes that port.
 1. **Titlebar** — transparent + full-size content (matching the app's
    traffic-light inset), or a plain native titlebar?
 2. **Link model** — static into the Swift binary, or a bundled dylib?
-3. **Workspace** — keep `macos/rust` a workspace member (the whole-workspace
+3. **Workspace** — keep `crates/cgb-mac` a workspace member (the whole-workspace
    build compiles it), or exclude it and build it only from
    `macos/scripts/*.sh`?
 4. **`cgb-app` surface** — is the `HostWindow` trait + `winit-host` feature the

@@ -6,11 +6,11 @@ Swift owns only the window and translates AppKit events.
 
 ```
 ┌──────────────────────────────┐         ┌───────────────────────────────────┐
-│  Swift (`macos/`)            │         │  Rust (`macos/rust`, crate        │
+│  Swift (`macos/`)            │         │  Rust (`crates/cgb-mac`, crate     │
 │  NSWindow + NSView           │  C ABI  │  `cgb-mac`)                       │
 │  CAMetalLayer                │◀───────▶│  igui_app runtime + igui UI       │
 │  AppKit events → cgb_mac_*   │         │  wgpu backend + presenter         │
-│  a 60 Hz tick                │         │  cgb-app: library + emulator      │
+│  an event-driven tick        │         │  cgb-app: library + emulator      │
 └──────────────────────────────┘         └───────────────────────────────────┘
 ```
 
@@ -55,10 +55,10 @@ swift build --package-path macos  # macos/.build/debug/cgb-mac
 
 | path | what |
 |---|---|
-| `macos/rust/src/host.rs` | `MacGpuPlugin` (CAMetalLayer → wgpu surface → presenter), `MacTextMeasurePlugin`, `MacClipboardPlugin`, `MacGamepadPlugin`, `MacHostWindow` |
-| `macos/rust/src/input.rs` | `MacEvent` → `igui_core::InputEvent`, key/modifier/button mapping |
-| `macos/rust/src/ffi.rs` | the `cgb_mac_*` C ABI |
-| `macos/rust/include/cgb_mac.h` | the header Swift imports (symlinked into the C target) |
+| `crates/cgb-mac/src/host.rs` | `MacGpuPlugin` (CAMetalLayer → wgpu surface → presenter), `MacTextMeasurePlugin`, `MacClipboardPlugin`, `MacGamepadPlugin`, `MacHostWindow` |
+| `crates/cgb-mac/src/input.rs` | `MacEvent` → `igui_core::InputEvent`, key/modifier/button mapping |
+| `crates/cgb-mac/src/ffi.rs` | the `cgb_mac_*` C ABI |
+| `crates/cgb-mac/include/cgb_mac.h` | the header Swift imports (symlinked into the C target) |
 | `macos/Sources/ClassicGameBoxMac/HostView.swift` | the layer + AppKit event forwarding + drag & drop |
 | `macos/Sources/ClassicGameBoxMac/Gamepads.swift` | `GCController` → libretro snapshot |
 | `macos/Sources/ClassicGameBoxMac/AppDelegate.swift` | window, `cgb_mac_start`, event-driven frame scheduling |

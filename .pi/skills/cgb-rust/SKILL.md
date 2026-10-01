@@ -9,30 +9,31 @@ description: Classic Game Box 的 Rust 前端（分支 refactor/app-root）：�
 
 ## 0. 布局与上下文纪律
 
-应用是**根包** `cgb-app`（bin `classic-game-box`），代码在根 `src/`；引擎/设备是
-`crates/` 下的独立子 crate。**白名单**：
+产品是 **Swift/macOS app**（`macos/`）；Rust 侧**全是 library crate**，共享逻辑在
+`crates/cgb-app`，嵌入 host 的 C ABI 在 `crates/cgb-mac`。**白名单**：
 
 ```
-Cargo.toml                    工作区与根 app 包（[workspace] + [package cgb-app]）
-src/main.rs lib.rs cli.rs     瘦 CLI / 库面 / 启动参数
-src/app/                      应用：mod.rs(App/AppLogic/run) + 按功能拆的
+Cargo.toml                    虚拟 workspace（[workspace] + [workspace.dependencies]，无 [package]）
+crates/cgb-app/Cargo.toml     package cgb-app（lib + 次要 winit bin `classic-game-box`）
+crates/cgb-app/src/main.rs lib.rs cli.rs   瘦 CLI / 库面 / 启动参数
+crates/cgb-app/src/app/       应用：mod.rs(App/AppLogic/run) + host.rs(HostWindow/GamepadSource) + 按功能拆的
                               library / screenshots / saves / cheats / settings / cores /
                               input / textures / window / project / helpers / tests
-src/session.rs                一局游戏
-src/selfcheck.rs cores_cli.rs 无头自检 / 核心管理 CLI
-src/ui/                       视图：mod.rs(model/theme/icons/frame/view/*)；只吃 ViewModel
-benches/ui.rs                 UI CPU 基准
+crates/cgb-app/src/session.rs 一局游戏
+crates/cgb-app/src/selfcheck.rs cores_cli.rs 无头自检 / 核心管理 CLI
+crates/cgb-app/src/ui/        视图：mod.rs(model/theme/icons/frame/view/*)；只吃 ViewModel
+crates/cgb-app/benches/ui.rs  UI CPU 基准
 crates/cgb-systems/src/       纯领域：机种、CoreSpec、选核、joypad id（无依赖）
 crates/cgb-libretro/src/      ffi.rs / loader.rs / host.rs（libretro frontend）
 crates/cgb-audio/src/lib.rs   cpal + ringbuf
-crates/cgb-input/src/lib.rs   键盘绑定 + gilrs
+crates/cgb-input/src/lib.rs   键盘绑定 + GamepadSnapshot + gilrs(可选 feature)
 crates/cgb-paths/src/         paths（目录布局）+ settings（设置 JSON）
 crates/cgb-cores/src/         cores（cores.json 清单）/ catalog（buildbot）/ download
 crates/cgb-library/src/       library（SQLite 库）/ import / saves / cheats / png_codec
+crates/cgb-mac/               嵌入 host（crate cgb-mac）：CAMetalLayer→wgpu surface、事件、`cgb_mac_*` C ABI
 cores/cores.json              核心清单
 cores/<name>/build.sh         每个核心的原生构建（产出到 cores/dist/）
-macos/                        Swift/macOS host（实验）：SwiftPM 包（窗口/CAMetalLayer/事件）
-macos/rust/                   crate `cgb-mac`：CAMetalLayer→wgpu surface、事件、`cgb_mac_*` C ABI
+macos/                        Swift app（主要产品）：SwiftPM 包（窗口/CAMetalLayer/事件/手柄）
 ```
 
 **禁读**：`target/`、`legacy/`（除非查历史决策）、`cores/sources/`、`cores/dist/`、
@@ -42,8 +43,9 @@ igui 的源码可看相邻 `../igui/crates/`，只读需要的模块。
 ## 1. 依赖方向（不许反向）
 
 ```
-cgb-app (root, src/) → { cgb-libretro, cgb-audio, cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems }
-src/ui (app 内模块)   → cgb-systems, igui_*
+crates/cgb-app (src/)  → { cgb-libretro, cgb-audio, cgb-input, cgb-paths, cgb-cores, cgb-library, cgb-systems }
+cgb-app/src/ui         → cgb-systems, igui_*
+crates/cgb-mac         → cgb-app (default-features = false), cgb-input, igui, arboard
 cgb-libretro          → cgb-systems, libloading
 cgb-input             → cgb-systems, gilrs（自带 `Key`，不依赖 UI）
 cgb-audio             → cpal, ringbuf

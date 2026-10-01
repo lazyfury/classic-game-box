@@ -417,7 +417,7 @@ impl App {
     ///
     /// The platform host constructs this and hands it to the runtime as the
     /// [`AppLogic`]; an embedded host does the same through the C ABI in
-    /// `macos/rust`.
+    /// `crates/cgb-mac`.
     pub fn new(args: Args) -> Self {
         // A `--library-dir` overrides the remembered library; app data (and so
         // the settings that would remember it) stays in the platform folder.

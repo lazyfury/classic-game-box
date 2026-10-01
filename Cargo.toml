@@ -1,6 +1,14 @@
+# Classic Game Box — a virtual workspace.
+#
+# The product is the Swift/macOS app in `macos/`; every Rust package here is a
+# library it embeds (or the secondary `winit` dev host). `crates/cgb-app` holds
+# the shared UI + emulator logic; `crates/cgb-mac` is the Swift host's C ABI;
+# the rest are one-concern engine crates.
+
 [workspace]
 resolver = "2"
 members = [
+    "crates/cgb-app",
     "crates/cgb-libretro",
     "crates/cgb-systems",
     "crates/cgb-audio",
@@ -8,28 +16,13 @@ members = [
     "crates/cgb-paths",
     "crates/cgb-cores",
     "crates/cgb-library",
-    "macos/rust",
+    "crates/cgb-mac",
 ]
-
-# ---------------------------------------------------------------------------
-# The app package. It is the workspace root (the layout mirrors `../archiver`):
-# the `classic-game-box` binary is a thin CLI over the library in `src/`.
-# ---------------------------------------------------------------------------
-[package]
-name = "cgb-app"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-
-[[bin]]
-name = "classic-game-box"
-path = "src/main.rs"
 
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
-# `wgpu` 24 / `winit` 0.30 (pulled in by quill and this app) require 1.76.
+# `wgpu` 24 / `winit` 0.30 (pulled in by igui and this app) require 1.76.
 rust-version = "1.76"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/lazyfury/classic-game-box"
@@ -37,7 +30,7 @@ repository = "https://github.com/lazyfury/classic-game-box"
 [workspace.dependencies]
 # ---------------------------------------------------------------------------
 # igui — the UI stack, a GitHub dependency (`lazyfury/igui`, formerly `quill`),
-# pinned to the `v0.2.0` commit. The facade carries opt-in features; three
+# pinned to the `v0.3.0` commit. The facade carries opt-in features; three
 # crates are not in the facade and are declared directly from the same source:
 #   * `igui_svg`   — icon vector fallback (no `svg` facade feature exists);
 #   * `igui_winit` — the window / input / IME / clipboard platform plugins;
@@ -54,6 +47,8 @@ igui_scene = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
 # ---------------------------------------------------------------------------
 # Internal crates. One concern each; see docs/architecture/quill-native-migration.md.
 # ---------------------------------------------------------------------------
+cgb-app = { path = "crates/cgb-app", default-features = false }
+cgb-mac = { path = "crates/cgb-mac" }
 cgb-systems = { path = "crates/cgb-systems" }
 cgb-libretro = { path = "crates/cgb-libretro" }
 cgb-audio = { path = "crates/cgb-audio" }
@@ -86,58 +81,6 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 rfd = { version = "0.15", default-features = false }
 winit = "0.30"
 thiserror = "2"
-
-# ---------------------------------------------------------------------------
-# The app's dependencies (the root package). Internal crates and platform/host
-# deps resolve through `[workspace.dependencies]` above.
-# ---------------------------------------------------------------------------
-[dependencies]
-cgb-systems.workspace = true
-cgb-libretro.workspace = true
-cgb-audio.workspace = true
-# The `gilrs` backend is a feature of `cgb-input` (off by default here); the
-# embedded host turns it off and feeds gamepads from Swift.
-cgb-input.workspace = true
-cgb-paths.workspace = true
-cgb-cores.workspace = true
-cgb-library.workspace = true
-
-# The `igui` facade: `ui` (drawing / components), `app` (the plugin runtime),
-# `wgpu` (the native backend), `profile` (frame inspection), `recording` and
-# `headless` (the `--selfcheck` presenter). The view lives in `src/ui`.
-igui = { workspace = true, features = ["ui", "app", "wgpu", "profile", "recording", "headless"] }
-# Not covered by any facade feature. `igui_scene` / `igui_core` are also
-# required by igui's `impl_scene_child!` macro, which expands to bare
-# `igui_scene::` / `igui_core::` paths (no `$crate`).
-igui_svg.workspace = true
-igui_scene.workspace = true
-igui_core.workspace = true
-rfd.workspace = true
-
-# The `winit` window / input / IME / text-metrics / clipboard plugins. Optional
-# so the embedded Swift/macOS host can build `cgb-app` with
-# `default-features = false` and no `winit` at all.
-igui_winit = { workspace = true, optional = true }
-winit = { workspace = true, optional = true }
-
-# ---------------------------------------------------------------------------
-# The bundled window host. On by default (the `classic-game-box` binary needs
-# it); the embedded host turns it off.
-# ---------------------------------------------------------------------------
-[features]
-default = ["winit-host"]
-winit-host = ["dep:igui_winit", "dep:winit", "gilrs"]
-# The `gilrs` gamepad backend, for the `winit` host. The embedded host turns it
-# off and feeds gamepads from Swift instead.
-gilrs = ["cgb-input/gilrs"]
-
-# The headless UI benchmark (`benches/ui.rs`) uses igui's measurement harness.
-[dev-dependencies]
-igui = { workspace = true, features = ["bench"] }
-
-[[bench]]
-name = "ui"
-harness = false
 
 [profile.release]
 opt-level = "s"

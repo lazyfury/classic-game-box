@@ -12,7 +12,7 @@
 # `Info.plist`, and `Contents/Resources/{cores,assets}` — the native core
 # dylibs and manifest, and the bundled arcade BIOS. The app looks for cores
 # first in its app-data directory, then in the bundle's Resources (see
-# `resource_dir` in `src/app/mod.rs`), so a packaged app runs from
+# `resource_dir` in `crates/cgb-app/src/app/mod.rs`), so a packaged app runs from
 # Finder without a repo checkout.
 #
 # `--minimal` / `--only` restrict which core dylibs are copied into the bundle.

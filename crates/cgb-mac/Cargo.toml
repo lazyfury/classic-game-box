@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 # The whole app (UI + emulator), without the bundled `winit` host.
-cgb-app = { path = "../..", default-features = false }
+cgb-app.workspace = true
 # The plugin runtime + native backend the host assembles. `igui_core` /
 # `igui_render` / `igui_ui` come through the facade's features.
 igui = { workspace = true, features = ["ui", "app", "wgpu", "profile"] }

@@ -61,7 +61,7 @@ cargo run -- --rom mario.nes                  # 直接开始
 
 仓库里还有一条**实验性**前端：Swift 只做窗口与原生事件（`CAMetalLayer` + AppKit，
 **取代 winit**），igui UI、wgpu 渲染与 libretro 模拟器全部留在 Rust，经 C ABI 嵌入
-（`macos/` + `macos/rust`，crate `cgb-mac`）。嵌入版用 `cgb-app = { default-features = false }`，
+（`macos/` + `crates/cgb-mac`，crate `cgb-mac`）。嵌入版用 `cgb-app = { default-features = false }`，
 不编译 winit/gilrs；手柄走 Swift `GameController`。
 
 ```bash
