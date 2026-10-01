@@ -77,7 +77,8 @@ in-app fullscreen toggle is applied by Swift; gamepads are read through Apple's
 `GameController` framework (no `gilrs` in the build). Frames are event-driven:
 any input schedules one, and a `CADisplayLink` drives them while the app wants
 more. The Rust host is linked **statically**, so the app is self-contained.
-The title bar is transparent + full-size (the UI runs under it).
+The title bar is transparent + full-size (the UI runs under it); its strip is
+custom window chrome — drag to move, double-click to zoom / restore.
 
 Verified on hardware: PSP, N64 and PS1 (the offscreen-CGL path coexists with
 Metal/wgpu), the downloadable-core flow, and the IME candidate position.

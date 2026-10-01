@@ -266,7 +266,7 @@ pub fn build(
         .gap(0.0)
         .padding(Edges::ZERO)
         .mouse_filter(MouseFilter::Ignore)
-        // .child(header(theme, model))
+        .child(header(theme, model))
         .child(
             Flex::row()
                 .grow(1.0)
@@ -322,7 +322,6 @@ fn right_column(
 /// traffic lights.
 // The call is commented out in `build` while the native title bar is tried;
 // keep the builder around until that settles.
-#[allow(dead_code)]
 fn header(theme: &'static dyn Theme, model: &ViewModel) -> Column {
     let safe = model.safe_area;
     Column::new()

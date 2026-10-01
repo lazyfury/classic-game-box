@@ -69,7 +69,8 @@ The `winit` host does a few things this host does not yet.
   `wheel_pixels` convention (`y > 0` scrolls down); tune the line→point factor.
   **Leave as is** (implemented, not to be changed).
 - **A7 · Titlebar / safe area.** **Done** — transparent title bar +
-  `.fullSizeContentView`, matching `safe_area()` in `cgb-app`.
+  `.fullSizeContentView`, matching `safe_area()` in `cgb-app`. The strip is
+  custom window chrome: drag moves the window, double-click zooms / restores.
 
 ## B. Frame pacing
 

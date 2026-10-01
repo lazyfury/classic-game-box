@@ -181,8 +181,27 @@ final class HostView: NSView {
 
     // MARK: - Pointer
 
+    /// The transparent title bar strip, in logical points. Clicks here are
+    /// window chrome (drag / double-click zoom), not app input.
+    private static let titlebarHeight: CGFloat = 28
+
     override func mouseDown(with event: NSEvent) {
+        if isInTitlebar(event) {
+            if event.clickCount == 2 {
+                // Toggle standard <-> zoomed, so a second double-click returns.
+                window?.zoom(nil)
+            } else {
+                window?.performDrag(with: event)
+            }
+            return
+        }
         pointerDown(event, button: 0)
+    }
+
+    /// Whether `event` fell in the transparent title bar strip.
+    private func isInTitlebar(_ event: NSEvent) -> Bool {
+        let point = convert(event.locationInWindow, from: nil)
+        return point.y >= bounds.height - Self.titlebarHeight
     }
 
     override func mouseUp(with event: NSEvent) {
