@@ -11,6 +11,11 @@
 > `v0.2.0`；crate 前缀 `draw_*` → `igui_*`，上游的 `Widget` / `NodeDecor` 已被显式 control
 > 模型（`Container` + `ControlContent`）取代。`cgb-app` 现跑在 `igui_app` 插件运行时上，
 > TextInput / IME 与帧循环见 §8、§10。
+>
+> **结构更新（Swift host 为主）**：产品改为 `macos/` 的 Swift app（AppKit + `CAMetalLayer`，
+> **取代 winit**）；Rust 侧全是 library crate，共享逻辑在 `crates/cgb-app`，嵌入 host 的
+> C ABI 在 `crates/cgb-mac`，工作区根 `Cargo.toml` 是**虚拟 manifest**。下文的目录树是
+> 旧结构，以 [`swift-macos-host-plan.md`](swift-macos-host-plan.md) 与根 `AGENTS.md` 为准。
 
 ---
 
