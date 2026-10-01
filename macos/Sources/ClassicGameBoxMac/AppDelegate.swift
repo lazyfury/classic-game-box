@@ -53,6 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Classic Game Box"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        // The UI needs room to lay out; below this it would clip.
+        window.contentMinSize = NSSize(width: 960, height: 600)
         window.contentView = view
         window.acceptsMouseMovedEvents = true
         window.center()
