@@ -96,11 +96,10 @@ pub(super) fn library_page(
 }
 
 /// A clickable fold header: a chevron pointing right when collapsed, down when
-/// expanded, next to the caption. `heading` picks the text weight.
+/// expanded, next to the title.
 fn fold_header(
     theme: &'static dyn Theme,
     caption: &str,
-    heading: bool,
     collapsed: bool,
     actions: &ViewBridge,
     action: Action,
@@ -110,16 +109,11 @@ fn fold_header(
     } else {
         IconName::ChevronDown
     };
-    let label = if heading {
-        Text::subheading(caption, theme)
-    } else {
-        Text::caption(caption, theme).tone(Tone::Muted)
-    };
     let actions = actions.clone();
     Button::ghost("", theme)
         .mini()
         .child(SvgIcon::new(icon, theme.palette().foreground, CARD_ICON))
-        .child(label)
+        .child(Text::subheading(caption, theme))
         .on_click(move |_tree, _id| actions.push(action))
 }
 
@@ -139,7 +133,6 @@ fn missing_cores_card(
     let header = fold_header(
         theme,
         &title,
-        true,
         model.missing_cores_collapsed,
         actions,
         Action::ToggleMissingCores,
@@ -187,27 +180,12 @@ fn missing_cores_card(
 }
 
 /// The library's console filter: a chip per console present (with its count),
-/// then an “全部” chip. Foldable, since a large library has many consoles. The
-/// total is shown by the page title, not here.
+/// then an “全部” chip. The total is shown by the page title, not here.
 pub(super) fn stats_bar(
     theme: &'static dyn Theme,
     model: &ViewModel,
     actions: &ViewBridge,
 ) -> Flex {
-    let header = fold_header(
-        theme,
-        "按模拟器筛选",
-        false,
-        model.filters_collapsed,
-        actions,
-        Action::ToggleFilters,
-    );
-    if model.filters_collapsed {
-        return Flex::column()
-            .padding(Edges::ZERO)
-            .gap(space::XXXS)
-            .child(header);
-    }
     let mut filter_chips = chip_group();
     let all = actions.clone();
     filter_chips = filter_chips.child(
@@ -223,11 +201,7 @@ pub(super) fn stats_bar(
                 .on_click(move |_tree, _id| filter.push(Action::FilterSystem(Some(system)))),
         );
     }
-    Flex::column()
-        .padding(Edges::ZERO)
-        .gap(space::XXXS)
-        .child(header)
-        .child(filter_chips)
+    chip_bar(theme, "按模拟器筛选", filter_chips)
 }
 
 /// The library's sort controls: a chip per key, then a direction toggle.

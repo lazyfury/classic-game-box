@@ -554,8 +554,6 @@ pub struct ViewModel {
     pub system_filter: Option<SystemId>,
     /// Per-console tallies, in `SYSTEMS` order, for consoles that have games.
     pub system_counts: Vec<SystemCount>,
-    /// Whether the console-filter chips are folded away.
-    pub filters_collapsed: bool,
     /// Whether the "missing core" card is folded away.
     pub missing_cores_collapsed: bool,
     /// Every core in the manifest, for the settings picker.
@@ -652,7 +650,6 @@ impl Default for ViewModel {
             total_games: 0,
             system_filter: None,
             system_counts: Vec::new(),
-            filters_collapsed: true,
             missing_cores_collapsed: true,
             cores: Vec::new(),
             library_root: None,
@@ -708,8 +705,6 @@ pub enum Action {
     SwitchLibrary,
     /// Filter the library to one console, or `None` for all of them.
     FilterSystem(Option<SystemId>),
-    /// Fold or unfold the console-filter chips.
-    ToggleFilters,
     /// Fold or unfold the "missing core" card.
     ToggleMissingCores,
     /// Make the core at this `cores` index the pick for its console.
