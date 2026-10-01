@@ -107,7 +107,7 @@
     },
     {
       "key": "custom_nes_core",
-      "name": "Custom NES Core (legacy)",
+      "name": "Custom NES Core",
       "system": "nes",
       "dylib": "custom_nes_core_libretro.dylib",
       "sample_rate": 44100,

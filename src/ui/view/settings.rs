@@ -244,7 +244,7 @@ fn msaa_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge)
 fn cores_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Card {
     let mut cores = Column::new().gap(space::SM);
     let mut any_core = false;
-    for system in cgb_systems::SYSTEMS {
+    for system in cgb_libretro::SYSTEMS {
         // The current pick names the trigger; the host builds the menu of
         // alternatives and anchors it to this node.
         let system = *system;
@@ -348,7 +348,7 @@ fn bindings_card(theme: &'static dyn Theme, model: &ViewModel) -> Card {
         .child(Text::subheading(title, theme))
         .child(bindings)
         .child(
-            Text::caption("键盘按机种分别保存；手柄走 gilrs 自动映射。", theme).tone(Tone::Subtle),
+            Text::caption("键盘按机种分别保存；手柄由 macOS 自动映射。", theme).tone(Tone::Subtle),
         )
 }
 

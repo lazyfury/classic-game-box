@@ -33,8 +33,8 @@
 | **包络 / 长度 / 扫频** | [apu.md](apu.md) 第 4-5 节 |
 | **帧序列器** | [apu.md](apu.md) 第 7 节 |
 | **非线性混音** | [apu.md](apu.md) 第 8 节 |
-| 实现 | `packages/fc-core/src/core/nes/` |
-| 实现 | `packages/fc-core/src/core/nes/ppu.{hpp,cpp}` `apu.{hpp,cpp}` `framebuffer.hpp` `machine.{hpp,cpp}` |
+| 实现 | `custom_nes_core/src/core/nes/` |
+| 实现 | `custom_nes_core/src/core/nes/ppu.{hpp,cpp}` `apu.{hpp,cpp}` `framebuffer.hpp` `machine.{hpp,cpp}` |
 | 可运行讲解 | `tools/demo_bus.cpp` `tools/demo_cartridge.cpp` `tools/demo_ppu.cpp` `tools/demo_input.cpp` |
 
 ```bash

@@ -11,11 +11,11 @@
 | **有效地址计算** | `../computer-science/addressing-modes.md` |
 | **Zero page 回绕** | `../computer-science/addressing-modes.md` 第 3 节 |
 | **JMP ($xxFF) 硬件 bug** | `../computer-science/addressing-modes.md` 第 4 节 |
-| 13 种寻址模式的语法 | `packages/fc-core/src/core/cpu/opcode.hpp` |
-| 13 种模式的求值 | `packages/fc-core/src/core/cpu/addressing.{hpp,cpp}` |
-| 完整 256 项 opcode 表 | `packages/fc-core/src/core/cpu/opcode.cpp` |
-| 反汇编器 | `packages/fc-core/src/core/cpu/disassembler.{hpp,cpp}` |
-| 表驱动派发 | `packages/fc-core/src/core/cpu/cpu.cpp` |
+| 13 种寻址模式的语法 | `custom_nes_core/src/core/cpu/opcode.hpp` |
+| 13 种模式的求值 | `custom_nes_core/src/core/cpu/addressing.{hpp,cpp}` |
+| 完整 256 项 opcode 表 | `custom_nes_core/src/core/cpu/opcode.cpp` |
+| 反汇编器 | `custom_nes_core/src/core/cpu/disassembler.{hpp,cpp}` |
+| 表驱动派发 | `custom_nes_core/src/core/cpu/cpu.cpp` |
 | 可运行讲解 | `tools/demo_disasm.cpp` `tools/demo_addressing.cpp` |
 
 ```bash

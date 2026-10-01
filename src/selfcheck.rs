@@ -12,11 +12,11 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::cores::load_cores;
+use crate::library::{encode_png, DiskGame, Library};
+use crate::paths::{Paths, Settings};
 use crate::ui::{rasterize_icon, IconName};
-use cgb_cores::load_cores;
-use cgb_library::{encode_png, DiskGame, Library};
-use cgb_paths::{Paths, Settings};
-use cgb_systems::SystemId;
+use cgb_libretro::SystemId;
 
 use crate::app::resource_dir;
 

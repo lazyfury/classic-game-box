@@ -20,7 +20,7 @@
 //! library grows; the benchmark is what proves it (or exposes it).
 
 use cgb_app::ui::{CoreRow, GameRow, Section, SettingsGroup, Ui, ViewBridge, ViewModel};
-use cgb_systems::SystemId;
+use cgb_libretro::SystemId;
 use igui::igui_bench::{black_box, finish, BenchRunner, RunConfig};
 use igui::igui_core::{Size, ViewportSize};
 use igui::igui_render::PaintContext;

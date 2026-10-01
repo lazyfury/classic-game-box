@@ -38,7 +38,7 @@ impl super::App {
             self.dirty = true;
             return;
         };
-        let cheats = cgb_library::parse_cht(&text);
+        let cheats = crate::library::parse_cht(&text);
         if cheats.is_empty() {
             self.model
                 .set_status("文件里没有可用的金手指".to_string(), StatusKind::Error);
@@ -47,7 +47,7 @@ impl super::App {
         }
         let count = cheats.len();
         self.cheats = cheats;
-        let _ = cgb_library::save_cheats(&path, &self.cheats);
+        let _ = crate::library::save_cheats(&path, &self.cheats);
         if let Some(session) = self.session.as_ref() {
             session.apply_cheats(&self.cheats);
         }
@@ -65,7 +65,7 @@ impl super::App {
         let enabled = cheat.enabled;
         let desc = cheat.desc.clone();
         if let Some(path) = self.cheat_path.clone() {
-            let _ = cgb_library::save_cheats(&path, &self.cheats);
+            let _ = crate::library::save_cheats(&path, &self.cheats);
         }
         // Re-apply the whole list: the cores ignore the enabled flag, so a
         // disabled cheat has to be left out rather than sent as disabled.

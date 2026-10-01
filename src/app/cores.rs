@@ -101,7 +101,7 @@ impl super::App {
             .catalog
             .get(name)
             .cloned()
-            .unwrap_or_else(|| cgb_cores::CatalogEntry {
+            .unwrap_or_else(|| crate::cores::CatalogEntry {
                 name: name.to_string(),
                 display_name: name.to_string(),
                 system: String::new(),

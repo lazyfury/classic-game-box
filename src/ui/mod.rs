@@ -38,7 +38,7 @@ use igui::igui_theme::Theme;
 use igui::igui_ui::{hovered_cursor, Control, DragPhase, TextMeasurer};
 use std::rc::Rc;
 
-use cgb_systems::SystemId;
+use cgb_libretro::SystemId;
 
 /// The mounted tree plus the frame-loop calls.
 pub struct Ui {
@@ -496,7 +496,7 @@ fn resolve_tips(raw: Vec<(NodeRef, String)>) -> Vec<(NodeId, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cgb_systems::SystemId;
+    use cgb_libretro::SystemId;
     use igui::igui_core::{InputEvent, PointerButton, Size, Vec2};
     use igui::igui_theme::{default_theme, Mode};
 

@@ -58,7 +58,7 @@ class Cpu {
 ## 2. 接口设计
 
 ```cpp
-// packages/fc-core/src/core/bus.hpp
+// custom_nes_core/src/core/bus.hpp
 class Bus {
 public:
     virtual ~Bus() = default;
@@ -106,7 +106,7 @@ class Cpu {
 ## 3. 设备接口：接缝在哪里
 
 ```cpp
-// packages/fc-core/src/core/nes/device.hpp
+// custom_nes_core/src/core/nes/device.hpp
 class Device {
 public:
     virtual ~Device() = default;
@@ -250,11 +250,11 @@ Phase 4 接入真正的 PPU 后，OAM DMA 的 CPU 侧代码**一行都不用改*
 
 ### 怎么检验
 
-**如果 `packages/fc-core/src/core/cpu/` 里出现了 `ppu` 这个词，就是违规。**
+**如果 `custom_nes_core/src/core/cpu/` 里出现了 `ppu` 这个词，就是违规。**
 
 ```bash
-grep -ri "ppu" packages/fc-core/src/core/cpu/     # 应该没有输出
-grep -ri "nes" packages/fc-core/src/core/cpu/     # 应该没有输出（CPU 不知道 NES）
+grep -ri "ppu" custom_nes_core/src/core/cpu/     # 应该没有输出
+grep -ri "nes" custom_nes_core/src/core/cpu/     # 应该没有输出（CPU 不知道 NES）
 ```
 
 > 让这条 grep 保持空，依赖方向就是对的。
@@ -265,7 +265,7 @@ grep -ri "nes" packages/fc-core/src/core/cpu/     # 应该没有输出（CPU 不
 
 有两个"假"实现，用途不同：
 
-### `FlatBus`（`packages/fc-core/src/core/flat_bus.hpp`）
+### `FlatBus`（`custom_nes_core/src/core/flat_bus.hpp`）
 
 ```
 64KB 平铺数组，没有译码
@@ -276,7 +276,7 @@ grep -ri "nes" packages/fc-core/src/core/cpu/     # 应该没有输出（CPU 不
 
 **局限：** 它没有镜像。写 `$0800` 不会影响 `$0000`。
 
-### `RamCartridge`（`packages/fc-core/src/core/nes/ram_cartridge.hpp`）
+### `RamCartridge`（`custom_nes_core/src/core/nes/ram_cartridge.hpp`）
 
 ```
 $4020-$FFFF 映射成 RAM
@@ -303,12 +303,12 @@ $4020-$FFFF 映射成 RAM
 
 | 概念 | 文件 |
 |------|------|
-| 总线抽象 | `packages/fc-core/src/core/bus.hpp` |
-| 设备接口 | `packages/fc-core/src/core/nes/device.hpp` |
-| NES 地址译码 | `packages/fc-core/src/core/nes/bus.{hpp,cpp}` |
-| 测试替身 1 | `packages/fc-core/src/core/flat_bus.hpp` |
-| 测试替身 2 | `packages/fc-core/src/core/nes/ram_cartridge.hpp` |
-| 集成测试 | `packages/fc-core/tests/test_nes_bus.cpp` |
+| 总线抽象 | `custom_nes_core/src/core/bus.hpp` |
+| 设备接口 | `custom_nes_core/src/core/nes/device.hpp` |
+| NES 地址译码 | `custom_nes_core/src/core/nes/bus.{hpp,cpp}` |
+| 测试替身 1 | `custom_nes_core/src/core/flat_bus.hpp` |
+| 测试替身 2 | `custom_nes_core/src/core/nes/ram_cartridge.hpp` |
+| 集成测试 | `custom_nes_core/tests/core/test_nes_bus.cpp` |
 | 可运行讲解 | `tools/demo_bus.cpp` |
 
 ---

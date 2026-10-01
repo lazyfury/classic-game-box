@@ -1,75 +1,90 @@
 [workspace]
-resolver = "2"
+# cgb-app is the workspace **root package** (this file); the emulator boundary
+# is the one member package. `crates/cgb-*` helpers all merged in (see
+# crates/README.md).
 members = [
     "crates/cgb-libretro",
-    "crates/cgb-systems",
-    "crates/cgb-audio",
-    "crates/cgb-input",
-    "crates/cgb-paths",
-    "crates/cgb-cores",
-    "crates/cgb-library",
 ]
+resolver = "2"
 
-# ---------------------------------------------------------------------------
-# The app package. It is the workspace root (the layout mirrors `../archiver`):
-# the `classic-game-box` binary is a thin CLI over the library in `src/`.
-# ---------------------------------------------------------------------------
 [package]
 name = "cgb-app"
+description = "Classic Game Box: the app library (UI + emulator host) embedded by the native macOS host."
 version.workspace = true
 edition.workspace = true
+# `wgpu` 24 and igui require Rust 1.76.
 rust-version.workspace = true
 license.workspace = true
+repository = "https://github.com/lazyfury/classic-game-box"
 
-[[bin]]
-name = "classic-game-box"
-path = "src/main.rs"
+[lib]
+# `lib` for normal Rust consumers; `staticlib` (libcgb_app.a) is what the Swift
+# host links. Both build from the same crate.
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+cgb-libretro.workspace = true
+# The `igui` facade: `ui` (drawing / components), `app` (the plugin runtime),
+# `wgpu` (the native backend), `profile` (frame inspection), `recording` and
+# `headless` (the `--selfcheck` presenter). The view lives in `src/ui`.
+igui = { workspace = true, features = ["ui", "app", "wgpu", "profile", "recording", "headless"] }
+# Not covered by any facade feature. `igui_scene` / `igui_core` are also
+# required by igui's `impl_scene_child!` macro, which expands to bare
+# `igui_scene::` / `igui_core::` paths (no `$crate`).
+igui_svg.workspace = true
+igui_scene.workspace = true
+igui_core.workspace = true
+rfd.workspace = true
+
+# Core manifest + catalog + runtime downloader (src/cores/).
+serde = { workspace = true }
+serde_json.workspace = true
+ureq.workspace = true
+zip.workspace = true
+
+# Emulator-facing devices the app owns (src/audio, src/host):
+cpal.workspace = true
+ringbuf.workspace = true
+
+# Game library (src/library/) and file layout (src/paths.rs):
+rusqlite.workspace = true
+png.workspace = true
+dirs.workspace = true
+thiserror.workspace = true
+
+# System clipboard for the Swift host's text fields (src/mac/host.rs).
+arboard = "3"
+
+# The headless UI benchmark (`benches/ui.rs`) uses igui's measurement harness.
+[dev-dependencies]
+igui = { workspace = true, features = ["bench"] }
 
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
-# `wgpu` 24 / `winit` 0.30 (pulled in by quill and this app) require 1.76.
 rust-version = "1.76"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/lazyfury/classic-game-box"
 
 [workspace.dependencies]
 # ---------------------------------------------------------------------------
 # igui — the UI stack, a GitHub dependency (`lazyfury/igui`, formerly `quill`),
-# pinned to the `v0.2.0` commit. The facade carries opt-in features; three
-# crates are not in the facade and are declared directly from the same source:
-#   * `igui_svg`   — icon vector fallback (no `svg` facade feature exists);
-#   * `igui_winit` — the window / input / IME / clipboard platform plugins;
-#   * `igui_core`  — for `cgb-input` (which must stay UI-free) and the in-app `ui`.
-# Bump the pin with e.g.
-#   `cargo update -p igui -p igui_svg -p igui_winit -p igui_core`.
+# pinned to the `v0.3.0` tag. Two crates are not in the facade and are declared
+# from the same source: `igui_svg` (icon vector fallback) and `igui_core` (the
+# app's input state). Bump with `cargo update -p igui -p igui_svg -p igui_core`.
 # ---------------------------------------------------------------------------
 igui = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0", default-features = false }
 igui_svg = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
-igui_winit = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
 igui_core = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
 igui_scene = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
 
-# ---------------------------------------------------------------------------
-# Internal crates. One concern each; see docs/architecture/quill-native-migration.md.
-# ---------------------------------------------------------------------------
-cgb-systems = { path = "crates/cgb-systems" }
 cgb-libretro = { path = "crates/cgb-libretro" }
-cgb-audio = { path = "crates/cgb-audio" }
-cgb-input = { path = "crates/cgb-input" }
-cgb-paths = { path = "crates/cgb-paths" }
-cgb-cores = { path = "crates/cgb-cores" }
-cgb-library = { path = "crates/cgb-library" }
 
-# ---------------------------------------------------------------------------
 # Platform / host dependencies.
-# ---------------------------------------------------------------------------
 libloading = "0.8"
 # Build-dependency of `cgb-libretro`: compiles the C variadic log shim.
 cc = "1"
 cpal = "0.15"
 ringbuf = "0.4"
-gilrs = "0.11"
 rusqlite = { version = "0.32", features = ["bundled"] }
 png = "0.17"
 dirs = "5"
@@ -83,45 +98,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # unconditional; the default `xdg-portal`/`async-std` features are Linux-only,
 # so drop them rather than pull a second async runtime into the lockfile.
 rfd = { version = "0.15", default-features = false }
-winit = "0.30"
 thiserror = "2"
-
-# ---------------------------------------------------------------------------
-# The app's dependencies (the root package). Internal crates and platform/host
-# deps resolve through `[workspace.dependencies]` above.
-# ---------------------------------------------------------------------------
-[dependencies]
-cgb-systems.workspace = true
-cgb-libretro.workspace = true
-cgb-audio.workspace = true
-cgb-input.workspace = true
-cgb-paths.workspace = true
-cgb-cores.workspace = true
-cgb-library.workspace = true
-
-# The `igui` facade: `ui` (drawing / components), `app` (the plugin runtime),
-# `wgpu` (the native backend), `profile` (frame inspection), `recording` and
-# `headless` (the `--selfcheck` presenter). The view lives in `src/ui`.
-igui = { workspace = true, features = ["ui", "app", "wgpu", "profile", "recording", "headless"] }
-# Not covered by any facade feature. `igui_scene` / `igui_core` are also
-# required by igui's `impl_scene_child!` macro, which expands to bare
-# `igui_scene::` / `igui_core::` paths (no `$crate`).
-igui_svg.workspace = true
-igui_scene.workspace = true
-igui_core.workspace = true
-# Window / input / IME / text-metrics / clipboard platform plugins.
-igui_winit.workspace = true
-
-winit.workspace = true
-rfd.workspace = true
-
-# The headless UI benchmark (`benches/ui.rs`) uses igui's measurement harness.
-[dev-dependencies]
-igui = { workspace = true, features = ["bench"] }
-
-[[bench]]
-name = "ui"
-harness = false
 
 [profile.release]
 opt-level = "s"

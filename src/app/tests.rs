@@ -6,7 +6,7 @@ fn db_game(name: &str, size: u64, pinned: bool) -> Game {
         path: format!("/{name}.nes"),
         file_name: format!("{name}.nes"),
         name: name.to_string(),
-        system: cgb_systems::SystemId::Nes,
+        system: cgb_libretro::SystemId::Nes,
         size,
         mtime_ms: 0,
         added_at: 0,
@@ -242,7 +242,7 @@ fn catalog(entries: &[(&str, &str)]) -> Catalog {
         source: String::new(),
         cores: entries
             .iter()
-            .map(|(name, system)| cgb_cores::CatalogEntry {
+            .map(|(name, system)| crate::cores::CatalogEntry {
                 name: name.to_string(),
                 display_name: name.to_string(),
                 system: system.to_string(),

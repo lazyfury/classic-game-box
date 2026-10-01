@@ -1,7 +1,7 @@
 //! Pure view data for the UI. No igui, no platform — just what the screen
 //! needs to know, so the view builder can be tested headlessly.
 
-use cgb_systems::SystemId;
+use cgb_libretro::SystemId;
 use igui::igui_core::{NodeId, Vec2};
 use igui::igui_render::TextureId;
 
@@ -554,6 +554,8 @@ pub struct ViewModel {
     pub system_filter: Option<SystemId>,
     /// Per-console tallies, in `SYSTEMS` order, for consoles that have games.
     pub system_counts: Vec<SystemCount>,
+    /// Whether the "missing core" card is folded away.
+    pub missing_cores_collapsed: bool,
     /// Every core in the manifest, for the settings picker.
     pub cores: Vec<CoreRow>,
     /// The game library folder, shown on the settings page.
@@ -648,6 +650,7 @@ impl Default for ViewModel {
             total_games: 0,
             system_filter: None,
             system_counts: Vec::new(),
+            missing_cores_collapsed: true,
             cores: Vec::new(),
             library_root: None,
             bindings: Vec::new(),
@@ -702,6 +705,8 @@ pub enum Action {
     SwitchLibrary,
     /// Filter the library to one console, or `None` for all of them.
     FilterSystem(Option<SystemId>),
+    /// Fold or unfold the "missing core" card.
+    ToggleMissingCores,
     /// Make the core at this `cores` index the pick for its console.
     SelectCore(usize),
     /// Begin typing a downloadable-core catalog search.

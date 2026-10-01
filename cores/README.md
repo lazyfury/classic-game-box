@@ -10,7 +10,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 | `mgba` | GB / GBC / GBA | `libretro/mgba` | `dist/mgba_libretro.dylib` | ✅ arm64, RGB565, synthetic GBA ROM |
 | `snes9x` | SNES / SFC | `libretro/snes9x` | `dist/snes9x_libretro.dylib` | ✅ arm64, RGB565, synthetic LoROM |
 | `nestopia` | NES / FC | `libretro/nestopia` | `dist/nestopia_libretro.dylib` | ✅ arm64, synthetic NROM |
-| `custom_nes_core` | NES / FC | `legacy/packages/fc-{core,libretro}` | `dist/custom_nes_core_libretro.dylib` | ✅ arm64 (clang++ direct), synthetic NROM |
+| `custom_nes_core` | NES / FC | `custom_nes_core/`（单 CMake 项目） | `dist/custom_nes_core_libretro.dylib` | ✅ arm64 (cmake), synthetic NROM |
 | `fbneo` | Arcade | `libretro/FBNeo` | `dist/fbneo_libretro.dylib` | ✅ arm64, loads standard Neo Geo sets (encrypted C-ROMs) |
 | `parallel_n64` | Nintendo 64 | `libretro/parallel-n64` | `dist/parallel_n64_libretro.dylib` | ✅ arm64 + dynarec, **hardware-rendered** (OpenGL / GLideN64) |
 | `ppsspp` | PlayStation Portable | `hrydgard/ppsspp` (buildbot dylib) | `dist/ppsspp_libretro.dylib` | ✅ arm64 (buildbot dylib), **hardware-rendered** (OpenGL) |
@@ -334,10 +334,11 @@ Once the core runs, pick how it reaches the player: not every core is bundled.
 - **`pitch`** is bytes per row, not pixels; the host slices each row by the
   format's bytes-per-pixel, so a padded pitch is fine.
 
-`custom_nes_core` is the one core built without cmake or a third-party
-Makefile: it compiles the read-only `legacy/packages/fc-*` sources directly
-with `clang++`. The front end still uses only the standard libretro ABI — that
-core's private `fc_*` extension is ignored.
+`custom_nes_core` is built from an in-repo CMake project (`custom_nes_core/`,
+a standard `src/` layout) rather than a third-party Makefile.
+`cores/custom_nes_core/build.sh` drives cmake and falls back to a direct
+`clang++` compile on machines without it. The front end still uses only the
+standard libretro ABI — that core's private `fc_*` extension is ignored.
 
 ## Why scripts, not a build target
 

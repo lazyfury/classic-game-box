@@ -2,7 +2,7 @@
 
 > 目标：理解 16 位地址空间如何被译码到不同设备，以及**镜像为什么不是功能而是必然**。
 >
-> 本文输出都来自 `tools/demo_bus.cpp`，并可由 `packages/fc-core/tests/test_nes_bus.cpp` 验证。
+> 本文输出都来自 `tools/demo_bus.cpp`，并可由 `custom_nes_core/tests/core/test_nes_bus.cpp` 验证。
 
 ---
 
@@ -20,7 +20,7 @@
 ```
 
 CPU 放一个 16 位地址到总线上，**由译码逻辑决定谁来应答**。CPU 完全不知道
-RAM、PPU、卡带的存在——这正是 `packages/fc-core/src/core/bus.hpp` 里那个 `Bus` 抽象要表达的东西。
+RAM、PPU、卡带的存在——这正是 `custom_nes_core/src/core/bus.hpp` 里那个 `Bus` 抽象要表达的东西。
 
 ### 详细的寄存器分布
 
@@ -259,7 +259,7 @@ STA $4014      ; 把 $0200-$02FF 复制进 OAM
 **这是 Phase 2 引入的一个新架构能力。**
 
 ```cpp
-// packages/fc-core/src/core/bus.hpp
+// custom_nes_core/src/core/bus.hpp
 class Bus {
     /// Cycles the CPU has to wait because the BUS did something on its own.
     virtual int take_stall_cycles() { return 0; }
@@ -267,7 +267,7 @@ class Bus {
 ```
 
 ```cpp
-// packages/fc-core/src/core/cpu/cpu.cpp, at the end of step()
+// custom_nes_core/src/core/cpu/cpu.cpp, at the end of step()
 cycles_ += static_cast<u64>(cycle_cost(last_opcode_, operand));
 cycles_ += static_cast<u64>(bus_->take_stall_cycles());   // <- 总线偷走的
 ```
@@ -354,11 +354,11 @@ DMA 期间 CPU 被冻结 513 个周期（约占一帧的 1.7%）。更重要的�
 
 | 概念 | 文件 |
 |------|------|
-| 内存映射与译码 | `packages/fc-core/src/core/nes/bus.{hpp,cpp}` |
-| 2KB RAM 与其回绕 | `packages/fc-core/src/core/nes/ram.hpp` |
-| 卡带槽占位实现 | `packages/fc-core/src/core/nes/ram_cartridge.hpp` |
-| 设备接口 | `packages/fc-core/src/core/nes/device.hpp` |
-| 测试 | `packages/fc-core/tests/test_nes_bus.cpp` |
+| 内存映射与译码 | `custom_nes_core/src/core/nes/bus.{hpp,cpp}` |
+| 2KB RAM 与其回绕 | `custom_nes_core/src/core/nes/ram.hpp` |
+| 卡带槽占位实现 | `custom_nes_core/src/core/nes/ram_cartridge.hpp` |
+| 设备接口 | `custom_nes_core/src/core/nes/device.hpp` |
+| 测试 | `custom_nes_core/tests/core/test_nes_bus.cpp` |
 | 可运行讲解 | `tools/demo_bus.cpp` |
 
 ```bash

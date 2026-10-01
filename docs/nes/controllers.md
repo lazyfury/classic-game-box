@@ -2,8 +2,8 @@
 
 > 目标：理解 NES 手柄的串行协议，以及为什么"模拟输入"和"真实按键"在模拟器里是同一件事。
 >
-> 本文输出都来自 `tools/demo_input.cpp`，并可由 `packages/fc-core/tests/test_controller.cpp`
-> 与 `packages/fc-core/tests/test_real_rom.cpp` 验证。
+> 本文输出都来自 `tools/demo_input.cpp`，并可由 `custom_nes_core/tests/core/test_controller.cpp`
+> 与 `custom_nes_core/tests/core/test_real_rom.cpp` 验证。
 
 ---
 
@@ -119,7 +119,7 @@ $4017 写   -> APU 的帧计数器，不是锁存
 **这个不对称是真实的**：两个端口共用一根 strobe 线。
 
 ```cpp
-// packages/fc-core/src/core/nes/bus.cpp
+// custom_nes_core/src/core/nes/bus.cpp
 if (address == kController1) {          // $4016 写
     const bool high = (value & 0x01u) != 0;
     controllers_[0].strobe(high);
@@ -163,7 +163,7 @@ TEST(ControllerBus, TheUpperBitsAreOpenBus)
 
 ## 5. 一个真实的读取程序
 
-`demo_input` 用的是超级玛丽同款写法（`packages/fc-core/tests/test_controller.cpp` 里也有）：
+`demo_input` 用的是超级玛丽同款写法（`custom_nes_core/tests/core/test_controller.cpp` 里也有）：
 
 ```
       LDA #$01
@@ -289,7 +289,7 @@ TEST_F(InputTest, AOneFramePressIsEnough)
 ## 9. 为什么脚本输入和真实键盘是同一件事
 
 ```cpp
-// packages/fc-core/src/core/nes/machine.hpp
+// custom_nes_core/src/core/nes/machine.hpp
 void set_button(Controller::Button button, bool pressed, int index = 0) noexcept
 {
     bus_.controller(index).set_button(button, pressed);
@@ -354,11 +354,11 @@ Core 不需要任何改动——这是"Core 不依赖 UI"这条规则换来的�
 
 | 概念 | 文件 |
 |------|------|
-| 手柄与协议 | `packages/fc-core/src/core/nes/controller.hpp` |
-| 两个端口与锁存线 | `packages/fc-core/src/core/nes/bus.{hpp,cpp}` |
-| 脚本输入接口 | `packages/fc-core/src/core/nes/machine.hpp` `set_button()` |
-| 协议单元测试 | `packages/fc-core/tests/test_controller.cpp` |
-| 真实游戏输入测试 | `packages/fc-core/tests/test_real_rom.cpp` `InputTest` |
+| 手柄与协议 | `custom_nes_core/src/core/nes/controller.hpp` |
+| 两个端口与锁存线 | `custom_nes_core/src/core/nes/bus.{hpp,cpp}` |
+| 脚本输入接口 | `custom_nes_core/src/core/nes/machine.hpp` `set_button()` |
+| 协议单元测试 | `custom_nes_core/tests/core/test_controller.cpp` |
+| 真实游戏输入测试 | `custom_nes_core/tests/core/test_real_rom.cpp` `InputTest` |
 | 可运行讲解 | `tools/demo_input.cpp` |
 
 ```bash

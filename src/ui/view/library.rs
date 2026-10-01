@@ -95,9 +95,32 @@ pub(super) fn library_page(
     }
 }
 
+/// A clickable fold header: a chevron pointing right when collapsed, down when
+/// expanded, next to the title.
+fn fold_header(
+    theme: &'static dyn Theme,
+    caption: &str,
+    collapsed: bool,
+    actions: &ViewBridge,
+    action: Action,
+) -> Button {
+    let icon = if collapsed {
+        IconName::ChevronRight
+    } else {
+        IconName::ChevronDown
+    };
+    let actions = actions.clone();
+    Button::ghost("", theme)
+        .mini()
+        .child(SvgIcon::new(icon, theme.palette().foreground, CARD_ICON))
+        .child(Text::subheading(caption, theme))
+        .on_click(move |_tree, _id| actions.push(action))
+}
+
 /// The "missing core" card: one row per console the library has games for but
 /// no available core serves, each with a one-click download of the core the
-/// app recommends. `None` when every console can run.
+/// app recommends. `None` when every console can run. Foldable, since it is
+/// bulky and only shown while cores are missing.
 fn missing_cores_card(
     theme: &'static dyn Theme,
     model: &ViewModel,
@@ -105,6 +128,22 @@ fn missing_cores_card(
 ) -> Option<Card> {
     if model.missing_cores.is_empty() {
         return None;
+    }
+    let title = format!("缺少核心 ({})", model.missing_cores.len());
+    let header = fold_header(
+        theme,
+        &title,
+        model.missing_cores_collapsed,
+        actions,
+        Action::ToggleMissingCores,
+    );
+    if model.missing_cores_collapsed {
+        return Some(
+            Card::new(theme)
+                .gap(0.0)
+                .padding(Edges::all(space::SM))
+                .child(header),
+        );
     }
     let mut rows = Column::new().gap(space::XS);
     for row in &model.missing_cores {
@@ -131,7 +170,7 @@ fn missing_cores_card(
         Card::new(theme)
             .gap(space::SM)
             .padding(Edges::all(space::SM))
-            .child(Text::subheading("缺少核心", theme))
+            .child(header)
             .child(
                 Text::caption("库里的游戏还缺少这些机种的核心，下载后即可运行。", theme)
                     .tone(Tone::Muted),

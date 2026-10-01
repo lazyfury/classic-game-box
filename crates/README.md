@@ -1,38 +1,56 @@
 # crates
 
-The feature sub-crates of the workspace. The **app is the root package**
-(`cgb-app`, binary `classic-game-box`) and lives in `../src/`; the UI is the app's
-`../src/ui` module, not a crate. This folder holds only the engine/device crates.
+Two Rust packages. The **root `Cargo.toml` is the app** (`cgb-app`, `src/`),
+and the one member package is the emulator boundary:
 
-Dependency direction: `cgb-app → everything`, the device crates and
-`cgb-libretro` → `cgb-systems`, and `cgb-systems` → nothing. No crate in this
-folder depends on the app or the platform except the device crates, which own
-exactly one device each.
-
-| crate | type | responsibility |
+| package | type | responsibility |
 |---|---|---|
-| `cgb-systems` | lib | system/core registry, joypad ids (dependency-free) |
-| `cgb-paths` | lib | file layout (`Paths`) + settings (`Settings`) |
-| `cgb-cores` | lib | `cores.json` manifest, buildbot catalog, runtime downloader |
-| `cgb-library` | lib | SQLite game library, ROM import, screenshots, save states, `.srm`, cheats |
-| `cgb-libretro` | lib | libretro front end: `dlopen`, callbacks, ABI |
-| `cgb-audio` | lib | cpal output + SPSC ring buffer (int16 stereo) |
-| `cgb-input` | lib | keyboard bindings + gilrs gamepads → button masks |
+| `cgb-app` (root `src/`) | lib + staticlib | the app: igui UI, frame loop, wiring, game library, settings, audio device, core manifest/catalog/download, and the Swift host C ABI. `libcgb_app.a` is what the Swift binary links |
+| `crates/cgb-libretro` | lib | the libretro front end (`dlopen`, callbacks, ABI), plus the system registry, joypad ids and the input model it shares with the app |
 
-The app's own layout is documented in [`../src`](../src): `app/` (state, frame
-loop, feature handlers), `ui/` (views built from a pure `ViewModel`),
-`session.rs` (one running game), `cli.rs` / `cores_cli.rs` / `selfcheck.rs`.
+Dependency direction (one way only):
+
+```
+cgb-app (root)  → cgb-libretro, igui
+cgb-libretro    → nothing app-shaped (libloading only)
+```
+
+`cgb-libretro` never depends on the UI, the audio device or the game database:
+it exposes plain values (`Frame`, `Vec<i16>` samples) that the app drains each
+frame, and the pure domain types (`SystemId`, `CoreSpec`, `InputState`,
+`KeyboardBindings`) the app and the input layer agree on.
+
+## The app's layout (`src/`)
+
+```
+src/ui/         igui views, built from a pure ViewModel
+src/app/        app state, frame loop, feature handlers (library/cores/saves/…)
+src/session.rs  one running game (libretro session + audio)
+src/library/    SQLite game library, ROM import, screenshots, saves, cheats
+src/paths/      file layout (Paths) + settings (Settings)
+src/cores/      cores.json manifest, buildbot catalog, runtime downloader
+src/audio/      cpal output + SPSC ring buffer (int16 stereo)
+src/host.rs     the HostWindow / GamepadSource contract
+src/mac/        the Swift/macOS host: CAMetalLayer → wgpu surface, native
+                events, the cgb_mac_* C ABI (header in src/mac/include/)
+src/cli.rs  src/cores_cli.rs  src/selfcheck.rs   headless surfaces
+```
 
 ## Frame data flow
 
 ```
-cgb-libretro::CoreHost::run_frame()
+cgb_libretro::CoreHost::run_frame()
    ├── video callback → Frame { width, height, rgba }  ─→ app updates TextureId
-   └── audio callback → Vec<i16> stereo                ─→ cgb-audio ring buffer → cpal
-cgb-input::InputState → cgb-libretro::CoreHost::set_buttons(port, mask)
-cgb_paths::Paths → CoreHost::{new, load_game}
+   └── audio callback → Vec<i16> stereo                ─→ src/audio ring buffer → cpal
+cgb_libretro::InputState → cgb_libretro::CoreHost::set_buttons(port, mask)
+crate::paths::Paths → CoreHost::{new, load_game}
 app::ui::ViewModel ← app::app projects core/library state
 ```
 
-`cgb-libretro` returns plain values, never UI or device types, so the whole
-pipeline above the core can be exercised headlessly.
+## The old crates
+
+`cgb-host`, `cgb-systems`, `cgb-input`, `cgb-paths`, `cgb-cores`,
+`cgb-library`, `cgb-audio` and `cgb-mac` no longer exist as separate packages;
+their code moved into the two packages above (git history is preserved under
+the new paths). `cgb-systems` + `cgb-input` became flat modules of
+`cgb-libretro` (`system.rs`, `joypad.rs`, `core_choice.rs`, `input.rs`).

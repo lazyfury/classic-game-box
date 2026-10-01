@@ -253,6 +253,10 @@ impl super::App {
                     self.model.system_filter = system;
                     self.rebuild_game_rows();
                 }
+                Action::ToggleMissingCores => {
+                    self.model.missing_cores_collapsed = !self.model.missing_cores_collapsed;
+                    self.dirty = true;
+                }
                 Action::SelectCore(index) => self.select_core(index),
                 Action::StartCatalogSearch => self.start_edit(EditTarget::CatalogSearch),
                 Action::ClearCatalogSearch => self.clear_catalog_search(),
@@ -604,8 +608,8 @@ impl super::App {
                     .unwrap_or(0);
                 self.fps_time = Instant::now();
                 // Cheats are per game and applied right after load.
-                let cheat_path = cgb_paths::cheat_file(&self.paths.cheats, rom_path);
-                self.cheats = cgb_library::load_cheats(&cheat_path);
+                let cheat_path = crate::paths::cheat_file(&self.paths.cheats, rom_path);
+                self.cheats = crate::library::load_cheats(&cheat_path);
                 self.cheat_path = Some(cheat_path);
                 if let Some(session) = self.session.as_ref() {
                     session.apply_cheats(&self.cheats);
@@ -648,16 +652,16 @@ impl super::App {
     }
 
     pub(super) fn step_gamepad(&mut self) {
-        if let Some(gamepads) = self.gamepads.as_mut() {
-            gamepads.poll(&mut self.input);
+        if let Some(gamepads) = self.gamepads.clone() {
+            gamepads.borrow_mut().poll(&mut self.input);
         }
     }
 }
 
 /// Map a UI key to the input crate's bindable key, or `None` when the key
 /// cannot be bound to a joypad button (function keys, editing keys, …).
-fn to_input_key(key: Key) -> Option<cgb_input::Key> {
-    use cgb_input::Key as Input;
+fn to_input_key(key: Key) -> Option<cgb_libretro::Key> {
+    use cgb_libretro::Key as Input;
     Some(match key {
         Key::Character(c) => Input::Character(c),
         Key::ArrowUp => Input::ArrowUp,

@@ -2,8 +2,8 @@
 
 > 目标：理解 NES 的五个声道是什么、它们为什么这么简单，以及一个真实游戏怎么用它们做出音乐。
 >
-> 本文输出都来自 `tools/demo_apu.cpp`，并可由 `packages/fc-core/tests/test_apu.cpp` 与
-> `packages/fc-core/tests/test_real_rom.cpp` 验证。
+> 本文输出都来自 `tools/demo_apu.cpp`，并可由 `custom_nes_core/tests/core/test_apu.cpp` 与
+> `custom_nes_core/tests/core/test_real_rom.cpp` 验证。
 
 ---
 
@@ -215,7 +215,7 @@ if (++frame_counter_ >= kFrameStepCycles) {
 > 而恰好正确。听感上：军鼓变成 "shhh" 而不是 "tss"，贝斯低了一个八度。
 >
 > 修法：凡是以 CPU 周期为单位的表，用之前都除以 2；三角波定时器改成
-> 每个 tick 走两次。`packages/fc-core/tests/test_apu.cpp` 的 `ApuRates.*` 三个测试把
+> 每个 tick 走两次。`custom_nes_core/tests/core/test_apu.cpp` 的 `ApuRates.*` 三个测试把
 > 噪声 55930 Hz、三角波 3494 steps/s、DMC 216 tick/byte 钉死。
 
 ---
@@ -309,11 +309,11 @@ afplay frames/game_audio.wav
 
 | 概念 | 文件 |
 |------|------|
-| 五个声道 + 帧序列器 + 混音 | `packages/fc-core/src/core/nes/apu.{hpp,cpp}` |
-| 接在 `$4000-$4017` | `packages/fc-core/src/core/nes/bus.cpp` |
-| 时钟同步（CPU/2） | `packages/fc-core/src/core/nes/machine.cpp` `apu_.tick_cpu()` |
-| 单元测试 | `packages/fc-core/tests/test_apu.cpp` |
-| 真实游戏声音测试 | `packages/fc-core/tests/test_real_rom.cpp` `InputTest` |
+| 五个声道 + 帧序列器 + 混音 | `custom_nes_core/src/core/nes/apu.{hpp,cpp}` |
+| 接在 `$4000-$4017` | `custom_nes_core/src/core/nes/bus.cpp` |
+| 时钟同步（CPU/2） | `custom_nes_core/src/core/nes/machine.cpp` `apu_.tick_cpu()` |
+| 单元测试 | `custom_nes_core/tests/core/test_apu.cpp` |
+| 真实游戏声音测试 | `custom_nes_core/tests/core/test_real_rom.cpp` `InputTest` |
 | 可运行讲解 + WAV 导出 | `tools/demo_apu.cpp` |
 
 ```bash

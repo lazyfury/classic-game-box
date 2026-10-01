@@ -9,7 +9,7 @@ use igui::igui_components::{Menu, MenuItem, Overlays};
 use igui::igui_core::{NodeId, Vec2};
 use igui::igui_theme::Theme;
 
-use cgb_systems::{SystemId, SYSTEMS};
+use cgb_libretro::{SystemId, SYSTEMS};
 
 use crate::ui::model::{Action, Confirm, CoreRow, GameRow};
 

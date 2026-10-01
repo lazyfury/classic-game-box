@@ -87,7 +87,7 @@ impl super::App {
 
     /// Ask for ROM files and add them to the library.
     pub(super) fn add_games_dialog(&mut self) {
-        let extensions: Vec<&str> = cgb_systems::SYSTEMS
+        let extensions: Vec<&str> = cgb_libretro::SYSTEMS
             .iter()
             .flat_map(|system| system.extensions().iter().copied())
             .collect();
@@ -125,7 +125,7 @@ impl super::App {
                     continue;
                 }
                 files.extend(
-                    cgb_library::scan_dir(&path)
+                    crate::library::scan_dir(&path)
                         .into_iter()
                         .map(|game| PathBuf::from(game.path)),
                 );

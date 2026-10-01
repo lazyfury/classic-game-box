@@ -1,0 +1,8 @@
+# Build environment.
+#
+# The Swift app targets macOS 14 (`macos/Package.swift`), so the Rust staticlib
+# it links must be built for the same deployment target. Without this, the
+# staticlib's objects are built for the SDK's own version and the final link
+# warns ("object file was built for newer macOS ... than being linked").
+[env]
+MACOSX_DEPLOYMENT_TARGET = "14.0"

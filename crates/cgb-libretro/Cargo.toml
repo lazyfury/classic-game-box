@@ -6,7 +6,6 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-cgb-systems.workspace = true
 libloading.workspace = true
 thiserror.workspace = true
 
@@ -17,5 +16,7 @@ cc.workspace = true
 
 [dev-dependencies]
 # The integration test applies the manifest's `option_defaults` before loading,
-# the same way `Session::new` does, so it tests the app's loading path.
-cgb-cores.workspace = true
+# the same way `Session::new` does, so it tests the app's loading path. The
+# package lives at the workspace root (`cgb-app`), so this is a dev-dep cycle,
+# which cargo permits (dev-dependencies never become part of the public build).
+cgb-app = { path = "../..", default-features = false }

@@ -1,21 +1,31 @@
-//! Classic Game Box — native Rust front end.
+//! Classic Game Box — the app library.
 //!
-//! This is the app library surface. The binary ([`main.rs`](../main.rs)) is a
-//! thin CLI over it; keeping the modules public lets the bench target and the
-//! headless self-check drive the same code as the window.
+//! This is the app surface the native macOS host embeds. The emulator
+//! boundary ([`cgb_libretro`]) stays a separate crate; everything
+//! app-shaped lives here as flat modules or one-concern directories:
 //!
-//! ```text
-//! cargo run -p cgb-app                          # open the library UI
-//! cargo run -p cgb-app -- mario.nes             # load a ROM at startup
-//! cargo run -p cgb-app -- mario.nes --core mesen
-//! cargo run -p cgb-app -- --core ./custom_libretro.dylib
-//! ```
-//!
-//! The window host lives in [`app`]; one running game is a [`session`].
+//! | module | what |
+//! |---|---|
+//! | [`ui`] | the igui views, built from a pure [`ViewModel`] |
+//! | [`app`] | app state, frame loop, feature wiring, host traits usage |
+//! | [`session`] | one running game (libretro session + audio) |
+//! | [`library`] | the SQLite game library, saves, screenshots, cheats |
+//! | [`paths`] | file layout ([`Paths`]) and [`Settings`] |
+//! | [`cores`] | `cores.json` manifest, buildbot catalog, downloader |
+//! | [`audio`] | cpal output + ring buffer |
+//! | [`host`] | the `HostWindow` / `GamepadSource` contract |
+//! | [`mac`] | the Swift/macOS host FFI (`cgb_mac_*` C ABI) |
+//! | [`cli`] / [`cores_cli`] / [`selfcheck`] | headless surfaces |
 
 pub mod app;
+pub mod audio;
 pub mod cli;
+pub mod cores;
 pub mod cores_cli;
+pub mod host;
+pub mod library;
+pub mod mac;
+pub mod paths;
 pub mod selfcheck;
 pub mod session;
 pub mod ui;

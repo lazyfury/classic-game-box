@@ -8,13 +8,13 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
+use crate::audio::AudioOutput;
+use crate::library::{encode_png, exists, list_slots, read, remove, write, StateSlot};
+use crate::paths::{battery_save_path, save_state_path, save_state_thumb_path};
 use crate::ui::TextureHandle;
-use cgb_audio::AudioOutput;
-use cgb_input::InputState;
-use cgb_library::{encode_png, exists, list_slots, read, remove, write, StateSlot};
 use cgb_libretro::CoreHost;
-use cgb_paths::{battery_save_path, save_state_path, save_state_thumb_path};
-use cgb_systems::{CoreSpec, SystemId, RETRO_DEVICE_JOYPAD};
+use cgb_libretro::InputState;
+use cgb_libretro::{CoreSpec, SystemId, RETRO_DEVICE_JOYPAD};
 use igui::igui_backend_wgpu::{TextureEffect, TextureFilter, WgpuBackend};
 use igui::igui_render::TextureId;
 
@@ -404,7 +404,7 @@ impl Session {
     ///
     /// The `enabled` flag is passed but Mesen and mGBA ignore it (they add
     /// every code they are given), so a disabled cheat is simply not sent.
-    pub fn apply_cheats(&self, cheats: &[cgb_library::Cheat]) {
+    pub fn apply_cheats(&self, cheats: &[crate::library::Cheat]) {
         self.core.reset_cheats();
         for (index, cheat) in cheats.iter().enumerate() {
             if cheat.enabled {

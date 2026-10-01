@@ -15,7 +15,7 @@ use crate::ui::model::{
     ScreenshotRow, SettingsGroup, ShaderKind, SortKey, SystemCount, TextureHandle,
 };
 use crate::ui::theme::ThemeChoice;
-use cgb_systems::SystemId;
+use cgb_libretro::SystemId;
 use igui::igui_components::{Component, Flex};
 use igui::igui_core::{InputEvent, PointerButton, Size, Vec2};
 use igui::igui_render::{DrawCommand, PaintContext, TextureId};

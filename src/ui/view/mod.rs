@@ -320,6 +320,8 @@ fn right_column(
 /// It leaves the platform's safe area at the top and left, so on macOS the
 /// content running under the title bar does not hide the name behind the
 /// traffic lights.
+// The call is commented out in `build` while the native title bar is tried;
+// keep the builder around until that settles.
 fn header(theme: &'static dyn Theme, model: &ViewModel) -> Column {
     let safe = model.safe_area;
     Column::new()

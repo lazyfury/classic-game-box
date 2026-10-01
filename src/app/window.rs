@@ -88,6 +88,7 @@ impl super::App {
     }
 
     pub(super) fn advance_frame(&mut self, dt: f32) {
+        self.flush_drops();
         // Issue a pending window request only after the (hidden) tree was
         // presented, so the OS animates from a settled surface.
         if let Some(on) = self.pending_fullscreen {
@@ -95,11 +96,7 @@ impl super::App {
                 self.pending_fullscreen = None;
                 self.hidden_painted = false;
                 if let Some(window) = self.window.clone() {
-                    window.set_fullscreen(if on {
-                        Some(Fullscreen::Borderless(None))
-                    } else {
-                        None
-                    });
+                    window.set_fullscreen(on);
                 }
                 self.transition = Some(FullscreenTransition {
                     target: on,
@@ -117,7 +114,6 @@ impl super::App {
                 self.dirty = true;
             }
         }
-        self.flush_drops();
         // Overlay timers (a message counting down) advance with the clock.
         self.ui.update(dt);
         // A running overlay needs a fresh paint each frame, not a replay.

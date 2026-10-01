@@ -318,9 +318,9 @@ C 在这里表示"没有借位"。这套约定完全建立在补码之上。
 ---
 
 **相关实践代码：**
-- `packages/fc-core/src/core/bit.hpp` — `negate()`、`as_signed()`、`as_unsigned()`
+- `custom_nes_core/src/core/bit.hpp` — `negate()`、`as_signed()`、`as_unsigned()`
 - `tools/demo_bitwise.cpp` — 第 5 节
-- `packages/fc-core/tests/test_bit.cpp` — `TEST(TwosComplement, ...)`
-- `packages/fc-core/tests/test_bit.cpp` — `TEST(Arithmetic, EightBitArithmeticWraps)`
+- `custom_nes_core/tests/core/test_bit.cpp` — `TEST(TwosComplement, ...)`
+- `custom_nes_core/tests/core/test_bit.cpp` — `TEST(Arithmetic, EightBitArithmeticWraps)`
 
 **上一章：** [hexadecimal.md](hexadecimal.md) · **下一章：** [bitwise-operations.md](bitwise-operations.md)

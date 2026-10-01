@@ -3,7 +3,7 @@
 > 目标：理解寻址模式不是"数据在哪"，而是"**如何计算出**数据在哪"。
 > 计算出来的结果叫**有效地址**（effective address）。
 >
-> 本文输出都来自 `tools/demo_addressing.cpp`，并可由 `packages/fc-core/tests/test_addressing.cpp` 验证。
+> 本文输出都来自 `tools/demo_addressing.cpp`，并可由 `custom_nes_core/tests/core/test_addressing.cpp` 验证。
 
 ---
 
@@ -302,7 +302,7 @@ STA $0200,X     5 周期，永远 5 周期（写入不享受跨页优惠）
 
 **所以有效地址解析必须同时报告 `page_crossed`，即使当前不精确计时。**
 
-> `demo_addressing` 第 6 节和 `packages/fc-core/tests/test_addressing.cpp` 都验证了这一点。
+> `demo_addressing` 第 6 节和 `custom_nes_core/tests/core/test_addressing.cpp` 都验证了这一点。
 > 完整周期精确是 Phase 1。
 
 ---
@@ -425,10 +425,10 @@ step():
 
 | 概念 | 文件 |
 |------|------|
-| 有效地址解析、两个硬件怪癖 | `packages/fc-core/src/core/cpu/addressing.{hpp,cpp}` |
-| Operation / AddressingMode 枚举 | `packages/fc-core/src/core/cpu/opcode.hpp` |
-| 表驱动派发 | `packages/fc-core/src/core/cpu/cpu.cpp` |
-| 单元测试（13 种模式 + 回绕 + 跨页） | `packages/fc-core/tests/test_addressing.cpp` |
+| 有效地址解析、两个硬件怪癖 | `custom_nes_core/src/core/cpu/addressing.{hpp,cpp}` |
+| Operation / AddressingMode 枚举 | `custom_nes_core/src/core/cpu/opcode.hpp` |
+| 表驱动派发 | `custom_nes_core/src/core/cpu/cpu.cpp` |
+| 单元测试（13 种模式 + 回绕 + 跨页） | `custom_nes_core/tests/core/test_addressing.cpp` |
 | 可运行讲解 | `tools/demo_addressing.cpp` |
 
 ```bash

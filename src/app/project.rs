@@ -22,7 +22,7 @@ pub(crate) fn order_games(games: &mut [Game], key: SortKey, desc: bool) {
 /// only the consoles that have games. Pure, so the tally can be tested without
 /// a window.
 pub(crate) fn system_counts(games: &[Game]) -> Vec<SystemCount> {
-    cgb_systems::SYSTEMS
+    cgb_libretro::SYSTEMS
         .iter()
         .filter_map(|&system| {
             let count = games.iter().filter(|game| game.system == system).count();
@@ -91,8 +91,8 @@ pub(crate) fn binding_rows(bindings: &KeyboardBindings) -> Vec<BindingRow> {
 }
 
 /// A bound key's printable name for the bindings list.
-pub(crate) fn key_label(key: cgb_input::Key) -> String {
-    use cgb_input::Key;
+pub(crate) fn key_label(key: cgb_libretro::Key) -> String {
+    use cgb_libretro::Key;
     match key {
         Key::Character(c) => c.to_ascii_uppercase().to_string(),
         Key::Enter => "Enter".to_string(),

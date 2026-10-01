@@ -1,37 +1,26 @@
-//! The `winit` + `wgpu` host: the frame loop and the wiring between the UI,
-//! the libretro core, the audio device and the gamepad.
+//! The shared app frame loop and the wiring between the UI, the libretro core,
+//! the audio device and the host-provided gamepad.
 //!
 //! igui is event-driven by default; an emulator is not. While a game is
 //! running the loop schedules a redraw at the core's frame rate
-//! (`ControlFlow::WaitUntil`); with no game, or when paused, it falls back to
-//! `Wait` and does no work. See `docs/architecture/quill-native-migration.md`
-//! §8.
+//! (`CADisplayLink` on the Swift/macOS host); with no game, or when paused, it
+//! does no work.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use igui::igui_app::{
-    App as IguiApp, AppBuilder, AppConfig, AppLogic, EventContext, EventResult, FrameContext,
-    InitContext, PlatformEvent, PlatformObserver, Plugin,
+use crate::cores::{
+    cache_path, download_core_with_progress, is_blocked, load_cores, register_downloaded,
+    registry_path, update_catalog, write_catalog, Catalog, Platform, DEFAULT_SOURCE,
 };
-use igui::igui_backend_wgpu::{FontConfig, FontMode, TextureEffect};
-use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, Rect, ViewportSize};
-use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, Severity, StageTimes};
-use igui::igui_render::{DrawList, PaintContext, TextureId};
-use igui::igui_theme::{Mode, Theme};
-use igui::igui_ui::{focused_caret, TextEdit, TextMeasurer};
-use igui_winit::{
-    ClipboardPlugin, GpuConfig, ImePlugin, KeyboardPlugin, PointerPlugin, SharedBackend,
-    SharedWindow, TextMeasurePlugin, TitlebarMode, WgpuPlugin, WindowConfig,
+use crate::library::{
+    collect_games, decode_png, encode_png, import_roms, Game, ImportReport, Library,
 };
-use winit::event::WindowEvent;
-use winit::window::{Fullscreen, Window};
-
+use crate::paths::{seed_dir, seed_dir_recursive, Paths, Settings};
 use crate::ui::{
     library_columns, save_slot_label, Action, BindingRow, CatalogRow, Confirm, CoreOptionRow,
     CoreRow, EditTarget, GameRow, InputDescriptorRow, MissingCoreRow, MsaaKind, SafeArea,
@@ -39,16 +28,15 @@ use crate::ui::{
     TextureHandle, ThemeChoice, Ui, ViewBridge, ViewModel, CONTENT_DEFAULT_WIDTH,
     CONTENT_MAX_WIDTH, CONTENT_MIN_WIDTH,
 };
-use cgb_cores::{
-    cache_path, download_core_with_progress, is_blocked, load_cores, register_downloaded,
-    registry_path, update_catalog, write_catalog, Catalog, Platform, DEFAULT_SOURCE,
-};
-use cgb_input::{Gamepads, InputState, KeyboardBindings};
-use cgb_library::{
-    collect_games, decode_png, encode_png, import_roms, Game, ImportReport, Library,
-};
-use cgb_paths::{seed_dir, seed_dir_recursive, Paths, Settings};
-use cgb_systems::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
+use cgb_libretro::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
+use cgb_libretro::{InputState, KeyboardBindings};
+use igui::igui_app::{AppLogic, EventContext, EventResult, FrameContext, InitContext};
+use igui::igui_backend_wgpu::{TextureEffect, WgpuBackend};
+use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, Rect, ViewportSize};
+use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, Severity, StageTimes};
+use igui::igui_render::{DrawList, PaintContext, TextureId};
+use igui::igui_theme::{Mode, Theme};
+use igui::igui_ui::{focused_caret, TextEdit, TextMeasurer};
 
 use crate::cli::{Args, CoreOverride};
 use crate::session::Session;
@@ -67,8 +55,12 @@ mod tests;
 mod textures;
 mod window;
 
+pub use crate::host::{GamepadSource, HostWindow, SharedGamepad, SharedHostWindow};
 pub(crate) use helpers::*;
 pub(crate) use project::*;
+
+/// The wgpu backend a platform graphics plugin publishes as a service.
+pub type SharedBackend = Rc<RefCell<WgpuBackend>>;
 
 /// The shortest gap between grid column-count recomputations while the middle
 /// divider is dragged. A column change rebuilds the tree; throttling keeps a
@@ -168,76 +160,6 @@ const BUNDLED_J2ME: &str = "freej2me_plus";
 /// they are seeded there — without `compat.ini` it warns at init.
 const BUNDLED_PPSSPP: &str = "ppsspp";
 
-/// Runs the app on the `igui_app` plugin runtime (winit + wgpu + input).
-pub fn run(args: Args) {
-    let app = App::new(args);
-    let drops: Rc<RefCell<Vec<PathBuf>>> = app.pending_drops.clone();
-    let title = "Classic Game Box".to_string();
-    let size = (1100.0, 760.0);
-    IguiApp::new(AppConfig {
-        title: title.clone(),
-        size,
-        ..Default::default()
-    })
-    // The window: a transparent, title-less macOS title bar, with the platform
-    // IME enabled so the text fields can compose CJK.
-    .plugin(igui_winit::WinitPlugin::new(WindowConfig {
-        title,
-        size,
-        titlebar: TitlebarMode::Transparent,
-        ime: true,
-    }))
-    // The surface and backend, published as the `SharedBackend` service.
-    .plugin(WgpuPlugin::new(GpuConfig {
-        font: FontConfig {
-            mode: FontMode::System,
-            device_pixel_rasterization: true,
-            ..Default::default()
-        },
-        ..Default::default()
-    }))
-    .plugin(PointerPlugin)
-    .plugin(KeyboardPlugin)
-    .plugin(ImePlugin)
-    .plugin(TextMeasurePlugin)
-    .plugin(ClipboardPlugin)
-    .plugin(HostPlugin { drops })
-    .logic(app)
-    .build()
-    .run();
-}
-
-/// Bridges host platform events the app cares about into shared flags: files
-/// dropped on the window. (Window resizes are picked up from the presenter's
-/// viewport, so a repeated resize does not force a redundant re-layout.)
-struct HostPlugin {
-    drops: Rc<RefCell<Vec<PathBuf>>>,
-}
-
-impl Plugin for HostPlugin {
-    fn name(&self) -> &'static str {
-        "cgb-host"
-    }
-
-    fn build(&self, app: &mut AppBuilder) {
-        app.add_platform_observer(HostObserver {
-            drops: self.drops.clone(),
-        });
-    }
-}
-
-struct HostObserver {
-    drops: Rc<RefCell<Vec<PathBuf>>>,
-}
-
-impl PlatformObserver for HostObserver {
-    fn on_platform(&mut self, event: PlatformEvent<'_>, _out: &mut Vec<InputEvent>) {
-        if let Some(WindowEvent::DroppedFile(path)) = event.downcast_ref::<WindowEvent>() {
-            self.drops.borrow_mut().push(path.clone());
-        }
-    }
-}
-
 /// A fullscreen toggle waiting for the OS window animation to settle.
 ///
 /// Entering: switch to the lightweight play view first, then ask the window for
@@ -252,12 +174,15 @@ struct FullscreenTransition {
 }
 
 /// The application state, driven as an [`AppLogic`] by the `igui_app` runtime.
-struct App {
+///
+/// Public (with private fields) so an embedded platform host can build it and
+/// hand it to the runtime as the logic.
+pub struct App {
     /// The wgpu backend, published by `WgpuPlugin`; `None` until the first
     /// resume creates the window and the surface.
     backend: Option<SharedBackend>,
-    /// The window, read from the `SharedWindow` service (fullscreen toggling).
-    window: Option<Arc<Window>>,
+    /// The window host, from the `SharedHostWindow` service (fullscreen).
+    window: Option<SharedHostWindow>,
     /// The backend's real font metrics, published by `TextMeasurePlugin`.
     measurer: Option<Rc<dyn TextMeasurer>>,
     /// Whether this frame must lay out and paint; otherwise the previous draw
@@ -300,7 +225,7 @@ struct App {
     /// they were uploaded for.
     save_textures: HashMap<u8, (i64, TextureHandle)>,
     /// The running game's cheats, and the `.cht` file they came from.
-    cheats: Vec<cgb_library::Cheat>,
+    cheats: Vec<crate::library::Cheat>,
     cheat_path: Option<PathBuf>,
     /// The running core's options, cached for the settings page.
     core_options: Vec<cgb_libretro::CoreOption>,
@@ -327,7 +252,7 @@ struct App {
     shader: ShaderKind,
     /// Geometry anti-aliasing (MSAA) mode.
     msaa: MsaaKind,
-    gamepads: Option<Gamepads>,
+    gamepads: Option<SharedGamepad>,
     session: Option<Session>,
     /// `--rom` path to start once the window exists.
     pending_rom: Option<PathBuf>,
@@ -350,9 +275,7 @@ struct App {
     pending_core_prompt: Option<String>,
     /// Keyboard modifiers, so save-state hotkeys can tell save from load.
     modifiers: Modifiers,
-    /// Files dropped onto the window since the last frame. The winit runner
-    /// delivers one `DroppedFile` event per file (through the host's observer),
-    /// so they are buffered and added in one batch.
+    /// Files dropped onto the window since the last frame.
     pending_drops: Rc<RefCell<Vec<PathBuf>>>,
     /// The viewport the mounted tree was last laid out for. A resize only
     /// forces a re-layout when this actually changes (a fullscreen transition
@@ -386,7 +309,12 @@ struct App {
 }
 
 impl App {
-    fn new(args: Args) -> Self {
+    /// Build the application from parsed CLI arguments.
+    ///
+    /// The platform host constructs this and hands it to the runtime as the
+    /// [`AppLogic`]; an embedded host does the same through the C ABI in
+    /// `crates/cgb-mac`.
+    pub fn new(args: Args) -> Self {
         // A `--library-dir` overrides the remembered library; app data (and so
         // the settings that would remember it) stays in the platform folder.
         let forced_library = args.library_dir.is_some();
@@ -519,7 +447,7 @@ impl App {
             preview_paused: false,
             pending_confirm: None,
             input: InputState::new(),
-            bindings: cgb_systems::SYSTEMS
+            bindings: cgb_libretro::SYSTEMS
                 .iter()
                 .map(|system| (*system, KeyboardBindings::default_bindings_for(*system)))
                 .collect(),
@@ -528,13 +456,7 @@ impl App {
             rewinding: false,
             shader,
             msaa,
-            gamepads: match Gamepads::new() {
-                Ok(gamepads) => Some(gamepads),
-                Err(error) => {
-                    eprintln!("cgb: 手柄不可用：{error}");
-                    None
-                }
-            },
+            gamepads: None,
             session: None,
             pending_rom: args.rom,
             core_override: args.core,
@@ -560,6 +482,12 @@ impl App {
         app.rebuild_settings_view();
         app
     }
+
+    /// The sink a host pushes files dropped on the window into; they are
+    /// imported on the next frame.
+    pub fn drop_sink(&self) -> Rc<RefCell<Vec<PathBuf>>> {
+        self.pending_drops.clone()
+    }
 }
 
 impl AppLogic for App {
@@ -570,8 +498,12 @@ impl AppLogic for App {
                 .borrow_mut()
                 .set_clear_color(self.theme.background());
         }
-        if let Some(window) = ctx.service::<SharedWindow>() {
-            self.window = window.borrow().clone();
+        if let Some(window) = ctx.service::<SharedHostWindow>() {
+            self.window = Some(window.clone());
+        }
+        // A host that owns its gamepad API publishes its source.
+        if let Some(gamepad) = ctx.service::<SharedGamepad>() {
+            self.gamepads = Some(gamepad.clone());
         }
         if let Some(measurer) = ctx.service::<Rc<dyn TextMeasurer>>() {
             self.measurer = Some(measurer.clone());

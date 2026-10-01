@@ -35,16 +35,16 @@
 
 ```
                  +-----------+
-                 |   Bus     |   抽象 (packages/fc-core/src/core/bus.hpp)
+                 |   Bus     |   抽象 (custom_nes_core/src/core/bus.hpp)
                  +-----+-----+
                        ^
                        | CPU 只知道这个
                  +-----+-----+
-                 |   Cpu     |   packages/fc-core/src/core/cpu/
+                 |   Cpu     |   custom_nes_core/src/core/cpu/
                  +-----------+
 
                  +-----------+
-                 |  NesBus   |   实现 (packages/fc-core/src/core/nes/bus.hpp)
+                 |  NesBus   |   实现 (custom_nes_core/src/core/nes/bus.hpp)
                  +-----+-----+
                        |
        +---------------+---------------+
@@ -56,9 +56,9 @@
 **依赖方向已用 grep 验证：**
 
 ```bash
-$ grep -rn '#include "core/nes/' packages/fc-core/src/core/cpu/
+$ grep -rn '#include "core/nes/' custom_nes_core/src/core/cpu/
   （无）
-$ grep -rn 'nes::' packages/fc-core/src/core/cpu/
+$ grep -rn 'nes::' custom_nes_core/src/core/cpu/
   （无）
 ```
 
@@ -84,7 +84,7 @@ CPU 只知道"我要往地址 `$2006` 写一个字节"。
 
 ### 规则 2：Core 不得依赖 UI
 
-`packages/fc-core/src/core/` 里的代码不能 `#include <Metal/Metal.h>`，不能出现 `NSWindow`、
+`custom_nes_core/src/core/` 里的代码不能 `#include <Metal/Metal.h>`，不能出现 `NSWindow`、
 `document`。Core 只产出一个 `256×240` 的 RGB framebuffer，谁来显示它由
 `electron/`（或 `tools/fc_headless`）决定。
 
@@ -103,21 +103,21 @@ CPU 读 $0000  ->  Bus 判断：<$2000?       -> RAM
 ```
    electron/ (TypeScript)     UI 层
         |
-   packages/fc-core/src/ffi/emulator_api.h     C 接口 —— 唯一的边界
+   custom_nes_core/src/ffi/emulator_api.h     C 接口 —— 唯一的边界
         |
-   packages/fc-core/src/core/nes/              NES 硬件
+   custom_nes_core/src/core/nes/              NES 硬件
         |
-   packages/fc-core/src/core/cpu/              6502
+   custom_nes_core/src/core/cpu/              6502
         |
-   packages/fc-core/src/core/bit.hpp          位与字节
+   custom_nes_core/src/core/bit.hpp          位与字节
 ```
 
 **箭头只能向下。** Core 不知道窗口存在，CPU 不知道 NES 存在。
 
 ```bash
-$ grep -rn '#include "core/nes/' packages/fc-core/src/core/cpu/
+$ grep -rn '#include "core/nes/' custom_nes_core/src/core/cpu/
   （无）
-$ grep -rln 'Metal\|NSWindow' packages/fc-core/src/core/
+$ grep -rln 'Metal\|NSWindow' custom_nes_core/src/core/
   （无）
 ```
 

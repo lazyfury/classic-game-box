@@ -223,7 +223,7 @@ field = (value >> shift) & mask;
 
 **记住这五个，加上补码，你就有了模拟整个 6502 ALU 的全部工具。**
 
-我们的 `packages/fc-core/src/core/bit.hpp` 把它们封装成了 `test() / set() / clear() / toggle() / extract()`。
+我们的 `custom_nes_core/src/core/bit.hpp` 把它们封装成了 `test() / set() / clear() / toggle() / extract()`。
 
 ---
 
@@ -344,9 +344,9 @@ bit::negate(v);   // 0xFD = -3 的补码 ✓
 ---
 
 **相关实践代码：**
-- `packages/fc-core/src/core/bit.hpp` — 全部函数
-- `packages/fc-core/src/core/bit.cpp` — `to_hex()`
+- `custom_nes_core/src/core/bit.hpp` — 全部函数
+- `custom_nes_core/src/core/bit.cpp` — `to_hex()`
 - `tools/demo_bitwise.cpp` — 第 3、4 节
-- `packages/fc-core/tests/test_bit.cpp` — `TEST(Bit, ...)`
+- `custom_nes_core/tests/core/test_bit.cpp` — `TEST(Bit, ...)`
 
 **上一章：** [twos-complement.md](twos-complement.md)
