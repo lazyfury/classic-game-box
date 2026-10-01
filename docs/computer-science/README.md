@@ -41,20 +41,20 @@
 ## 与代码的对应关系
 
 ```
-docs/computer-science/binary.md             <->  packages/fc-core/src/core/bit.hpp  to_binary()
-docs/computer-science/hexadecimal.md        <->  packages/fc-core/src/core/bit.cpp  to_hex()
-docs/computer-science/twos-complement.md    <->  packages/fc-core/src/core/bit.hpp  negate(), as_signed()
-docs/computer-science/bitwise-operations.md <->  packages/fc-core/src/core/bit.hpp  test/set/clear/toggle/extract()
-docs/computer-science/overflow-flag.md      <->  packages/fc-core/src/core/alu.hpp  add(), trace_add(), AddResult
-docs/computer-science/cpu.md                <->  packages/fc-core/src/core/cpu/registers.hpp, cpu.hpp, cpu.cpp
-                                                packages/fc-core/src/core/bus.hpp, flat_bus.hpp
-docs/computer-science/assembly.md           <->  packages/fc-core/src/core/cpu/opcode.{hpp,cpp}
-                                                packages/fc-core/src/core/cpu/disassembler.{hpp,cpp}
-docs/computer-science/addressing-modes.md   <->  packages/fc-core/src/core/cpu/addressing.{hpp,cpp}
-                                                packages/fc-core/src/core/cpu/cpu.cpp  (表驱动派发)
-docs/computer-science/instruction-set.md    <->  packages/fc-core/src/core/cpu/cpu.cpp  (全部 56 个操作)
-docs/computer-science/timing.md             <->  packages/fc-core/src/core/cpu/opcode.cpp  kCycleTable
-                                                packages/fc-core/src/core/cpu/cpu.cpp  cycle_cost()
+docs/computer-science/binary.md             <->  custom_nes_core/src/core/bit.hpp  to_binary()
+docs/computer-science/hexadecimal.md        <->  custom_nes_core/src/core/bit.cpp  to_hex()
+docs/computer-science/twos-complement.md    <->  custom_nes_core/src/core/bit.hpp  negate(), as_signed()
+docs/computer-science/bitwise-operations.md <->  custom_nes_core/src/core/bit.hpp  test/set/clear/toggle/extract()
+docs/computer-science/overflow-flag.md      <->  custom_nes_core/src/core/alu.hpp  add(), trace_add(), AddResult
+docs/computer-science/cpu.md                <->  custom_nes_core/src/core/cpu/registers.hpp, cpu.hpp, cpu.cpp
+                                                custom_nes_core/src/core/bus.hpp, flat_bus.hpp
+docs/computer-science/assembly.md           <->  custom_nes_core/src/core/cpu/opcode.{hpp,cpp}
+                                                custom_nes_core/src/core/cpu/disassembler.{hpp,cpp}
+docs/computer-science/addressing-modes.md   <->  custom_nes_core/src/core/cpu/addressing.{hpp,cpp}
+                                                custom_nes_core/src/core/cpu/cpu.cpp  (表驱动派发)
+docs/computer-science/instruction-set.md    <->  custom_nes_core/src/core/cpu/cpu.cpp  (全部 56 个操作)
+docs/computer-science/timing.md             <->  custom_nes_core/src/core/cpu/opcode.cpp  kCycleTable
+                                                custom_nes_core/src/core/cpu/cpu.cpp  cycle_cost()
 
 demo:        tools/demo_bitwise.cpp
 demo:        tools/demo_overflow.cpp
@@ -62,7 +62,7 @@ demo:        tools/demo_cpu.cpp
 demo:        tools/demo_disasm.cpp
 demo:        tools/demo_addressing.cpp
 demo:        tools/demo_instructions.cpp
-自动验证:    packages/fc-core/tests/ 下的测试文件
+自动验证:    custom_nes_core/tests/core/ 下的测试文件
 ```
 
 ---

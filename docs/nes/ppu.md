@@ -2,8 +2,8 @@
 
 > 目标：理解 PPU 是一台**独立的计算机**，以及它如何把 8 个寄存器变成一幅画面。
 >
-> 本文输出都来自 `tools/demo_ppu.cpp`，并可由 `packages/fc-core/tests/test_ppu.cpp` 与
-> `packages/fc-core/tests/test_real_rom.cpp` 验证。
+> 本文输出都来自 `tools/demo_ppu.cpp`，并可由 `custom_nes_core/tests/core/test_ppu.cpp` 与
+> `custom_nes_core/tests/core/test_real_rom.cpp` 验证。
 
 ---
 
@@ -485,11 +485,11 @@ const int row = line - sprite_y - 1;
 
 | 概念 | 文件 |
 |------|------|
-| PPU 主体 | `packages/fc-core/src/core/nes/ppu.{hpp,cpp}` |
-| 帧缓冲 | `packages/fc-core/src/core/nes/framebuffer.hpp` |
-| CPU/PPU 3:1 同步 | `packages/fc-core/src/core/nes/machine.{hpp,cpp}` |
-| 单元测试 | `packages/fc-core/tests/test_ppu.cpp` |
-| 真实 ROM 渲染测试 | `packages/fc-core/tests/test_real_rom.cpp` |
+| PPU 主体 | `custom_nes_core/src/core/nes/ppu.{hpp,cpp}` |
+| 帧缓冲 | `custom_nes_core/src/core/nes/framebuffer.hpp` |
+| CPU/PPU 3:1 同步 | `custom_nes_core/src/core/nes/machine.{hpp,cpp}` |
+| 单元测试 | `custom_nes_core/tests/core/test_ppu.cpp` |
+| 真实 ROM 渲染测试 | `custom_nes_core/tests/core/test_real_rom.cpp` |
 | 可运行讲解 | `tools/demo_ppu.cpp` |
 
 ```bash

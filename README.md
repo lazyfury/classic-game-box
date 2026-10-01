@@ -3,9 +3,9 @@
 macOS 上的经典游戏机模拟器。**打开就能玩**：把 ROM 拖进窗口，接上手柄或者用键盘。
 
 > **迁移进行中。** 这个仓库正在从 Electron + WebAssembly + 自研 FC 核心，重写成
-> **原生 Rust（[igui](https://github.com/lazyfury/igui) UI + winit/wgpu）+ 标准 libretro 核心**。
-> 旧栈已清理：只保留自研 FC 核心的 C++ 源码（[`legacy/`](legacy/)，为
-> `cores/custom_nes_core` 提供来源），Electron / wasm / tools 前端已删除。
+> **原生 Rust（[igui](https://github.com/lazyfury/igui)）+ 标准 libretro 核心**。
+> 自研 FC 核心的 C++ 源码在 [`custom_nes_core/`](custom_nes_core/)（单个现代
+> CMake 项目），Electron / wasm / tools 前端已删除。
 >
 > 权威设计：[`docs/architecture/quill-native-migration.md`](docs/architecture/quill-native-migration.md)。
 
@@ -20,7 +20,7 @@ macOS 上的经典游戏机模拟器。**打开就能玩**：把 ROM 拖进窗�
 | 🕹 **输入** | 键盘 + `gilrs` 手柄（`crates/cgb-input`） |
 | 💾 **库与存档** | `crates/cgb-library`：SQLite 游戏库、设置、存档槽、`.srm` |
 
-**不做**：自研模拟器（已在 `legacy/`）。本仓库只做 **UI 和 libretro 兼容**。
+**不做**：自研模拟器（它的源码在 `custom_nes_core/`）。本仓库只做 **UI 和 libretro 兼容**。
 
 ## 从源码运行
 
@@ -71,10 +71,11 @@ macos/scripts/package.sh      # → dist/Classic Game Box (Swift).app
 
 计划与剩余缺口见 [`docs/architecture/swift-macos-host-plan.md`](docs/architecture/swift-macos-host-plan.md)。
 
-## 自研 FC 核心（legacy）
+## 自研 FC 核心（custom_nes_core）
 
-`legacy/` 只保留自研 C++ FC / NES 核心（`packages/fc-core`）与它的 libretro 适配
-（`packages/fc-libretro`），供 `cores/custom_nes_core/build.sh` 编译成 libretro 模块，
-作为对照与兼容性测试基准。旧的 Electron + TypeScript 前端、Emscripten wasm 构建与
-教学 tools 已删除。迁移的调研与踩坑见
+`custom_nes_core/` 是一个独立的现代 CMake 项目（`src/` 布局）：机器本体在
+`src/core/`，libretro 包装在 `src/libretro/`；`./cores/custom_nes_core/build.sh`
+把它构建成 `cores/dist/custom_nes_core_libretro.dylib` 供产品加载，同时保留
+作对照与兼容性测试基准（ctest 可跑）。旧的 Electron + TypeScript 前端、
+Emscripten wasm 构建与教学 tools 已删除。迁移的调研与踩坑见
 [`docs/architecture/libretro-migration.md`](docs/architecture/libretro-migration.md)。

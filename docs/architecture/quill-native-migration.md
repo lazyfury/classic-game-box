@@ -99,7 +99,7 @@ cgb-systems     →  (无)
 
 ```
 # before（main）
-packages/fc-core  packages/fc-libretro  wasm/  electron/  tools/  cmake/  CMakeLists.txt
+custom_nes_core  custom_nes_core/src/libretro  wasm/  electron/  tools/  cmake/  CMakeLists.txt
 
 # after（原生，app 为根包）
 Cargo.toml                  # Rust workspace + 根包 cgb-app
@@ -111,8 +111,8 @@ scripts/                    # build-cores.sh / dev.sh
 assets/                     # 图标等
 docs/                       # 教学文档保留；architecture/ 放本计划
 legacy/                     # 仅保留自研 FC 核心源码（只读，不参与 Rust 构建）
-  ├── packages/fc-core      # CPU / Bus / PPU / APU / Mapper / State
-  ├── packages/fc-libretro  # libretro 包装 + 内置 libretro.h
+  ├── custom_nes_core      # CPU / Bus / PPU / APU / Mapper / State
+  ├── custom_nes_core/src/libretro  # libretro 包装 + 内置 libretro.h
   └── cmake/                # 包独立 CMake 构建所需（Version.cmake 等）
 ```
 
@@ -265,8 +265,8 @@ mesen、mGBA（×2 机种）、nestopia、custom_nes_core。
 - `scripts/build-cores.sh` 跑所有 `cores/*/build.sh`（`--skip-mgba` 跳过 mGBA）。
 - 加核心 = 加目录 + 在 `cores.json` 加一行，不动 Rust。详见
   [`cores/README.md`](../../cores/README.md)。`custom_nes_core` 是唯一不用
-  cmake/第三方的：直接 clang++ 编译只读的 `legacy/packages/fc-*`
-  （`legacy/` 只读；`fc_*` 私有扩展被前端忽略）。
+  cmake 的（自研核心）：`./cores/custom_nes_core/build.sh` 用 cmake 编
+  `custom_nes_core/`（只读的 `src/` 布局；`fc_*` 私有扩展被前端忽略）。
 
 **运行**：
 

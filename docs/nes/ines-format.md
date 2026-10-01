@@ -2,8 +2,8 @@
 
 > 目标：理解 `.nes` 文件的布局、卡带如何决定地址含义、以及图形数据是怎么存的。
 >
-> 本文输出都来自 `tools/demo_cartridge.cpp`，并可由 `packages/fc-core/tests/test_cartridge.cpp`
-> 与 `packages/fc-core/tests/test_real_rom.cpp` 验证。
+> 本文输出都来自 `tools/demo_cartridge.cpp`，并可由 `custom_nes_core/tests/core/test_cartridge.cpp`
+> 与 `custom_nes_core/tests/core/test_real_rom.cpp` 验证。
 
 ---
 
@@ -302,7 +302,7 @@ TEST_F(SuperMarioBros, TheVblankWaitIsExactlyWhatWasBlocking)
 
 ```bash
 # 方式一：符号链接
-ln -s /path/to/game.nes packages/fc-core/tests/data/game.nes
+ln -s /path/to/game.nes custom_nes_core/tests/core/data/game.nes
 
 # 方式二：环境变量
 FC_TEST_ROM=/path/to/game.nes ./build/tests/fc_tests
@@ -311,7 +311,7 @@ FC_TEST_ROM=/path/to/game.nes ./build/tests/fc_tests
 ./build/demo_cartridge /path/to/game.nes
 ```
 
-`.gitignore` 里有 `*.nes` 和 `packages/fc-core/tests/data/`，所以不会误提交。
+`.gitignore` 里有 `*.nes` 和 `custom_nes_core/tests/core/data/`，所以不会误提交。
 
 **找不到 ROM 时，测试自己跳过**，而不是失败：
 
@@ -334,12 +334,12 @@ void SetUp() override
 
 | 概念 | 文件 |
 |------|------|
-| iNES 文件头解析 | `packages/fc-core/src/core/nes/ines.{hpp,cpp}` |
-| Mapper 接口 | `packages/fc-core/src/core/nes/mapper.hpp` |
-| Mapper 0 (NROM) | `packages/fc-core/src/core/nes/mapper0.hpp` |
-| 卡带（PRG RAM、CHR、分派） | `packages/fc-core/src/core/nes/cartridge.{hpp,cpp}` |
-| 合成 ROM 测试 | `packages/fc-core/tests/test_cartridge.cpp` |
-| 真实 ROM 测试 | `packages/fc-core/tests/test_real_rom.cpp` |
+| iNES 文件头解析 | `custom_nes_core/src/core/nes/ines.{hpp,cpp}` |
+| Mapper 接口 | `custom_nes_core/src/core/nes/mapper.hpp` |
+| Mapper 0 (NROM) | `custom_nes_core/src/core/nes/mapper0.hpp` |
+| 卡带（PRG RAM、CHR、分派） | `custom_nes_core/src/core/nes/cartridge.{hpp,cpp}` |
+| 合成 ROM 测试 | `custom_nes_core/tests/core/test_cartridge.cpp` |
+| 真实 ROM 测试 | `custom_nes_core/tests/core/test_real_rom.cpp` |
 | 可运行讲解 | `tools/demo_cartridge.cpp` |
 
 ```bash

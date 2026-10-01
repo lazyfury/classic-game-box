@@ -1,7 +1,7 @@
 # CPU 基础 CPU Fundamentals
 
 > 目标：理解 CPU 是什么、它内部有什么、以及它如何一条接一条地执行指令。
-> 本文所有输出都来自 `tools/demo_cpu.cpp`，并可由 `packages/fc-core/tests/test_cpu.cpp` 验证。
+> 本文所有输出都来自 `tools/demo_cpu.cpp`，并可由 `custom_nes_core/tests/core/test_cpu.cpp` 验证。
 
 ---
 
@@ -146,7 +146,7 @@ SP = 0xFD
   7. cycles += 2
 ```
 
-对应代码（`packages/fc-core/src/core/cpu/cpu.cpp`）：
+对应代码（`custom_nes_core/src/core/cpu/cpu.cpp`）：
 
 ```cpp
 u8 Cpu::fetch_byte() noexcept
@@ -343,7 +343,7 @@ PPU                           PPU / RAM / Cartridge
 ### 代码长什么样
 
 ```cpp
-class Bus {                                  // packages/fc-core/src/core/bus.hpp
+class Bus {                                  // custom_nes_core/src/core/bus.hpp
 public:
     virtual ~Bus() = default;
     virtual u8 read(u16 address) = 0;
@@ -358,7 +358,7 @@ class Cpu {
 
 ### 收益
 
-1. **CPU 可以独立测试。** `packages/fc-core/tests/test_cpu.cpp` 用一个 64KB 的 `FlatBus`
+1. **CPU 可以独立测试。** `custom_nes_core/tests/core/test_cpu.cpp` 用一个 64KB 的 `FlatBus`
    就能跑完整测试，不需要 RAM 映射、PPU、卡带。
 2. **换一台机器只需换 Bus。** 同样的 CPU 加上不同的解码逻辑就是别的系统。
 3. **真实的行为被正确建模。** 读 PPU 寄存器 `$2002` 会**清除** vblank 标志 ——
@@ -396,11 +396,11 @@ read-modify-write 的额外周期）是 **Phase 1** 的事。
 
 | 概念 | 文件 |
 |------|------|
-| 六个寄存器 + flag 读写 | `packages/fc-core/src/core/cpu/registers.hpp` |
-| Bus 抽象 | `packages/fc-core/src/core/bus.hpp` |
-| 测试用平铺内存 | `packages/fc-core/src/core/flat_bus.hpp` |
-| 取指/译码/执行/栈/复位 | `packages/fc-core/src/core/cpu/cpu.hpp` `packages/fc-core/src/core/cpu/cpu.cpp` |
-| 单元测试 | `packages/fc-core/tests/test_registers.cpp` `packages/fc-core/tests/test_cpu.cpp` |
+| 六个寄存器 + flag 读写 | `custom_nes_core/src/core/cpu/registers.hpp` |
+| Bus 抽象 | `custom_nes_core/src/core/bus.hpp` |
+| 测试用平铺内存 | `custom_nes_core/src/core/flat_bus.hpp` |
+| 取指/译码/执行/栈/复位 | `custom_nes_core/src/core/cpu/cpu.hpp` `custom_nes_core/src/core/cpu/cpu.cpp` |
+| 单元测试 | `custom_nes_core/tests/core/test_registers.cpp` `custom_nes_core/tests/core/test_cpu.cpp` |
 | 可运行讲解 | `tools/demo_cpu.cpp` |
 
 ```bash

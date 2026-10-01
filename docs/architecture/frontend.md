@@ -22,7 +22,7 @@ AGENTS.md 里有一条硬性规则：**Core 不得依赖 UI。**
 |     set_button(button, pressed)                     |
 +--------------------------+--------------------------+
                            |
-                    C 接口 (packages/fc-core/src/ffi)
+                    C 接口 (custom_nes_core/src/ffi)
                            |
                   Emscripten (wasm/)
                            |
@@ -32,7 +32,7 @@ AGENTS.md 里有一条硬性规则：**Core 不得依赖 UI。**
 +-----------------------------------------------------+
 ```
 
-**这条线是物理的**：`packages/fc-core/src/ffi/emulator_api.h` 是纯 C。C++ 的名字修饰、模板、
+**这条线是物理的**：`custom_nes_core/src/ffi/emulator_api.h` 是纯 C。C++ 的名字修饰、模板、
 异常都不跨过它，所以同一份 Core 能被三种完全不同的东西链接：
 
 | 链接者 | 用途 |
@@ -349,8 +349,8 @@ ctest --test-dir build --output-on-failure
 
 | 概念 | 文件 |
 |------|------|
-| C 接口 | `packages/fc-core/src/ffi/emulator_api.h` / `.cpp` |
-| C 接口测试 | `packages/fc-core/tests/test_ffi.cpp` |
+| C 接口 | `custom_nes_core/src/ffi/emulator_api.h` / `.cpp` |
+| C 接口测试 | `custom_nes_core/tests/core/test_ffi.cpp` |
 | WebAssembly 构建 | `wasm/build.sh`、`wasm/emulator.mjs` |
 | 帧循环 / 时钟 / 输入装配 | `electron/src/renderer/useEmulator.ts` |
 | Canvas 上传 | `electron/src/renderer/useEmulator.ts` 的 `blit()` |

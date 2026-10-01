@@ -1,7 +1,7 @@
 # Mapper：卡带上的那块逻辑
 
 > 状态：**Mapper 0 (NROM)、Mapper 1 (MMC1) 已实现**
-> 代码：`packages/fc-core/src/core/nes/mapper.hpp`、`mapper0.hpp`、`mapper1.hpp`
+> 代码：`custom_nes_core/src/core/nes/mapper.hpp`、`mapper0.hpp`、`mapper1.hpp`
 
 ## 1. 为什么需要 Mapper
 
@@ -133,7 +133,7 @@ Zelda II 正好是证据：它的 reset 把 CHR0 写成 $00，而**大地图**�
 整张地图一片方块。侧视关卡用的是 bank 1（写 $02），也会错位到 bank 2，
 所以看起来"瓦片不对"。
 
-> 回归测试：`packages/fc-core/tests/test_cartridge.cpp` 的
+> 回归测试：`custom_nes_core/tests/core/test_cartridge.cpp` 的
 > `Mapper1.ChrEightKiloByteModeUsesBankZeroShiftedRight`。
 
 ### 4.4 运行时可切换镜像
@@ -143,7 +143,7 @@ Zelda II 正好是证据：它的 reset 把 CHR0 写成 $00，而**大地图**�
 所以 PPU 取 nametable 时必须**问 mapper**，而不是读 iNES 文件头：
 
 ```cpp
-// packages/fc-core/src/core/nes/ppu.cpp
+// custom_nes_core/src/core/nes/ppu.cpp
 const Mirroring mode = (cartridge_ != nullptr)
     ? cartridge_->mapper().mirroring()
     : Mirroring::Horizontal;
@@ -184,7 +184,7 @@ $0000-$0FFF  ->  CHR 4KB bank 0（$A000 里写的）
 $1000-$1FFF  ->  CHR 4KB bank 1（$C000 里写的）
 ```
 
-`packages/fc-core/tests/test_cartridge.cpp` 的 `Mapper1.*` 把每一步都钉住了。
+`custom_nes_core/tests/core/test_cartridge.cpp` 的 `Mapper1.*` 把每一步都钉住了。
 
 ## 6. 两个可选钩子：让 MMC3 这类卡带能反过来看 PPU
 
@@ -243,40 +243,40 @@ virtual void on_ppu_address(u16) {}
 代码位置：
 
 ```
-packages/fc-core/src/core/nes/mapper.hpp    接口 + 默认空实现钩子（PPU 地址 / IRQ / 扩展区 / 扫描线 / CPU 周期 / work RAM）
-packages/fc-core/src/core/nes/mapper0.hpp   NROM
-packages/fc-core/src/core/nes/mapper1.hpp   MMC1
-packages/fc-core/src/core/nes/mapper2.hpp   UxROM
-packages/fc-core/src/core/nes/mapper3.hpp   CNROM
-packages/fc-core/src/core/nes/mapper4.hpp   MMC3（含扫描线 IRQ）
-packages/fc-core/src/core/nes/mapper7.hpp   AxROM
-packages/fc-core/src/core/nes/mapper9.hpp   MMC2（也提供 mapper10 复用的 CHR latch）
-packages/fc-core/src/core/nes/mapper10.hpp  MMC4
-packages/fc-core/src/core/nes/mapper11.hpp  Color Dreams
-packages/fc-core/src/core/nes/mapper13.hpp  CPROM
-packages/fc-core/src/core/nes/mapper15.hpp  100-in-1
-packages/fc-core/src/core/nes/mapper18.hpp  Jaleco SS88006（CPU 周期 IRQ）
-packages/fc-core/src/core/nes/mapper19.hpp  Namco 163（声音 RAM + CPU 周期 IRQ）
-packages/fc-core/src/core/nes/mapper21.hpp  VRC2 / VRC4（21/22/23/25，含 IRQ）
-packages/fc-core/src/core/nes/mapper32.hpp  IREM G-101
-packages/fc-core/src/core/nes/mapper33.hpp  Taito TC0190
-packages/fc-core/src/core/nes/mapper66.hpp  GxROM
-packages/fc-core/src/core/nes/mapper68.hpp  Sunsoft-4
-packages/fc-core/src/core/nes/mapper71.hpp  Codemasters BF909x
-packages/fc-core/src/core/nes/mapper78.hpp  Jaleco JF-16
-packages/fc-core/src/core/nes/mapper87.hpp  Jaleco JF-13
-packages/fc-core/src/core/nes/mapper162.hpp Waixing 162
-packages/fc-core/src/core/nes/mapper163.hpp Nanjing FC-001
-packages/fc-core/src/core/nes/mapper164.hpp Waixing 164
-packages/fc-core/src/core/nes/mapper177.hpp Henggedianzi 177
-packages/fc-core/src/core/nes/mapper178.hpp Waixing 178
-packages/fc-core/src/core/nes/mapper190.hpp Magic Kid Goo Goo
-packages/fc-core/src/core/nes/mapper226.hpp 76-in-1
-packages/fc-core/src/core/nes/mapper227.hpp 227 多合一
-packages/fc-core/src/core/nes/mapper242.hpp Waixing 242
-packages/fc-core/src/core/nes/mapper246.hpp 246 多合一
-packages/fc-core/src/core/nes/mapper249.hpp Waixing T9552（交叉 bank 线）
-packages/fc-core/src/core/nes/cartridge.cpp 工厂：按文件头编号构造
+custom_nes_core/src/core/nes/mapper.hpp    接口 + 默认空实现钩子（PPU 地址 / IRQ / 扩展区 / 扫描线 / CPU 周期 / work RAM）
+custom_nes_core/src/core/nes/mapper0.hpp   NROM
+custom_nes_core/src/core/nes/mapper1.hpp   MMC1
+custom_nes_core/src/core/nes/mapper2.hpp   UxROM
+custom_nes_core/src/core/nes/mapper3.hpp   CNROM
+custom_nes_core/src/core/nes/mapper4.hpp   MMC3（含扫描线 IRQ）
+custom_nes_core/src/core/nes/mapper7.hpp   AxROM
+custom_nes_core/src/core/nes/mapper9.hpp   MMC2（也提供 mapper10 复用的 CHR latch）
+custom_nes_core/src/core/nes/mapper10.hpp  MMC4
+custom_nes_core/src/core/nes/mapper11.hpp  Color Dreams
+custom_nes_core/src/core/nes/mapper13.hpp  CPROM
+custom_nes_core/src/core/nes/mapper15.hpp  100-in-1
+custom_nes_core/src/core/nes/mapper18.hpp  Jaleco SS88006（CPU 周期 IRQ）
+custom_nes_core/src/core/nes/mapper19.hpp  Namco 163（声音 RAM + CPU 周期 IRQ）
+custom_nes_core/src/core/nes/mapper21.hpp  VRC2 / VRC4（21/22/23/25，含 IRQ）
+custom_nes_core/src/core/nes/mapper32.hpp  IREM G-101
+custom_nes_core/src/core/nes/mapper33.hpp  Taito TC0190
+custom_nes_core/src/core/nes/mapper66.hpp  GxROM
+custom_nes_core/src/core/nes/mapper68.hpp  Sunsoft-4
+custom_nes_core/src/core/nes/mapper71.hpp  Codemasters BF909x
+custom_nes_core/src/core/nes/mapper78.hpp  Jaleco JF-16
+custom_nes_core/src/core/nes/mapper87.hpp  Jaleco JF-13
+custom_nes_core/src/core/nes/mapper162.hpp Waixing 162
+custom_nes_core/src/core/nes/mapper163.hpp Nanjing FC-001
+custom_nes_core/src/core/nes/mapper164.hpp Waixing 164
+custom_nes_core/src/core/nes/mapper177.hpp Henggedianzi 177
+custom_nes_core/src/core/nes/mapper178.hpp Waixing 178
+custom_nes_core/src/core/nes/mapper190.hpp Magic Kid Goo Goo
+custom_nes_core/src/core/nes/mapper226.hpp 76-in-1
+custom_nes_core/src/core/nes/mapper227.hpp 227 多合一
+custom_nes_core/src/core/nes/mapper242.hpp Waixing 242
+custom_nes_core/src/core/nes/mapper246.hpp 246 多合一
+custom_nes_core/src/core/nes/mapper249.hpp Waixing T9552（交叉 bank 线）
+custom_nes_core/src/core/nes/cartridge.cpp 工厂：按文件头编号构造
 ```
 
 ## 8. 两张中文卡带：163 与 226
@@ -390,7 +390,7 @@ $8001  .... ...H   bank 的第 7 位
 ./build/tests/fc_tests --gtest_filter='Mapper*:Ines.*:Cartridge.*'
 ```
 
-本地可以用 `packages/fc-core/tests/data/` 放若干游戏（Zelda II 验 MMC1、SMB3 验 MMC3）。
+本地可以用 `custom_nes_core/tests/core/data/` 放若干游戏（Zelda II 验 MMC1、SMB3 验 MMC3）。
 
 ---
 ---

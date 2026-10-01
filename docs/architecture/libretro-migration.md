@@ -15,7 +15,7 @@
 1. **libretro 是权威**。所有"能不能做"以 `libretro.h` 为准；现有 `fc_*` 接口
    降级为**内部/扩展**，不再是前端与 Core 之间的主契约。
 2. **Core 不重写**。仍是 `fc_core`，但对外只暴露 libretro。新增一个薄适配层
-   `packages/fc-libretro/src/libretro/fc_libretro.cpp`，把 `retro_*` 翻译成 `Machine` 方法。
+   `custom_nes_core/src/libretro/fc_libretro.cpp`，把 `retro_*` 翻译成 `Machine` 方法。
 3. **不重要的功能先隐藏**（§4.2）：金手指面板、扫描线滤镜、封面/截图、
    原生手柄助手、PC/cycles 诊断读数。它们要么与 libretro 字符串模型不兼容，
    要么是 host 的职责，等 libretro 骨架稳定后再逐个接回。
@@ -58,11 +58,11 @@
 ## 2. 现状盘点（哪些已就绪）
 
 Core 已经满足 libretro 的三条硬性前提：无 UI 依赖、无文件 IO、无异常，且
-Native / wasm 双编译。`packages/fc-core/src/core` 分层：
+Native / wasm 双编译。`custom_nes_core/src/core` 分层：
 
 ```
-packages/fc-core/src/core/nes/  packages/fc-core/src/core/cpu/     机器本身（CPU/Bus/PPU/APU/Mapper/State）
-packages/fc-core/src/ffi/emulator_api.{h,cpp}     现有 C 接口（22 个测试）
+custom_nes_core/src/core/nes/  custom_nes_core/src/core/cpu/     机器本身（CPU/Bus/PPU/APU/Mapper/State）
+custom_nes_core/src/ffi/emulator_api.{h,cpp}     现有 C 接口（22 个测试）
 wasm/glue.cpp                    Emscripten 薄壳（只做 ABI 版本自检）
 electron/                        Electron 前端（库/输入/音频/UI）
 ```
@@ -149,7 +149,7 @@ fc_libretro.wasm         wasm  libretro core（side module）-> 自家 Electron 
 fc_core.mjs              （可选保留）旧的单体 wasm，过渡期兜底
 ```
 
-三者同源：`packages/fc-core/src/core` 不变，差异只在适配层与编译方式。
+三者同源：`custom_nes_core/src/core` 不变，差异只在适配层与编译方式。
 
 ### 5.2 前端抽象 `CoreHost`（libretro 语义）
 
@@ -185,7 +185,7 @@ interface CoreHost {
 | 阶段 | 内容 | 产出 | 估时 |
 |---|---|---|---|
 | **L0** | 调研（本文） | 文档 + wasm 实验 | ✅ |
-| **L1** | native 适配层 `fc_libretro.cpp` + `packages/fc-libretro/third_party/libretro/libretro.h` + CMake MODULE target；音频/视频/输入/存档转换 | RetroArch 能加载运行 | ✅ 已完成 |
+| **L1** | native 适配层 `fc_libretro.cpp` + `custom_nes_core/third_party/libretro/libretro.h` + CMake MODULE target；音频/视频/输入/存档转换 | RetroArch 能加载运行 | ✅ 已完成 |
 | **L2** | custom 扩展符号 `fc_libretro_get_ext()`；`Cartridge::prg_ram()`、`NesBus::ram_data()`、电池标志；RAM 型金手指 | 电池存档、内存视图、custom 通道 | ✅ 已完成 |
 | **L3** | Game Genie/PAR 解码 + ROM 补丁钩子 + `SET_MEMORY_MAPS` | 金手指完整、搜索可用 | ✅ 已完成 |
 | **L4** | wasm 加载本 core：采用 **L4a —— 独立 wasm 模块 + JS libretro frontend**（`wasm/libretro.mjs`）。side module 机制对 C core 已验证可行；C++ 运行时对齐问题绕开 | 浏览器/Node 可加载本 core | ✅ 已完成 |
@@ -209,7 +209,7 @@ core 出口。
 ### 6.2 设计：额外导出符号 + 版本化函数指针表
 
 ```c
-/* packages/fc-libretro/src/libretro/fc_libretro_ext.h —— 只有自家 frontend 会读 */
+/* custom_nes_core/src/libretro/fc_libretro_ext.h —— 只有自家 frontend 会读 */
 #define FC_LIBRETRO_EXT_VERSION 1u
 
 typedef struct fc_libretro_ext_v1 {
@@ -532,7 +532,7 @@ mGBA **没有**上游 wasm 构建，EmulatorJS 的预编译产物又是它自己
 - 不把前端功能塞进 core（库/封面/手柄助手/滤镜/音频队列都不进）。
 - 不实现 FDS / UNIF / PAL / 多机种子系统。
 - 本次不写 mGBA 集成代码，只预留 `CoreHost`、系统注册表、custom 扩展。
-- 不删除 `packages/fc-core/src/ffi/emulator_api.h`。
+- 不删除 `custom_nes_core/src/ffi/emulator_api.h`。
 
 ---
 

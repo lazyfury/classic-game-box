@@ -3,7 +3,7 @@
 > 目标：理解汇编语言、机器码、汇编器和反汇编器的关系，
 > 以及一个字节如何同时编码"做什么"和"数据在哪"。
 >
-> 所有输出都来自 `tools/demo_disasm.cpp`，并可由 `packages/fc-core/tests/test_disassembler.cpp` 验证。
+> 所有输出都来自 `tools/demo_disasm.cpp`，并可由 `custom_nes_core/tests/core/test_disassembler.cpp` 验证。
 
 ---
 
@@ -359,7 +359,7 @@ target = 分支地址 + 2 + (有符号)偏移
   $FFFE     $00       0        $0000     next instruction would be $10000 -> $0000
 ```
 
-代码实现（`packages/fc-core/src/core/cpu/disassembler.cpp`）：
+代码实现（`custom_nes_core/src/core/cpu/disassembler.cpp`）：
 
 ```cpp
 u16 branch_target(u16 address, u8 offset) noexcept
@@ -519,10 +519,10 @@ CPU 只知道 12 个——这个差距就是接下来的工作。
 
 | 概念 | 文件 |
 |------|------|
-| 寻址模式定义 + 长度规则 | `packages/fc-core/src/core/cpu/opcode.hpp` |
-| 256 项 opcode 表 | `packages/fc-core/src/core/cpu/opcode.cpp` |
-| 反汇编器 | `packages/fc-core/src/core/cpu/disassembler.{hpp,cpp}` |
-| 结构性与等价性测试 | `packages/fc-core/tests/test_disassembler.cpp` |
+| 寻址模式定义 + 长度规则 | `custom_nes_core/src/core/cpu/opcode.hpp` |
+| 256 项 opcode 表 | `custom_nes_core/src/core/cpu/opcode.cpp` |
+| 反汇编器 | `custom_nes_core/src/core/cpu/disassembler.{hpp,cpp}` |
+| 结构性与等价性测试 | `custom_nes_core/tests/core/test_disassembler.cpp` |
 | 可运行讲解 | `tools/demo_disasm.cpp` |
 | 用反汇编器的 CPU 轨迹 | `tools/demo_cpu.cpp` |
 

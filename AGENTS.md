@@ -1,7 +1,8 @@
 # Classic Game Box — 工作约定（Rust 版）
 
 本仓库正在从 **Electron + WebAssembly + 自研核心** 迁移到 **原生 Rust + igui + libretro**。
-自研 FC 核心的 C++ 源码在 `legacy/`（只作对照，不参与 Rust 构建；其余旧栈已清理）。
+自研 FC 核心的 C++ 源码在 `custom_nes_core/`（单个现代 CMake 项目，`src/`
+布局；不参与 Rust 构建；其余旧栈已清理）。
 权威设计见 [`docs/architecture/quill-native-migration.md`](docs/architecture/quill-native-migration.md)。
 
 UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上游），以 git 依赖固定到
@@ -131,12 +132,12 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 ## 硬规则
 
 1. **产品是 Swift/macOS app，Rust 全是 library。** 顶层只有 `Cargo.toml`（虚拟 workspace）、
-   `crates/`、`cores/`、`scripts/`、`assets/`、`docs/`、`legacy/`、`macos/`。不要往根目录
+   `crates/`、`cores/`、`scripts/`、`assets/`、`docs/`、`custom_nes_core/`、`macos/`。不要往根目录
    丢构建产物或临时文件。
-2. **只做 UI 与 libretro 兼容。** 不实现/移植自研模拟器；它已在 `legacy/`。
+2. **只做 UI 与 libretro 兼容。** 不实现/移植自研模拟器；它已在 `custom_nes_core/`。
    新功能先问「libretro 有没有标准对应」。
 3. **libretro 是唯一对外契约。** 只加载标准 libretro core（`cores/cores.json`
-   里声明的，含 Mesen、mGBA、nestopia 与 legacy 的 `custom_nes_core`）；
+   里声明的，含 Mesen、mGBA、nestopia 与自研的 `custom_nes_core`）；
    不使用 `fc_*` 私有扩展（`custom_nes_core` 会导出该扩展，但被忽略）。
    ABI 头是 `cores/libretro/libretro.h`；**不要整读**（≈8700 行），`rg` 定位再看。
 4. **依赖方向单向**：`crates/cgb-app`（共享逻辑）→ `{cgb-host, cgb-libretro, cgb-audio,
@@ -149,8 +150,9 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
    不得依赖 `web_sys`/`wgpu`/DOM。应用内 `src/ui` 只用 `igui_*` 的公开 API。
 6. **不写截图 / 录屏测试。** 用 `igui_backend_recording` 录 `DrawList` +
    `igui_profile::inspect`，或 core 侧假 frontend 单测。UI 好不好看由人看。
-7. **`legacy/` 只读**：仅保留自研 FC 核心（`packages/fc-core` / `fc-libretro`）
-   作对照与 `custom_nes_core` 的来源；要改需明确要求。
+7. **`custom_nes_core/` 源码只读**：自研 FC 核心的单个 CMake 项目（`src/`
+   布局；产品构建入口是 `cores/custom_nes_core/build.sh`），只在与本仓库
+   的 libretro 契约对照时改动；要改需明确要求。
 8. **不确定就问，不要猜。** 需求模糊、要动公共 API 或路线图时，先停下来问。
 9. **不擅自开工。** 只实现已确认的任务；顺手发现的问题只汇报，不动手。
 
@@ -164,15 +166,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-原生 core 是第三方项目，按需构建（需网络，首次几分钟）：
+原生 core 是第三方项目（外加自研的 custom_nes_core），按需构建（需网络，
+首次几分钟）：
 
 ```bash
-./scripts/build-cores.sh   # → cores/dist/{mesen,mgba}_libretro.dylib
+./scripts/build-cores.sh                    # → cores/dist/*_libretro.dylib
+./cores/custom_nes_core/build.sh            # → cores/dist/custom_nes_core_libretro.dylib
 cargo run -p cgb-app -- --rom /path/to/mario.nes
 cargo run -p cgb-app -- --rom mario.nes --core mesen           # 强制核心
 cargo run -p cgb-app -- --rom mario.nes --core ./mycore_libretro.dylib  # 任意模块
-./scripts/package-macos.sh  # → dist/Classic Game Box.app（含 cores + assets）
-./scripts/release.sh        # gate + selfcheck + 版本戳 + 打包 + zip（dist/…-<版本>.zip）
 cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/icons/render/cores）
 ```
 
@@ -191,7 +193,7 @@ cargo run -p cgb-app -- --selfcheck  # 无头自检（paths/library/settings/ico
 | 核心清单（启动选核） | `cores/cores.json`、`crates/cgb-library/src/cores.rs`、`crates/cgb-app/src/cli.rs` |
 | Swift/macOS host（主要产品：Swift 取代 winit） | `macos/`（Swift 窗口/事件）、`crates/cgb-mac/`（surface + 事件 + `cgb_mac_*` C ABI）、`docs/architecture/swift-macos-host-plan.md` |
 | 窗口/手柄 host 抽象（`winit-host` feature） | `crates/cgb-host/`（`HostWindow` / `GamepadSource`）、`crates/cgb-app/src/app/host.rs`（winit/gilrs 适配）、`crates/cgb-app/src/app/mod.rs`（`App::init` 选源） |
-| 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `legacy/packages/fc-{core,libretro}`（只读） |
+| 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `custom_nes_core/`（只读；`src/` 布局单 CMake 项目） |
 
 ## 已知缺口（先记录，不擅自补）
 

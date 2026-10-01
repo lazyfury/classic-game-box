@@ -41,9 +41,8 @@
 
 # Legacy tree: only the custom FC/NES core sources remain; ignore any in-place
 # CMake build directories.
-/legacy/build/
-/legacy/build-*/
-/legacy/packages/*/build/
+/custom_nes_core/build/
+/custom_nes_core/build-*/
 frames/
 
 # GLideN64 shader cache written into the working directory by the N64 core.

@@ -1,7 +1,7 @@
 # V 标志：有符号溢出 Overflow Flag
 
 > 目标：彻底理解 `V`。这是 6502 中最容易被写错、又最难调试的标志位。
-> **本文所有结论都由 `tools/demo_overflow.cpp` 和 `packages/fc-core/tests/test_alu.cpp` 验证过。**
+> **本文所有结论都由 `tools/demo_overflow.cpp` 和 `custom_nes_core/tests/core/test_alu.cpp` 验证过。**
 
 ---
 
@@ -160,7 +160,7 @@ bool v = ((a ^ result) & (b ^ result) & sign_mask) != 0;
 
 ### 两种规则等价吗？
 
-**`packages/fc-core/tests/test_alu.cpp` 穷举了全部 131072 种输入**（256 × 256 个操作数对 × 2 种 carry-in），
+**`custom_nes_core/tests/core/test_alu.cpp` 穷举了全部 131072 种输入**（256 × 256 个操作数对 × 2 种 carry-in），
 断言"程序员规则"与"硬件逐位进位规则"结果完全一致。**它们永远相等。**
 
 ---
@@ -336,12 +336,12 @@ V = ~(a ^ b) & (a ^ result) & 0x80
 
 | 概念 | 代码位置 |
 |------|---------|
-| 程序员规则 | `packages/fc-core/src/core/alu.hpp` `signed_overflow_rule()` |
-| 硬件规则 | `packages/fc-core/src/core/alu.hpp` `trace_add()` + `signed_overflow_from_carries()` |
-| Carry / V / N / Z | `packages/fc-core/src/core/alu.hpp` `AddResult` |
-| SBC 复用加法器 | `packages/fc-core/src/core/alu.hpp` `subtract()` |
-| 穷举等价性证明 | `packages/fc-core/tests/test_alu.cpp` `ProgrammerRuleEqualsHardwareRule` |
-| 与宽整数真值对比 | `packages/fc-core/tests/test_alu.cpp` `MatchesPlainIntegerArithmetic` |
+| 程序员规则 | `custom_nes_core/src/core/alu.hpp` `signed_overflow_rule()` |
+| 硬件规则 | `custom_nes_core/src/core/alu.hpp` `trace_add()` + `signed_overflow_from_carries()` |
+| Carry / V / N / Z | `custom_nes_core/src/core/alu.hpp` `AddResult` |
+| SBC 复用加法器 | `custom_nes_core/src/core/alu.hpp` `subtract()` |
+| 穷举等价性证明 | `custom_nes_core/tests/core/test_alu.cpp` `ProgrammerRuleEqualsHardwareRule` |
+| 与宽整数真值对比 | `custom_nes_core/tests/core/test_alu.cpp` `MatchesPlainIntegerArithmetic` |
 | 可运行讲解 | `tools/demo_overflow.cpp` |
 
 ```bash

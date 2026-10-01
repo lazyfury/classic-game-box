@@ -37,7 +37,7 @@ cores/<name>/build.sh         每个核心的原生构建（产出到 cores/dist
 macos/                        Swift app（主要产品）：SwiftPM 包（窗口/CAMetalLayer/事件/手柄）
 ```
 
-**禁读**：`target/`、`legacy/`（除非查历史决策）、`cores/sources/`、`cores/dist/`、
+**禁读**：`target/`、`custom_nes_core/src/`（除非查历史决策或对照）、`cores/sources/`、`cores/dist/`、
 `Cargo.lock`、`cores/libretro/libretro.h` 的正文（`rg` 定位再看）。
 igui 的源码可看相邻 `../igui/crates/`，只读需要的模块。
 

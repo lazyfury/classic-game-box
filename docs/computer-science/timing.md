@@ -3,7 +3,7 @@
 > 目标：理解为什么模拟器的"周期数"不是性能指标，而是**正确性**指标。
 >
 > 本文输出都来自 `tools/demo_instructions.cpp` 第 7 节，
-> 并可由 `packages/fc-core/tests/test_cycles.cpp` 验证。
+> 并可由 `custom_nes_core/tests/core/test_cycles.cpp` 验证。
 
 ---
 
@@ -42,7 +42,7 @@ wait: BIT $2002
 记录在数据手册里。
 
 ```
-packages/fc-core/src/core/cpu/opcode.cpp
+custom_nes_core/src/core/cpu/opcode.cpp
 
 constexpr u8 kCycleTable[256] = {
     // 0x0_   BRK  ORA  ---  ---  ---  ORA  ASL  ---  PHP  ORA  ASL  ---  ---  ORA  ASL  ---
@@ -323,11 +323,11 @@ AGENTS.md 把 "cycle accurate" 列为 Phase 1 的完成标准。当前的实现�
 
 | 概念 | 文件 |
 |------|------|
-| 256 项周期数据表 | `packages/fc-core/src/core/cpu/opcode.cpp` `kCycleTable` |
-| 跨页惩罚判定 | `packages/fc-core/src/core/cpu/opcode.hpp` `pays_page_penalty()` |
-| 周期累加 | `packages/fc-core/src/core/cpu/cpu.cpp` `cycle_cost()` |
-| 分支惩罚 | `packages/fc-core/src/core/cpu/cpu.cpp` `branch()` |
-| 测试 | `packages/fc-core/tests/test_cycles.cpp` |
+| 256 项周期数据表 | `custom_nes_core/src/core/cpu/opcode.cpp` `kCycleTable` |
+| 跨页惩罚判定 | `custom_nes_core/src/core/cpu/opcode.hpp` `pays_page_penalty()` |
+| 周期累加 | `custom_nes_core/src/core/cpu/cpu.cpp` `cycle_cost()` |
+| 分支惩罚 | `custom_nes_core/src/core/cpu/cpu.cpp` `branch()` |
+| 测试 | `custom_nes_core/tests/core/test_cycles.cpp` |
 | 可运行讲解 | `tools/demo_instructions.cpp` 第 7 节 |
 
 ```bash

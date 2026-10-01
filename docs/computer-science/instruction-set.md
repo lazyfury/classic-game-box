@@ -3,7 +3,7 @@
 > 目标：理解剩下 14 个操作的语义，尤其是 ALU 的标志位、栈协议、子程序的不对称性，
 > 以及中断机制。
 >
-> 本文输出都来自 `tools/demo_instructions.cpp`，并可由 `packages/fc-core/tests/test_instruction_set.cpp` 验证。
+> 本文输出都来自 `tools/demo_instructions.cpp`，并可由 `custom_nes_core/tests/core/test_instruction_set.cpp` 验证。
 
 ---
 
@@ -68,7 +68,7 @@ ADC   A = A + M + C
 
 两者独立，完整推导见 [overflow-flag.md](overflow-flag.md)。
 
-实现（`packages/fc-core/src/core/cpu/cpu.cpp`）：
+实现（`custom_nes_core/src/core/cpu/cpu.cpp`）：
 
 ```cpp
 case Operation::ADC: {
@@ -476,10 +476,10 @@ TEST(InstructionSet, InterruptIsTakenBetweenInstructionsNotInsideOne)
 
 | 概念 | 文件 |
 |------|------|
-| 56 个 Operation 枚举 | `packages/fc-core/src/core/cpu/opcode.hpp` |
-| ADC / SBC / 逻辑 / 栈 / 子程序 / 中断 | `packages/fc-core/src/core/cpu/cpu.cpp` |
-| 加法器与 C/V | `packages/fc-core/src/core/alu.hpp` |
-| 指令语义测试 | `packages/fc-core/tests/test_instruction_set.cpp` |
+| 56 个 Operation 枚举 | `custom_nes_core/src/core/cpu/opcode.hpp` |
+| ADC / SBC / 逻辑 / 栈 / 子程序 / 中断 | `custom_nes_core/src/core/cpu/cpu.cpp` |
+| 加法器与 C/V | `custom_nes_core/src/core/alu.hpp` |
+| 指令语义测试 | `custom_nes_core/tests/core/test_instruction_set.cpp` |
 | 可运行讲解 | `tools/demo_instructions.cpp` |
 
 ```bash
