@@ -158,13 +158,22 @@ fn library_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBrid
         None => Text::small("还没有游戏库，选一个文件夹作为游戏库。", theme).tone(Tone::Muted),
     };
     let switch = actions.clone();
+    let organize = actions.clone();
     Card::new(theme)
         .gap(space::SM)
         .padding(Edges::all(space::SM))
         .child(current)
         .child(
-            Button::secondary("切换游戏库…", theme)
-                .on_click(move |_tree, _id| switch.push(Action::SwitchLibrary)),
+            Row::new()
+                .gap(space::SM)
+                .child(
+                    Button::secondary("切换游戏库…", theme)
+                        .on_click(move |_tree, _id| switch.push(Action::SwitchLibrary)),
+                )
+                .child(
+                    Button::ghost("按机种整理 ROM", theme)
+                        .on_click(move |_tree, _id| organize.push(Action::OrganizeBySystem)),
+                ),
         )
 }
 

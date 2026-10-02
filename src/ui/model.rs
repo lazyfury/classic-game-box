@@ -711,6 +711,8 @@ pub enum Action {
     SwitchLibrary,
     /// Rescan the library folders and reconcile the database.
     RescanLibrary,
+    /// Move every game into a per-console folder under the library.
+    OrganizeBySystem,
     /// Filter the library to one console, or `None` for all of them.
     FilterSystem(Option<SystemId>),
     /// Fold or unfold the "missing core" card.

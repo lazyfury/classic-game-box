@@ -264,6 +264,7 @@ impl super::App {
                 Action::AddGames => self.add_games_dialog(),
                 Action::SwitchLibrary => self.switch_library(),
                 Action::RescanLibrary => self.rescan_library(),
+                Action::OrganizeBySystem => self.organize_by_system(),
                 Action::FilterSystem(system) => {
                     self.model.system_filter = system;
                     self.rebuild_game_rows();

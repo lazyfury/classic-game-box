@@ -18,7 +18,7 @@ pub use db::{
     SaveKind, Screenshot,
 };
 pub use error::LibraryError;
-pub use import::{import_roms, ImportReport};
+pub use import::{import_roms, move_into, ImportReport};
 pub use png_codec::{decode_png, encode_png};
 pub use saves::{
     compact_quick, exists, list_quick_slots, list_slots, read, remove, remove_legacy_quick,

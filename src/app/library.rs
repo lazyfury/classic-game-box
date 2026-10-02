@@ -39,6 +39,38 @@ impl super::App {
         self.reload_library();
     }
 
+    /// Move every game into `<library>/roms/<system>/`, keeping its file name.
+    /// The rescan after the move matches by file name, so identity, metadata and
+    /// save/screenshot files all survive. A manual settings action.
+    pub(super) fn organize_by_system(&mut self) {
+        let root = self.paths.root.clone();
+        let mut moved = 0;
+        let mut failed = 0;
+        for game in &self.game_source {
+            let source = PathBuf::from(&game.path);
+            if !source.starts_with(&root) || !source.is_file() {
+                continue;
+            }
+            let target_dir = self.paths.roms.join(game.system.key());
+            match crate::library::move_into(&target_dir, &source) {
+                Ok(target) if target != source => moved += 1,
+                Ok(_) => {}
+                Err(_) => failed += 1,
+            }
+        }
+        self.rescan_library();
+        let suffix = if failed > 0 {
+            format!("，{failed} 个失败")
+        } else {
+            String::new()
+        };
+        self.model.set_status(
+            format!("已按机种整理 {moved} 个游戏{suffix}"),
+            StatusKind::Info,
+        );
+        self.dirty = true;
+    }
+
     /// Rebuild the view from the database without rescanning the ROM folders.
     ///
     /// Screenshot and cover changes only touch the database and the files under

@@ -109,6 +109,22 @@ fn free_name(dir: &Path, name: &std::ffi::OsStr) -> PathBuf {
     }
 }
 
+/// Move `source` into `dir`, keeping its file name unless that name is already
+/// taken (then `stem (2).ext`…). Returns the file's path afterwards, which is
+/// `source` itself when it is already where it belongs. Used by "organise by
+/// console".
+pub fn move_into(dir: &Path, source: &Path) -> std::io::Result<PathBuf> {
+    let name = source.file_name().unwrap_or_default();
+    let direct = dir.join(name);
+    if direct == source {
+        return Ok(source.to_path_buf());
+    }
+    std::fs::create_dir_all(dir)?;
+    let target = free_name(dir, name);
+    std::fs::rename(source, &target)?;
+    Ok(target)
+}
+
 /// True when `candidate` is `root` itself or something inside it.
 ///
 /// Both sides are canonicalized first so `..` is collapsed *before* the
@@ -153,6 +169,23 @@ mod tests {
         assert_eq!(report.copied_count(), 1);
         assert!(library.join("mario.nes").is_file(), "copied in");
         assert!(source.is_file(), "the source is left where it was");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn move_into_relocates_and_keeps_the_name_when_free() {
+        let root = temp_dir("move");
+        let source = root.join("mario.nes");
+        write(&source, b"rom");
+        let target_dir = root.join("roms/nes");
+
+        let moved = move_into(&target_dir, &source).unwrap();
+        assert_eq!(moved, target_dir.join("mario.nes"));
+        assert!(moved.is_file());
+        assert!(!source.exists(), "the original is moved, not copied");
+
+        // Already in place: a no-op.
+        assert_eq!(move_into(&target_dir, &moved).unwrap(), moved);
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -363,25 +363,43 @@ impl Library {
     /// A key already known keeps its name, pin, play statistics, screenshots,
     /// saves and cover; only the file name, size and modification time are
     /// refreshed. A key that appeared is inserted with its display name taken
-    /// from the file stem.
+    /// from the file stem — unless a row whose file is gone has the **same file
+    /// name**, in which case it is that file *moved*: the row keeps its id,
+    /// metadata and files and just gets the new key. Reorganising the folders
+    /// therefore loses nothing.
     ///
     /// Deletion is **non-destructive**: a row is forgotten only when its file is
-    /// provably gone (its directory exists but the file does not). A key whose
-    /// directory is missing is kept — the library may simply not be mounted
-    /// here, or the row may have been written by another OS.
+    /// provably gone (its directory exists but the file does not) and it was not
+    /// matched to a move. A row whose directory is missing is kept.
     ///
     /// Returns how many rows were removed.
     pub fn sync(&self, found: &[DiskGame]) -> Result<usize, LibraryError> {
         let mut conn = self.conn.borrow_mut();
-        let known: HashSet<String> = games::table
-            .select(games::key)
-            .load::<String>(&mut *conn)?
+        // Stored keys with their file name (for move matching).
+        let stored: HashMap<String, String> = games::table
+            .select((games::key, games::file_name))
+            .load::<(String, String)>(&mut *conn)?
             .into_iter()
             .collect();
+        let scanned: HashSet<String> = found.iter().map(|game| self.key(&game.path)).collect();
+
+        // Rows whose key is no longer scanned, grouped by file name: a scanned
+        // file with one of these names is a move, not a new game.
+        let mut gone_by_name: HashMap<String, Vec<String>> = HashMap::new();
+        for (key, name) in &stored {
+            if !scanned.contains(key) {
+                gone_by_name
+                    .entry(name.clone())
+                    .or_default()
+                    .push(key.clone());
+            }
+        }
+
         let now = now_millis();
+        let mut rekeyed: HashSet<String> = HashSet::new();
         for game in found {
             let key = self.key(&game.path);
-            if known.contains(&key) {
+            if stored.contains_key(&key) {
                 diesel::update(games::table.filter(games::key.eq(&key)))
                     .set((
                         games::file_name.eq(&game.file_name),
@@ -389,6 +407,22 @@ impl Library {
                         games::mtime_ms.eq(game.mtime_ms),
                     ))
                     .execute(&mut *conn)?;
+                continue;
+            }
+            // A unique gone row with the same file name is this file moved.
+            let moved_from = gone_by_name
+                .get_mut(&game.file_name)
+                .and_then(|keys| (keys.len() == 1).then(|| keys.remove(0)));
+            if let Some(old_key) = moved_from {
+                diesel::update(games::table.filter(games::key.eq(&old_key)))
+                    .set((
+                        games::key.eq(&key),
+                        games::file_name.eq(&game.file_name),
+                        games::size.eq(game.size as i64),
+                        games::mtime_ms.eq(game.mtime_ms),
+                    ))
+                    .execute(&mut *conn)?;
+                rekeyed.insert(old_key);
             } else {
                 diesel::insert_into(games::table)
                     .values((
@@ -404,17 +438,15 @@ impl Library {
             }
         }
 
-        let keep: HashSet<String> = found.iter().map(|game| self.key(&game.path)).collect();
-        let stored: Vec<String> = games::table.select(games::key).load(&mut *conn)?;
         let mut removed = 0;
-        for key in stored {
-            if keep.contains(&key) {
+        for key in stored.keys() {
+            if scanned.contains(key) || rekeyed.contains(key) {
                 continue;
             }
-            let file = PathBuf::from(resolve_against(&self.root, &key));
+            let file = PathBuf::from(resolve_against(&self.root, key));
             let gone = file.parent().is_some_and(|dir| dir.exists()) && !file.exists();
             if gone {
-                self.remove_key(&mut conn, &key)?;
+                self.remove_key(&mut conn, key)?;
                 removed += 1;
             }
         }
@@ -1271,6 +1303,37 @@ mod tests {
         assert!(game.pinned, "the pin survives");
         assert_eq!(game.size, 4096, "the size is refreshed");
         assert_eq!(game.mtime_ms, 42, "the mtime is refreshed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_moved_file_keeps_its_identity_metadata_and_files() {
+        let root = temp_dir("move");
+        std::fs::create_dir_all(root.join("roms")).unwrap();
+        std::fs::write(root.join("roms/mario.nes"), b"x").unwrap();
+        let library = open_library(&root);
+        library.sync(&scan_dir(root.join("roms"))).unwrap();
+        let original = root.join("roms/mario.nes").to_string_lossy().into_owned();
+        library.rename(&original, "马里奥").unwrap();
+        library.set_pinned(&original, true).unwrap();
+
+        // Reorganise: roms/mario.nes -> roms/nes/mario.nes (same file name).
+        std::fs::create_dir_all(root.join("roms/nes")).unwrap();
+        std::fs::rename(root.join("roms/mario.nes"), root.join("roms/nes/mario.nes")).unwrap();
+        let removed = library.sync(&scan_dir(root.join("roms"))).unwrap();
+        assert_eq!(removed, 0, "a move is not a deletion");
+
+        let games = library.games().unwrap();
+        assert_eq!(games.len(), 1);
+        assert_eq!(
+            games[0].name, "马里奥",
+            "the display name survives the move"
+        );
+        assert!(games[0].pinned, "the pin survives");
+        assert_eq!(
+            games[0].path,
+            root.join("roms/nes/mario.nes").to_string_lossy()
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
