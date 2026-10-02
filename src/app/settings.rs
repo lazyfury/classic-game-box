@@ -177,6 +177,10 @@ impl super::App {
             })
             .collect();
         self.rebuild_catalog();
+        // The "missing core" card tracks the available cores and the library,
+        // so refresh it here: this runs at startup, on a rescan and after a
+        // download — the card no longer waits for a core to be fetched.
+        self.rebuild_missing_cores();
         self.dirty = true;
     }
 

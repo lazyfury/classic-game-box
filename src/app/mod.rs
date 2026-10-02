@@ -365,6 +365,12 @@ impl App {
         if let Some(dir) = args.library_dir.clone() {
             paths = Paths::new(paths.user_data.clone(), Some(dir));
         }
+        Self::with_paths(paths, args, forced_library)
+    }
+
+    /// Build the app over an explicit [`Paths`]. [`App::new`] derives them from
+    /// the CLI args; tests inject a temp root instead.
+    fn with_paths(paths: Paths, args: Args, forced_library: bool) -> Self {
         let _ = paths.ensure();
         // The rolling quick stack replaced the old single quick slot (`state0`
         // -> `stateqN`); drop the unreachable leftovers. Manual slots are

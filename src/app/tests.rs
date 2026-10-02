@@ -308,3 +308,26 @@ fn missing_core_rows_lists_consoles_without_an_available_core() {
         ]
     );
 }
+
+/// The "missing core" card used to appear only after a core download: a
+/// refactor dropped the `rebuild_missing_cores()` call from the rescan path.
+/// `rebuild_settings_view` runs at startup and on every rescan, so the card is
+/// current as soon as games are loaded.
+#[test]
+fn rebuild_settings_view_refreshes_the_missing_core_card() {
+    let root = std::env::temp_dir().join(format!("cgb-missing-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let mut app = App::with_paths(Paths::under(&root), Args::default(), false);
+    // A NES game with no available core (the release ships none) must show up
+    // immediately, without waiting for a download.
+    app.cores.clear();
+    app.game_source = vec![db_game("mario", 1, false)];
+    app.model.missing_cores.clear();
+    app.rebuild_settings_view();
+    assert_eq!(
+        app.model.missing_cores.first().map(|row| row.system),
+        Some(SystemId::Nes),
+        "rebuild_settings_view refreshes the missing-core list"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
