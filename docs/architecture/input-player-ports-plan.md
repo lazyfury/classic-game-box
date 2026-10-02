@@ -97,6 +97,6 @@
 ## 阶段
 
 - **P1**：`cgb-libretro` N 端口 + 键盘双模式；app `InputBindings` + settings。
-- **P2**：`gilrs` 评估 spike → 设为非 macOS 默认；macOS 判断逻辑。
+- **P2 完成**：`gilrs` 已设为**非 macOS 默认**（`src/app/gamepads.rs`，`App::init` 的 `cfg!(target_os = "macos")` 判断逻辑：macOS 用 host 的 `GameController`，其余用 `gilrs`）。
 - **P3**：play view 的分配 UI（认领 + 手动选择）+ 设置页重映射。
 - **P4**（之后）：netplay（lockstep → rollback）。

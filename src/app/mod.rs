@@ -44,6 +44,7 @@ use crate::session::Session;
 
 mod cheats;
 mod cores;
+mod gamepads;
 mod helpers;
 mod input;
 mod library;
@@ -560,9 +561,18 @@ impl AppLogic for App {
         if let Some(window) = ctx.service::<SharedHostWindow>() {
             self.window = Some(window.clone());
         }
-        // A host that owns its gamepad API publishes its source.
-        if let Some(gamepad) = ctx.service::<SharedGamepad>() {
-            self.gamepads = Some(gamepad.clone());
+        // Gamepads: macOS uses the host's `GameController` source (`gilrs`
+        // mislabels Xbox pads over Bluetooth there); everywhere else `gilrs` is
+        // the default and the host's source is ignored.
+        let host_gamepad = ctx.service::<SharedGamepad>().cloned();
+        if cfg!(target_os = "macos") {
+            self.gamepads = host_gamepad;
+        } else {
+            let gilrs: Option<SharedGamepad> = gamepads::GilrsGamepads::new().map(|gilrs| {
+                let source: SharedGamepad = Rc::new(RefCell::new(gilrs));
+                source
+            });
+            self.gamepads = gilrs.or(host_gamepad);
         }
         if let Some(measurer) = ctx.service::<Rc<dyn TextMeasurer>>() {
             self.measurer = Some(measurer.clone());

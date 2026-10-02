@@ -45,6 +45,9 @@ zip.workspace = true
 # Emulator-facing devices the app owns (src/audio, src/host):
 cpal.workspace = true
 ringbuf.workspace = true
+# Gamepads: the default backend on non-macOS (macOS uses the Swift host's
+# `GameController` source, which maps Bluetooth Xbox pads correctly).
+gilrs = { workspace = true }
 
 # Game library (src/library/) and file layout (src/paths.rs):
 diesel.workspace = true
@@ -98,6 +101,8 @@ windows = { version = "0.58", default-features = false }
 cc = "1"
 cpal = "0.15"
 ringbuf = "0.4"
+# Gamepad backend for non-macOS hosts (Linux evdev, Windows WGI/XInput).
+gilrs = "0.11"
 # The library ORM. `libsqlite3-sys` with `bundled` compiles SQLite from source
 # (diesel's `sqlite` feature links it but does not bundle it), so the Windows
 # cross-build needs no system SQLite.
