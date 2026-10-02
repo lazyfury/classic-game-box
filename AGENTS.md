@@ -51,11 +51,11 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 - **性能**：DrawList 复用（运行游戏不重排重绘）+ 图标纹理化 + 库网格可见行虚拟化；
   `CGB_PERF=1` 打点。
 - **Q5 打包**：`macos/scripts/package.sh` 出 macOS `.app`（Rust release 静态库 + Swift
-  release，assets 入 Resources，ad-hoc 签名）；GitHub Actions 在 `release-*` / `beta-*`
-  tag 上先跑 `./scripts/dev.sh` gate 再打包发 Release（`.github/workflows/release.yml`），
-  **默认不带核**（随包只有 `cores.json`，核心运行时从 libretro buildbot 下载；
-  `freej2me_plus` / `custom_nes_core` buildbot 没有，需自行编译，见 `cores/README.md`），
-  push/PR 跑 gate（`.github/workflows/ci.yml`）；`--selfcheck` 无头自检。
+  release，assets 入 Resources，ad-hoc 签名），**本地打包 / 发版**（`ditto` 压 zip +
+  `gh release create`）；**默认不带核**（随包只有 `cores.json`，核心运行时从 libretro
+  buildbot 下载；`freej2me_plus` / `custom_nes_core` buildbot 没有，需自行编译，见
+  `cores/README.md`）。`.github/workflows/release.yml` 只是**手动触发**的可选构建（免费
+  账户省 Actions 用量，不用 tag/push 自动触发）；`--selfcheck` 无头自检。
 - **Q6 定制**：输入能力对齐（16 键 + 模拟轴 + capabilities + 按机种绑定 + core descriptors）；
   即时存档（按 core 隔离 + 缩略图）：**快速存档是 3 档 LIFO 轮转**（`fast01` 最新，
   存档时旧的依次下移、超出 3 档丢最旧，避免死档；`Library::{roll_quick,compact_quick}`，

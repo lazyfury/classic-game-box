@@ -80,6 +80,16 @@ macos/scripts/run.sh          # 开库界面
 macos/scripts/package.sh      # → dist/Classic Game Box (Swift).app
 ```
 
+**打包和发版都在本地做**（仓库不用 Actions 跑常规 CI）。app 不带核心，要发版就本地压 zip 再手动发布：
+
+```bash
+macos/scripts/package.sh
+ditto -c -k --keepParent "dist/Classic Game Box (Swift).app" "dist/ClassicGameBox-0.2.1.zip"
+gh release create beta-0.2.1 dist/ClassicGameBox-0.2.1.zip --prerelease
+```
+
+`.github/workflows/release.yml` 只是**手动触发**的可选构建，不挂 tag/push 自动触发。
+
 计划与剩余缺口见 [`docs/architecture/swift-macos-host-plan.md`](docs/architecture/swift-macos-host-plan.md)。
 
 ## 自研 FC 核心（custom_nes_core）

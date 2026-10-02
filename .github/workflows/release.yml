@@ -1,32 +1,29 @@
-# Build the macOS `.app` from a git tag and attach it to a GitHub Release.
+# Manual-only macOS build. **Not** triggered by tags or pushes: releases are
+# built and tested locally, so nothing here runs unless someone presses
+# "Run workflow" in the Actions tab.
 #
-#   release-*  -> a normal Release
-#   beta-*     -> a pre-release
+# The local flow:
 #
-# No cores are bundled: the app ships the full `cores/cores.json` and downloads
-# a core from the libretro buildbot on demand (settings page -> 下载核心, or the
-# library page's "缺少核心" card). The one exception is J2ME (`freej2me_plus`),
-# which has no buildbot build — it must be compiled from source, see
-# `cores/README.md`. `macos/scripts/package.sh` bundles whatever is in
-# `cores/dist`; a manual `workflow_dispatch` run can build a set into it first.
+#   macos/scripts/package.sh
+#   ditto -c -k --keepParent "dist/Classic Game Box (Swift).app" "dist/ClassicGameBox-<version>.zip"
+#   gh release create <tag> dist/ClassicGameBox-<version>.zip
 #
-# `macos/scripts/package.sh` does the assembly: the Rust host as a static lib
-# linked into the Swift binary, then assets under `Contents/Resources`, ad-hoc
-# codesigned. The app is **not notarized**, so a downloaded copy is quarantined
-# by Gatekeeper: testers may need right-click -> Open, or
+# This workflow is an optional convenience for building the `.app` on a clean
+# runner. It bundles **no cores**: the app ships the full `cores/cores.json`
+# and downloads a core from the libretro buildbot on demand. J2ME
+# (`freej2me_plus`) has no buildbot build and must be compiled from source —
+# see `cores/README.md`. `macos/scripts/package.sh` bundles whatever is in
+# `cores/dist`; build a set there first if you want one in the bundle.
+#
+# The app is **not notarized** (ad-hoc codesigned), so a downloaded copy is
+# quarantined by Gatekeeper: right-click -> Open, or
 # `xattr -dr com.apple.quarantine "Classic Game Box (Swift).app"`.
 #
-# Must run on an **arm64** macOS runner: the shipped app is arm64 only.
+# Must run on an **arm64** macOS runner: the app is arm64 only.
 
 name: release
 
 on:
-  push:
-    tags:
-      - 'release-*'
-      - 'beta-*'
-  # A dry run from the Actions tab (tags only publish a Release; a manual run
-  # just uploads the workflow artifact).
   workflow_dispatch:
 
 permissions:
@@ -66,7 +63,7 @@ jobs:
       - name: Package the app
         run: macos/scripts/package.sh
 
-      - name: Stamp the tag version
+      - name: Stamp a tag version
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
