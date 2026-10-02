@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "Input.h"
-#include "cgb_win.h"
+#include "cgb_host.h"
 
 namespace {
 
@@ -37,7 +37,7 @@ WinWindow::~WinWindow() {
         // The wgpu surface borrows the HWND, so the Rust app must be torn down
         // while the window still exists. `DestroyWindow` runs in `WndProc`'s
         // WM_CLOSE, before `hwnd_` is released.
-        cgb_win_destroy(app_);
+        cgb_host_destroy(app_);
         app_ = nullptr;
     }
     if (hwnd_) {
@@ -126,7 +126,7 @@ bool WinWindow::StartApp() {
 
     std::string library = cgbinput::ToUtf8(options_.libraryDir);
     std::string rom = cgbinput::ToUtf8(options_.rom);
-    app_ = cgb_win_start(reinterpret_cast<void*>(hwnd_), physicalWidth, physicalHeight, Scale(),
+    app_ = cgb_host_start(reinterpret_cast<void*>(hwnd_), physicalWidth, physicalHeight, Scale(),
                          library.empty() ? nullptr : library.c_str(),
                          rom.empty() ? nullptr : rom.c_str());
     if (!app_) {
@@ -143,11 +143,11 @@ void WinWindow::RunFrame() {
     }
     ApplyResizeIfNeeded();
     gamepads_.Poll(app_);
-    cgb_win_frame(app_);
+    cgb_host_frame(app_);
     SyncCursor();
     SyncFullscreen();
     SyncImeCaret();
-    continuous_ = cgb_win_needs_frame(app_);
+    continuous_ = cgb_host_needs_frame(app_);
 }
 
 void WinWindow::ApplyResizeIfNeeded() {
@@ -161,14 +161,14 @@ void WinWindow::ApplyResizeIfNeeded() {
     LONG height = client.bottom - client.top;
     uint32_t physicalWidth = static_cast<uint32_t>(width > 0 ? width : 1);
     uint32_t physicalHeight = static_cast<uint32_t>(height > 0 ? height : 1);
-    cgb_win_resize(app_, physicalWidth, physicalHeight, Scale());
+    cgb_host_resize(app_, physicalWidth, physicalHeight, Scale());
 }
 
 void WinWindow::SyncFullscreen() {
     if (!app_) {
         return;
     }
-    int request = cgb_win_take_fullscreen(app_);
+    int request = cgb_host_take_fullscreen(app_);
     if (request == 1 && !fullscreen_) {
         SetFullscreen(true);
     } else if (request == 0 && fullscreen_) {
@@ -206,7 +206,7 @@ void WinWindow::SyncCursor() {
     if (!app_) {
         return;
     }
-    uint32_t code = cgb_win_cursor(app_);
+    uint32_t code = cgb_host_cursor(app_);
     if (code != lastCursor_) {
         lastCursor_ = code;
         SetCursor(CursorFor(code));
@@ -218,7 +218,7 @@ void WinWindow::SyncImeCaret() {
         return;
     }
     float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
-    if (!cgb_win_caret(app_, &x, &y, &w, &h)) {
+    if (!cgb_host_caret(app_, &x, &y, &w, &h)) {
         return;
     }
     HIMC context = ImmGetContext(hwnd_);
@@ -266,7 +266,7 @@ void WinWindow::HandleChar(wchar_t c) {
     }
     std::string utf8 = cgbinput::ToUtf8(text);
     if (!utf8.empty()) {
-        cgb_win_text(app_, utf8.c_str());
+        cgb_host_text(app_, utf8.c_str());
     }
 }
 
@@ -278,7 +278,7 @@ void WinWindow::HandleIme(UINT msg, WPARAM /*wParam*/, LPARAM lParam) {
     switch (msg) {
         case WM_IME_STARTCOMPOSITION:
             composing_ = true;
-            cgb_win_ime(app_, 0, nullptr, -1, -1);
+            cgb_host_ime(app_, 0, nullptr, -1, -1);
             break;
         case WM_IME_COMPOSITION: {
             if (!context) {
@@ -291,7 +291,7 @@ void WinWindow::HandleIme(UINT msg, WPARAM /*wParam*/, LPARAM lParam) {
                     ImmGetCompositionStringW(context, GCS_RESULTSTR, text.data(),
                                              static_cast<DWORD>(bytes));
                     std::string utf8 = cgbinput::ToUtf8(text);
-                    cgb_win_ime(app_, 3, utf8.c_str(), -1, -1);
+                    cgb_host_ime(app_, 3, utf8.c_str(), -1, -1);
                 }
                 composing_ = false;
             }
@@ -305,14 +305,14 @@ void WinWindow::HandleIme(UINT msg, WPARAM /*wParam*/, LPARAM lParam) {
                 }
                 std::string utf8 = cgbinput::ToUtf8(text);
                 composing_ = !utf8.empty();
-                cgb_win_ime(app_, 2, utf8.c_str(), static_cast<int32_t>(utf8.size()),
+                cgb_host_ime(app_, 2, utf8.c_str(), static_cast<int32_t>(utf8.size()),
                             static_cast<int32_t>(utf8.size()));
             }
             break;
         }
         case WM_IME_ENDCOMPOSITION:
             composing_ = false;
-            cgb_win_ime(app_, 1, nullptr, -1, -1);
+            cgb_host_ime(app_, 1, nullptr, -1, -1);
             break;
         default:
             break;
@@ -421,13 +421,13 @@ LRESULT WinWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 }
                 float x = 0.0f, y = 0.0f;
                 cgbinput::ClientToLogical(lParam, Scale(), &x, &y);
-                cgb_win_pointer_move(app_, x, y);
+                cgb_host_pointer_move(app_, x, y);
             }
             return 0;
         case WM_MOUSELEAVE:
             trackingLeave_ = false;
             if (app_) {
-                cgb_win_pointer_leave(app_);
+                cgb_host_pointer_leave(app_);
             }
             return 0;
         case WM_LBUTTONDOWN:
@@ -446,7 +446,7 @@ LRESULT WinWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                         : 1u;
                 float x = 0.0f, y = 0.0f;
                 cgbinput::ClientToLogical(lParam, Scale(), &x, &y);
-                cgb_win_pointer_down(app_, x, y, button, clickCount);
+                cgb_host_pointer_down(app_, x, y, button, clickCount);
             }
             return 0;
         case WM_LBUTTONUP:
@@ -456,7 +456,7 @@ LRESULT WinWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 uint32_t button = (msg == WM_RBUTTONUP) ? 1u : (msg == WM_MBUTTONUP) ? 2u : 0u;
                 float x = 0.0f, y = 0.0f;
                 cgbinput::ClientToLogical(lParam, Scale(), &x, &y);
-                cgb_win_pointer_up(app_, x, y, button);
+                cgb_host_pointer_up(app_, x, y, button);
             }
             return 0;
         case WM_MOUSEWHEEL:
@@ -470,9 +470,9 @@ LRESULT WinWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 float notches =
                     static_cast<float>(GET_WHEEL_DELTA_WPARAM(wParam)) / static_cast<float>(WHEEL_DELTA);
                 if (msg == WM_MOUSEWHEEL) {
-                    cgb_win_scroll(app_, x, y, 0.0f, -notches * kWheelStep);
+                    cgb_host_scroll(app_, x, y, 0.0f, -notches * kWheelStep);
                 } else {
-                    cgb_win_scroll(app_, x, y, notches * kWheelStep, 0.0f);
+                    cgb_host_scroll(app_, x, y, notches * kWheelStep, 0.0f);
                 }
             }
             return 0;
@@ -480,7 +480,7 @@ LRESULT WinWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_SYSKEYDOWN:
             if (app_ && !composing_) {
                 std::string characters = cgbinput::KeyChar(static_cast<UINT>(wParam), lParam);
-                cgb_win_key_down(app_, static_cast<uint32_t>(wParam),
+                cgb_host_key_down(app_, static_cast<uint32_t>(wParam),
                                  characters.empty() ? nullptr : characters.c_str(),
                                  cgbinput::ModifierBits());
             }
@@ -489,7 +489,7 @@ LRESULT WinWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_SYSKEYUP:
             if (app_ && !composing_) {
                 std::string characters = cgbinput::KeyChar(static_cast<UINT>(wParam), lParam);
-                cgb_win_key_up(app_, static_cast<uint32_t>(wParam),
+                cgb_host_key_up(app_, static_cast<uint32_t>(wParam),
                                characters.empty() ? nullptr : characters.c_str());
             }
             return 0;
@@ -517,7 +517,7 @@ LRESULT WinWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     DragQueryFileW(drop, i, path.data(), length + 1);
                     std::string utf8 = cgbinput::ToUtf8(path);
                     if (!utf8.empty()) {
-                        cgb_win_dropped_file(app_, utf8.c_str());
+                        cgb_host_dropped_file(app_, utf8.c_str());
                     }
                 }
                 DragFinish(drop);
@@ -529,7 +529,7 @@ LRESULT WinWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             // surface) while the window is still alive — the same ordering the
             // macOS host uses in `applicationWillTerminate`.
             if (app_) {
-                cgb_win_destroy(app_);
+                cgb_host_destroy(app_);
                 app_ = nullptr;
             }
             DestroyWindow(hwnd);

@@ -14,7 +14,7 @@
 #include "Gamepads.h"
 #include "LaunchOptions.h"
 
-struct CgbWinApp;
+struct CgbHostApp;
 
 class WinWindow {
 public:
@@ -51,7 +51,7 @@ private:
     HINSTANCE instance_ = nullptr;
     LaunchOptions options_;
     HWND hwnd_ = nullptr;
-    CgbWinApp* app_ = nullptr;
+    CgbHostApp* app_ = nullptr;
     Gamepads gamepads_;
 
     UINT dpi_ = 96;

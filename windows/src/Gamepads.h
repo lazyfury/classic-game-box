@@ -8,12 +8,12 @@
 
 #include <windows.h>
 
-struct CgbWinApp;
+struct CgbHostApp;
 
 class Gamepads {
 public:
     // Read both ports and update the snapshot. Cheap; call once per frame.
-    void Poll(CgbWinApp* app);
+    void Poll(CgbHostApp* app);
 
 private:
     bool connected_[2] = {false, false};

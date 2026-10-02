@@ -112,7 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // torn down while `view` (and its layer) is still alive. `view` is
         // released only after this method returns.
         if let app {
-            cgb_mac_destroy(app)
+            cgb_host_destroy(app)
             self.app = nil
         }
     }
@@ -125,19 +125,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case let (library?, rom?):
             return library.withCString { lib in
                 rom.withCString { rom in
-                    cgb_mac_start(layer, width, height, scale, lib, rom)
+                    cgb_host_start(layer, width, height, scale, lib, rom)
                 }
             }
         case let (library?, nil):
             return library.withCString { lib in
-                cgb_mac_start(layer, width, height, scale, lib, nil)
+                cgb_host_start(layer, width, height, scale, lib, nil)
             }
         case let (nil, rom?):
             return rom.withCString { rom in
-                cgb_mac_start(layer, width, height, scale, nil, rom)
+                cgb_host_start(layer, width, height, scale, nil, rom)
             }
         case (nil, nil):
-            return cgb_mac_start(layer, width, height, scale, nil, nil)
+            return cgb_host_start(layer, width, height, scale, nil, nil)
         }
     }
 
@@ -153,10 +153,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func runFrame() {
         guard let app else { return }
         applyResizeIfNeeded()
-        cgb_mac_frame(app)
+        cgb_host_frame(app)
         view?.syncFrameState()
         syncFullscreen()
-        setContinuous(cgb_mac_needs_frame(app))
+        setContinuous(cgb_host_needs_frame(app))
     }
 
     /// Ask for a frame as soon as the run loop is free (after the event that
@@ -191,14 +191,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if lastPixelSize?.0 != size.0 || lastPixelSize?.1 != size.1 || lastScale != scale {
             lastPixelSize = size
             lastScale = scale
-            cgb_mac_resize(app, size.0, size.1, scale)
+            cgb_host_resize(app, size.0, size.1, scale)
         }
     }
 
     /// Apply a fullscreen request the Rust app parked for the window.
     private func syncFullscreen() {
         guard let app, let window else { return }
-        switch cgb_mac_take_fullscreen(app) {
+        switch cgb_host_take_fullscreen(app) {
         case 1 where !window.styleMask.contains(.fullScreen):
             window.toggleFullScreen(nil)
         case 0 where window.styleMask.contains(.fullScreen):

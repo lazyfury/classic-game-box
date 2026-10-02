@@ -1,6 +1,6 @@
-// Win32 message → `cgb_win_*` helpers.
+// Win32 message → `cgb_host_*` helpers.
 //
-// Mirrors the pure mappings in `src/win/input.rs`; the WndProc cases in
+// Mirrors the pure mappings in `src/native/input.rs`; the WndProc cases in
 // `WinWindow.cpp` call these and forward to the C ABI.
 #pragma once
 

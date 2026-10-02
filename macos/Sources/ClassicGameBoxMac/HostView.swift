@@ -107,7 +107,7 @@ final class HostView: NSView {
     func syncFrameState() {
         guard let app else { return }
 
-        let code = cgb_mac_cursor(app)
+        let code = cgb_host_cursor(app)
         if code != lastCursorCode {
             lastCursorCode = code
             Self.cursor(for: code).set()
@@ -117,7 +117,7 @@ final class HostView: NSView {
         var y: Float = 0
         var width: Float = 0
         var height: Float = 0
-        if cgb_mac_caret(app, &x, &y, &width, &height) {
+        if cgb_host_caret(app, &x, &y, &width, &height) {
             caretRect = NSRect(x: CGFloat(x), y: CGFloat(y), width: CGFloat(width), height: CGFloat(height))
         } else {
             caretRect = nil
@@ -156,7 +156,7 @@ final class HostView: NSView {
             return false
         }
         for url in urls {
-            url.path.withCString { cgb_mac_dropped_file(app, $0) }
+            url.path.withCString { cgb_host_dropped_file(app, $0) }
         }
         return !urls.isEmpty
     }
@@ -246,7 +246,7 @@ final class HostView: NSView {
 
     override func mouseExited(with event: NSEvent) {
         guard let app else { return }
-        cgb_mac_pointer_leave(app)
+        cgb_host_pointer_leave(app)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -259,25 +259,25 @@ final class HostView: NSView {
             dx *= 10
             dy *= 10
         }
-        cgb_mac_scroll(app, x, y, dx, dy)
+        cgb_host_scroll(app, x, y, dx, dy)
     }
 
     private func pointerDown(_ event: NSEvent, button: UInt32) {
         guard let app else { return }
         let (x, y) = logicalPoint(event)
-        cgb_mac_pointer_down(app, x, y, button, UInt32(event.clickCount))
+        cgb_host_pointer_down(app, x, y, button, UInt32(event.clickCount))
     }
 
     private func pointerUp(_ event: NSEvent, button: UInt32) {
         guard let app else { return }
         let (x, y) = logicalPoint(event)
-        cgb_mac_pointer_up(app, x, y, button)
+        cgb_host_pointer_up(app, x, y, button)
     }
 
     private func pointerMove(_ event: NSEvent) {
         guard let app else { return }
         let (x, y) = logicalPoint(event)
-        cgb_mac_pointer_move(app, x, y)
+        cgb_host_pointer_move(app, x, y)
     }
 
     // MARK: - Keyboard
@@ -293,7 +293,7 @@ final class HostView: NSView {
         // (e.g. commit the whole edit on Return) before the composition lands.
         if !hasMarkedText() {
             withCharacters(event.charactersIgnoringModifiers) { characters in
-                cgb_mac_key_down(app, UInt32(event.keyCode), characters, modifierBits(event.modifierFlags))
+                cgb_host_key_down(app, UInt32(event.keyCode), characters, modifierBits(event.modifierFlags))
             }
         }
         // Let AppKit run the input method (and call `insertText:` for plain
@@ -309,7 +309,7 @@ final class HostView: NSView {
         // Match `keyDown`: a key suppressed while composing is not announced.
         if !hasMarkedText() {
             withCharacters(event.charactersIgnoringModifiers) { characters in
-                cgb_mac_key_up(app, UInt32(event.keyCode), characters)
+                cgb_host_key_up(app, UInt32(event.keyCode), characters)
             }
         }
     }
@@ -319,7 +319,7 @@ final class HostView: NSView {
             super.flagsChanged(with: event)
             return
         }
-        cgb_mac_modifiers(app, modifierBits(event.modifierFlags))
+        cgb_host_modifiers(app, modifierBits(event.modifierFlags))
     }
 
     /// Navigation commands (arrows, Enter, Tab, Backspace) already reached Rust
@@ -343,7 +343,7 @@ extension HostView: NSTextInputClient {
         composedText = ""
         markedRangeValue = NSRange(location: NSNotFound, length: 0)
         let text = Self.plainString(string)
-        text.withCString { cgb_mac_text(app, $0) }
+        text.withCString { cgb_host_text(app, $0) }
     }
 
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -352,7 +352,7 @@ extension HostView: NSTextInputClient {
         composedText = text
         markedRangeValue = NSRange(location: 0, length: (text as NSString).length)
         text.withCString {
-            cgb_mac_ime(
+            cgb_host_ime(
                 app,
                 2,
                 $0,
@@ -366,7 +366,7 @@ extension HostView: NSTextInputClient {
         guard let app else { return }
         composedText = ""
         markedRangeValue = NSRange(location: NSNotFound, length: 0)
-        cgb_mac_ime(app, 1, nil, -1, -1)
+        cgb_host_ime(app, 1, nil, -1, -1)
     }
 
     func selectedRange() -> NSRange {

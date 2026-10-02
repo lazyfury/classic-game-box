@@ -9,7 +9,7 @@ Authority: [`../../macos/README.md`](../../macos/README.md),
 
 ## Where it is
 
-Rust owns everything (`src/mac/`): the igui UI, the wgpu renderer and
+Rust owns everything (`src/native/`): the igui UI, the wgpu renderer and
 `cgb-app` (library + libretro emulator). Swift owns the window only:
 `NSWindow` + `CAMetalLayer` + AppKit event forwarding
 (`macos/Sources/ClassicGameBoxMac`). `cgb-app` builds with
@@ -43,20 +43,20 @@ The `winit` host does a few things this host does not yet.
 
 - **A1 · Cursor.** `igui_winit` calls `App::cursor()` after each frame and sets
   the winit cursor. Here the pointer stays an arrow, so cards/buttons never
-  show the hand. Add `cgb_mac_cursor(app) -> u32` (an `igui_core::Cursor`
+  show the hand. Add `cgb_host_cursor(app) -> u32` (an `igui_core::Cursor`
   discriminant) and have Swift map it to `NSCursor` and `set()` it (only when
   it changed).
 - **A2 · IME caret.** `igui_winit`'s `ImePlugin` is a `FrameObserver` that reads
   `App::caret()` and calls `set_ime_cursor_area`, so the candidate window sits
   on the caret. Here `firstRect(forCharacterRange:)` returns `.zero`. Add
-  `cgb_mac_caret(app, *x, *y, *w, *h) -> bool` (from `App::caret()`, in logical
+  `cgb_host_caret(app, *x, *y, *w, *h) -> bool` (from `App::caret()`, in logical
   points), cache it in `HostView`, and return that rect from `firstRect`.
 - **A3 · Clipboard.** No `Clipboard` service is registered, so Cmd+C/V does
   nothing in text fields. Register one on the Rust side backed by the system
   pasteboard (`arboard`, which `igui_winit` already uses, or `objc2-app-kit`'s
   `NSPasteboard`). The app's Cmd+C/V hotkeys and `insertText:` path already
   work once the service exists.
-- **A4 · Drag & drop.** The FFI `cgb_mac_dropped_file` exists but Swift never
+- **A4 · Drag & drop.** The FFI `cgb_host_dropped_file` exists but Swift never
   calls it. In `HostView`: `registerForDraggedTypes([.fileURL])` and implement
   `draggingEntered` / `draggingUpdated` / `performDragOperation` to forward the
   URLs.
@@ -76,16 +76,16 @@ The `winit` host does a few things this host does not yet.
 
 **Status:** implemented — the always-on timer is gone; a local `NSEvent`
 monitor schedules a frame for any input, and `tick` reschedules at 60 Hz only
-while `cgb_mac_needs_frame` is true.
+while `cgb_host_needs_frame` is true.
 
 - **B1 · Event-driven ticking.** Today the timer presents at 60 Hz
-  unconditionally. Use `cgb_mac_needs_frame`: keep a fast timer only while it
+  unconditionally. Use `cgb_host_needs_frame`: keep a fast timer only while it
   is true (a running game / animation / download), otherwise present once after
   each input event and on resize, and stop ticking when idle.
 - **B2 · Repaint after input.** When idle, an event must trigger exactly one
-  `cgb_mac_frame`.
+  `cgb_host_frame`.
 - **B3 · vsync.** **Done** — `NSView.displayLink` (`CADisplayLink`, macOS 14+)
-  drives frames while `cgb_mac_needs_frame` is true; input still schedules a
+  drives frames while `cgb_host_needs_frame` is true; input still schedules a
   one-shot frame. The core's frame rate is not the display rate; `cgb-app`
   accumulates `dt`.
 
@@ -110,7 +110,7 @@ dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
 ## D. Tests & docs
 
 - **D1 · Unit tests.** **Done** — `GamepadSnapshot::apply` (cgb-input) and
-  `src/mac/input.rs`'s pure mappings (named keys, character fallback,
+  `src/native/input.rs`'s pure mappings (named keys, character fallback,
   modifier bits, pointer buttons, double-click, text/IME).
 - **D2 · Manual checklist.** Run `macos/scripts/run.sh` and confirm:
   1. The library renders; the grid scrolls; hovering a card shows the
@@ -124,7 +124,7 @@ dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
   6. Resize the window while playing: no jank, correct aspect ratio.
   7. Settings → download a core; it appears after a refresh.
   8. Hot-plug / unplug a gamepad: the port clears on unplug.
-- **D3 · Conventions.** Add `macos/` and `src/mac/` to `AGENTS.md`'s layout
+- **D3 · Conventions.** Add `macos/` and `src/native/` to `AGENTS.md`'s layout
   and to `.pi/skills/cgb-rust/SKILL.md`; document the `winit-host` feature and
   the `cgb-app --no-default-features` rule.
 - **D4 · README.** Mention the Swift host as the experimental alternative front
@@ -141,14 +141,14 @@ dylib under `Contents/Frameworks` (`@rpath`) and cores/assets under
   Rust app while `view` (and its layer) is still alive; `view` is released only
   after.
 - **F2 · Startup errors.** **Done** — a missing backend returns NULL from
-  `cgb_mac_start` and Swift shows an `NSAlert`.
+  `cgb_host_start` and Swift shows an `NSAlert`.
 - **F3 · Event coalescing.** **Done** — `applyResizeIfNeeded` reconfigures the
   surface at most once a frame.
 
 ## G. Swift-native gamepad (decided interface)
 
 **Status:** implemented — `cgb_libretro::GamepadSnapshot`, `cgb-app`'s
-`GamepadSource`/`SharedGamepad`, `MacGamepadPlugin` + `cgb_mac_gamepad_*`, and
+`GamepadSource`/`SharedGamepad`, `NativeGamepadPlugin` + `cgb_host_gamepad_*`, and
 Swift `Gamepads.swift`. `gilrs` is off the embedded build.
 
 **Decision.** On this host the gamepad source is Swift, using Apple's
@@ -191,7 +191,7 @@ source when one is registered, and falls back to `gilrs` otherwise.
   `gilrs`), enabled by `cgb-app`'s `winit-host`. The embedded build then links
   no `gilrs`.
 
-### C ABI (`cgb_mac.h`)
+### C ABI (`cgb_host.h`)
 
 ```c
 /* libretro joypad ids, so Swift never hardcodes them. */
@@ -204,15 +204,15 @@ enum { CGB_JOYPAD_B = 0, CGB_JOYPAD_Y = 1, CGB_JOYPAD_SELECT = 2,
 
 /* Replace one port's snapshot. buttons: bit i = CGB_JOYPAD_* i.
  * Axes are -32768..32767, libretro convention (Y positive is down). */
-void cgb_mac_gamepad_state(CgbMacApp *app, uint32_t port, uint32_t buttons,
+void cgb_host_gamepad_state(CgbHostApp *app, uint32_t port, uint32_t buttons,
                            int16_t left_x, int16_t left_y,
                            int16_t right_x, int16_t right_y);
 
 /* Mark a port connected/disconnected; disconnect clears it. */
-void cgb_mac_gamepad_connected(CgbMacApp *app, uint32_t port, bool connected);
+void cgb_host_gamepad_connected(CgbHostApp *app, uint32_t port, bool connected);
 ```
 
-`cgb_mac_gamepad_state` writes into the same `Rc<RefCell<GamepadSnapshot>>`
+`cgb_host_gamepad_state` writes into the same `Rc<RefCell<GamepadSnapshot>>`
 the source applies; `connected` sets/clears the flag and zeroes that port.
 
 ### Swift (`Gamepads.swift`)
@@ -221,10 +221,10 @@ the source applies; `connected` sets/clears the flag and zeroes that port.
   `.GCControllerDidConnect` / `.GCControllerDidDisconnect`.
 - Assign controllers to ports in connection order (first two → 0/1); set
   `controller.playerIndex`. On disconnect call
-  `cgb_mac_gamepad_connected(port, false)` and free the port.
+  `cgb_host_gamepad_connected(port, false)` and free the port.
 - Register `extendedGamepad.valueChangedHandler` (falling back to `gamepad` /
   `microGamepad`); rebuild the bitmask + axes and call
-  `cgb_mac_gamepad_state(port, ...)` on every change.
+  `cgb_host_gamepad_state(port, ...)` on every change.
 
 ### Mapping (`GCController` → libretro)
 
@@ -282,7 +282,7 @@ the readback → wgpu-texture path.
      `CAMetalLayer` + presenter for the game and have `cgb-app` render the play
      view to it. One app instance; more host plumbing.
 - Swift creates the second window/layer and calls
-  `cgb_mac_open_game_window(layer, w, h, scale)` / `cgb_mac_close_game_window()`.
+  `cgb_host_open_game_window(layer, w, h, scale)` / `cgb_host_close_game_window()`.
 - **OpenGL mode**: `cgb-libretro` already owns an offscreen CGL context for
   `SET_HW_RENDER`. A dedicated window could either keep the readback path but
   present to the second surface (cheap to try), or create the GL context on the

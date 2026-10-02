@@ -6,10 +6,10 @@ owns only the window and translates Win32 messages.
 
 ```
 ┌──────────────────────────────┐         ┌───────────────────────────────────┐
-│  C++ (`windows/`)            │         │  Rust (`src/win/`, in `cgb-app`)   │
+│  C++ (`windows/`)            │         │  Rust (`src/native/`, in `cgb-app`)   │
 │  RegisterClassExW + HWND     │  C ABI  │  the app library                   │
 │  WndProc                     │◀───────▶│  igui_app runtime + igui UI       │
-│  Win32 messages → cgb_win_*  │         │  wgpu backend + presenter         │
+│  Win32 messages → cgb_host_*  │         │  wgpu backend + presenter         │
 │  XInput + a message loop     │         │  cgb-app: library + emulator      │
 └──────────────────────────────┘         └───────────────────────────────────┘
 ```
@@ -29,7 +29,7 @@ frames, and forwards pointer / keyboard / IME / drop events.
 - `wgpu` 24 can create a surface straight from an `HWND`
   (`SurfaceTargetUnsafe::RawHandle` with `Win32WindowHandle`), so no windowing
   library is needed between C++ and the GPU.
-- The Rust host (`src/win/`) is **not** `cfg`-gated: raw-window-handle exposes
+- The Rust host (`src/native/`) is **not** `cfg`-gated: raw-window-handle exposes
   the Windows variants on every target, so the macOS dev machine's
   `cargo clippy` / `cargo test` gate type-checks it.
 
@@ -68,17 +68,19 @@ windows/scripts/syntax-check.sh
 
 | path | what |
 |---|---|
-| `src/win/host.rs` | `WinGpuPlugin` (HWND → wgpu surface → presenter), `WinTextMeasurePlugin`, `WinClipboardPlugin`, `WinGamepadPlugin`, `WinHostWindow` |
-| `src/win/input.rs` | `WinEvent` → `igui_core::InputEvent`, VK/modifier/button mapping |
-| `src/win/ffi.rs` | the `cgb_win_*` C ABI |
-| `src/win/include/cgb_win.h` | the header the C++ shell imports |
+| `src/native/surface.rs` | `NativeSurface` + `create_surface` (the `RawHandle::Win32` branch) |
+| `src/native/gpu.rs` | `NativeGpuPlugin` (handle → wgpu surface → backend → presenter) |
+| `src/native/plugins.rs` | `NativeHostWindow`, `NativeGamepadPlugin`, `NativeClipboardPlugin`, `NativeTextMeasurePlugin` |
+| `src/native/input.rs` | `NativeEvent` → `igui_core::InputEvent`, both key tables |
+| `src/native/ffi.rs` | the `cgb_host_*` C ABI (shared with the macOS host) |
+| `src/native/include/cgb_host.h` | the header the C++ shell imports |
 | `windows/src/WinWindow.cpp` | window class, `WndProc`, the message loop, fullscreen, cursor, IME caret |
-| `windows/src/Input.cpp` | `WndProc` message → `cgb_win_*` helpers (UTF, modifiers, key char) |
+| `windows/src/Input.cpp` | `WndProc` message → `cgb_host_*` helpers (UTF, modifiers, key char) |
 | `windows/src/Gamepads.cpp` | `XInput` → libretro snapshot |
-| `windows/src/LaunchOptions.cpp` | command line → `cgb_win_start` arguments |
+| `windows/src/LaunchOptions.cpp` | command line → `cgb_host_start` arguments |
 | `windows/CMakeLists.txt`, `windows/scripts/*` | build |
 
-The Rust side lives at **`src/win/`** inside the root `cgb-app` package; the
+The Rust side lives at **`src/native/`** inside the root `cgb-app` package; the
 workspace root is also the app package, and the emulator boundary is the one
 member crate (`crates/cgb-libretro`).
 

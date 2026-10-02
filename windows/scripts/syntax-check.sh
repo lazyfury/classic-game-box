@@ -19,7 +19,7 @@ fi
 cd "$ROOT"
 exec "$CXX" -std=c++17 -fsyntax-only -Wall -Wextra \
     -DUNICODE -D_UNICODE -DNOMINMAX -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 \
-    -I windows/src -I src/win/include \
+    -I windows/src -I src/native/include \
     windows/src/main.cpp \
     windows/src/WinWindow.cpp \
     windows/src/Input.cpp \

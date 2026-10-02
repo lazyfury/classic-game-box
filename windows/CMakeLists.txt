@@ -48,7 +48,7 @@ target_compile_definitions(cgb-win PRIVATE
 
 target_include_directories(cgb-win PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    "${REPO_ROOT}/src/win/include"
+    "${REPO_ROOT}/src/native/include"
 )
 
 target_link_directories(cgb-win PRIVATE "${CGB_RUST_LIB_DIR}")

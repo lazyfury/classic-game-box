@@ -61,8 +61,8 @@ macos/scripts/run.sh /path/to/mario.nes       # 直接开始
 ## macOS host（主要产品）
 
 前端在 `macos/`：Swift 只做窗口与原生事件（`CAMetalLayer` + AppKit），igui UI、
-wgpu 渲染与 libretro 模拟器全部留在 Rust（`src/mac/`，`cgb_mac_*` C ABI；产出
-`libcgb_app.a` 供 SwiftPM 静态链接）。手柄走 Swift `GameController`。
+wgpu 渲染与 libretro 模拟器全部留在 Rust（`src/native/` 的统一 host，`cgb_host_*` C ABI；
+产出 `libcgb_app.a` 供 SwiftPM 静态链接）。手柄走 Swift `GameController`。
 
 ```bash
 macos/scripts/run.sh          # 开库界面

@@ -1,8 +1,8 @@
 //! Classic Game Box — the app library.
 //!
-//! This is the app surface the native macOS host embeds. The emulator
-//! boundary ([`cgb_libretro`]) stays a separate crate; everything
-//! app-shaped lives here as flat modules or one-concern directories:
+//! This is the app surface the native shells embed. The emulator boundary
+//! ([`cgb_libretro`]) stays a separate crate; everything app-shaped lives here
+//! as flat modules or one-concern directories:
 //!
 //! | module | what |
 //! |---|---|
@@ -14,8 +14,7 @@
 //! | [`cores`] | `cores.json` manifest, buildbot catalog, downloader |
 //! | [`audio`] | cpal output + ring buffer |
 //! | [`host`] | the `HostWindow` / `GamepadSource` contract |
-//! | [`mac`] | the Swift/macOS host FFI (`cgb_mac_*` C ABI) |
-//! | [`win`] | the C++/Win32 host FFI (`cgb_win_*` C ABI) |
+//! | [`native`] | the embedded host + `cgb_host_*` C ABI (Swift/macOS + C++/Win32) |
 //! | [`cli`] / [`cores_cli`] / [`selfcheck`] | headless surfaces |
 
 pub mod app;
@@ -25,13 +24,11 @@ pub mod cores;
 pub mod cores_cli;
 pub mod host;
 pub mod library;
-// The `mac` host is platform-gated (it needs macOS's wgpu
-// `CoreAnimationLayer` target). `win` is not: its raw-window-handle use is
-// cross-platform, so the default gate type-checks it on the macOS dev machine.
-#[cfg(target_os = "macos")]
-pub mod mac;
+// The unified embedded host. It compiles on every target: the macOS surface
+// branch is `#[cfg(target_os = "macos")]`, and the Windows one uses
+// `raw-window-handle` (cross-platform), so the macOS dev gate type-checks both.
+pub mod native;
 pub mod paths;
 pub mod selfcheck;
 pub mod session;
 pub mod ui;
-pub mod win;

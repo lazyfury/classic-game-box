@@ -1,4 +1,4 @@
-//! The C ABI Swift calls. See `include/cgb_mac.h` for the mirror.
+//! The C ABI both embedded shells call. See `include/cgb_host.h` for the mirror.
 
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void, CStr};
@@ -12,26 +12,27 @@ use cgb_libretro::GamepadSnapshot;
 use igui::igui_app::{App as IguiApp, AppConfig, PlatformEvent};
 use igui::igui_core::{Cursor, ImeEvent, Vec2};
 
-use crate::mac::host::{
-    MacClipboardPlugin, MacGamepadPlugin, MacGpu, MacGpuPlugin, MacHostWindow, MacSurface,
-    MacTextMeasurePlugin,
+use super::gpu::{NativeGpu, NativeGpuPlugin};
+use super::input::{
+    key_from_code, modifiers_from_bits, pointer_button, NativeEvent, NativeInputPlugin,
 };
-use crate::mac::input::{
-    key_from_code, modifiers_from_bits, pointer_button, MacEvent, MacInputPlugin,
+use super::plugins::{
+    NativeClipboardPlugin, NativeGamepadPlugin, NativeHostWindow, NativeTextMeasurePlugin,
 };
+use super::surface::NativeSurface;
 
-/// A running embedded app. Opaque to C (`CgbMacApp`).
-pub struct CgbMacApp {
+/// A running embedded app. Opaque to C (`CgbHostApp`).
+pub struct CgbHostApp {
     app: IguiApp,
-    gpu: MacGpu,
-    host_window: MacHostWindow,
+    gpu: NativeGpu,
+    host_window: NativeHostWindow,
     gamepad: Rc<RefCell<GamepadSnapshot>>,
     drops: Rc<RefCell<Vec<PathBuf>>>,
 }
 
-impl CgbMacApp {
+impl CgbHostApp {
     /// Route one native event through the runtime into the UI.
-    fn emit(&mut self, event: &MacEvent) {
+    fn emit(&mut self, event: &NativeEvent) {
         self.app.platform_event(PlatformEvent::new(event));
     }
 }
@@ -70,27 +71,27 @@ unsafe fn opt_path(ptr: *const c_char) -> Option<PathBuf> {
     }
 }
 
-/// Start the app rendering into `layer` (a `CAMetalLayer*`), sized in physical
-/// pixels. `library_dir` and `rom` may be NULL.
+/// Start the app rendering into `handle`, sized in physical pixels.
+/// `library_dir` and `rom` may be NULL.
 ///
-/// Returns NULL only on a null layer; the runtime is brought up here (the GPU
-/// surface is created on resume).
+/// `handle` is a `CAMetalLayer*` on macOS and an `HWND` on Windows. Returns
+/// NULL on a null handle or when the GPU backend could not be created.
 ///
 /// # Safety
 ///
-/// `layer` must be a live `CAMetalLayer` that outlives the returned app;
+/// `handle` must be a live window handle that outlives the returned app;
 /// `library_dir` / `rom` must be NULL or valid C strings.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_start(
-    layer: *mut c_void,
+pub unsafe extern "C" fn cgb_host_start(
+    handle: *mut c_void,
     width: u32,
     height: u32,
     scale: f64,
     library_dir: *const c_char,
     rom: *const c_char,
-) -> *mut CgbMacApp {
-    if layer.is_null() {
-        eprintln!("cgb-mac: layer 为空");
+) -> *mut CgbHostApp {
+    if handle.is_null() {
+        eprintln!("cgb-host: 窗口句柄为空");
         return std::ptr::null_mut();
     }
 
@@ -105,9 +106,9 @@ pub unsafe extern "C" fn cgb_mac_start(
 
     let logic = CgbApp::new(args);
     let drops = logic.drop_sink();
-    let (gpu_plugin, gpu) = MacGpuPlugin::new();
-    let host_window = MacHostWindow::default();
-    let (gamepad_plugin, gamepad) = MacGamepadPlugin::new();
+    let (gpu_plugin, gpu) = NativeGpuPlugin::new();
+    let host_window = NativeHostWindow::default();
+    let (gamepad_plugin, gamepad) = NativeGamepadPlugin::new();
 
     let mut builder = IguiApp::new(AppConfig {
         title: "Classic Game Box".to_string(),
@@ -115,13 +116,13 @@ pub unsafe extern "C" fn cgb_mac_start(
         ..Default::default()
     })
     .plugin(gpu_plugin)
-    .plugin(MacTextMeasurePlugin)
-    .plugin(MacClipboardPlugin)
-    .plugin(MacInputPlugin)
+    .plugin(NativeTextMeasurePlugin)
+    .plugin(NativeClipboardPlugin)
+    .plugin(NativeInputPlugin)
     .plugin(gamepad_plugin)
     .logic(logic);
-    builder.insert_service(MacSurface {
-        layer,
+    builder.insert_service(NativeSurface {
+        handle,
         width,
         height,
         scale,
@@ -132,14 +133,14 @@ pub unsafe extern "C" fn cgb_mac_start(
     let mut app = builder.build();
     app.resumed();
 
-    // A missing backend means the Metal surface or wgpu device could not be
-    // created; surface it as a start failure so Swift can tell the user.
+    // A missing backend means the surface or wgpu device could not be created;
+    // surface it as a start failure so the shell can tell the user.
     if !gpu.is_ready() {
-        eprintln!("cgb-mac: GPU 初始化失败（Metal surface / wgpu backend）");
+        eprintln!("cgb-host: GPU 初始化失败（surface / wgpu backend）");
         return std::ptr::null_mut();
     }
 
-    Box::into_raw(Box::new(CgbMacApp {
+    Box::into_raw(Box::new(CgbHostApp {
         app,
         gpu,
         host_window,
@@ -152,9 +153,9 @@ pub unsafe extern "C" fn cgb_mac_start(
 ///
 /// # Safety
 ///
-/// `app` must come from `cgb_mac_start` and not be used afterwards.
+/// `app` must come from `cgb_host_start` and not be used afterwards.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_destroy(app: *mut CgbMacApp) {
+pub unsafe extern "C" fn cgb_host_destroy(app: *mut CgbHostApp) {
     if app.is_null() {
         return;
     }
@@ -166,36 +167,36 @@ pub unsafe extern "C" fn cgb_mac_destroy(app: *mut CgbMacApp) {
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_frame(app: *mut CgbMacApp) {
+pub unsafe extern "C" fn cgb_host_frame(app: *mut CgbHostApp) {
     if let Some(app) = unsafe { app.as_mut() } {
         app.app.frame();
     }
 }
 
 /// Whether the app wants another frame (a running game, an animation, a
-/// download). A host may skip `cgb_mac_frame` while this is false — but must
+/// download). A host may skip `cgb_host_frame` while this is false — but must
 /// still present once after any input or resize.
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_needs_frame(app: *const CgbMacApp) -> bool {
+pub unsafe extern "C" fn cgb_host_needs_frame(app: *const CgbHostApp) -> bool {
     unsafe { app.as_ref() }.is_some_and(|app| app.app.needs_frame())
 }
 
 /// The pending fullscreen request: `1` enter, `0` leave, `-1` none.
 ///
-/// The app parks a request in `HostWindow::set_fullscreen`; Swift applies it
-/// with AppKit's own `toggleFullScreen:` animation.
+/// The app parks a request in `HostWindow::set_fullscreen`; the shell applies it
+/// with its platform's own fullscreen transition.
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_take_fullscreen(app: *mut CgbMacApp) -> i32 {
+pub unsafe extern "C" fn cgb_host_take_fullscreen(app: *mut CgbHostApp) -> i32 {
     match unsafe { app.as_ref() }.and_then(|app| app.host_window.take_request()) {
         Some(true) => 1,
         Some(false) => 0,
@@ -208,9 +209,9 @@ pub unsafe extern "C" fn cgb_mac_take_fullscreen(app: *mut CgbMacApp) -> i32 {
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_cursor(app: *const CgbMacApp) -> u32 {
+pub unsafe extern "C" fn cgb_host_cursor(app: *const CgbHostApp) -> u32 {
     unsafe { app.as_ref() }
         .and_then(|app| app.app.cursor())
         .map_or(0, cursor_code)
@@ -235,11 +236,11 @@ fn cursor_code(cursor: Cursor) -> u32 {
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`; the out pointers must be
+/// `app` must be a live pointer from `cgb_host_start`; the out pointers must be
 /// writable `f32`s or NULL.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_caret(
-    app: *const CgbMacApp,
+pub unsafe extern "C" fn cgb_host_caret(
+    app: *const CgbHostApp,
     out_x: *mut f32,
     out_y: *mut f32,
     out_width: *mut f32,
@@ -264,7 +265,7 @@ pub unsafe extern "C" fn cgb_mac_caret(
 }
 
 // ---------------------------------------------------------------------------
-// Gamepad (Swift's GameController)
+// Gamepad (the shell's GameController / XInput)
 // ---------------------------------------------------------------------------
 
 /// Replace one port's gamepad snapshot. `buttons`: bit i = `CGB_JOYPAD_*` i.
@@ -272,10 +273,10 @@ pub unsafe extern "C" fn cgb_mac_caret(
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_gamepad_state(
-    app: *mut CgbMacApp,
+pub unsafe extern "C" fn cgb_host_gamepad_state(
+    app: *mut CgbHostApp,
     port: u32,
     buttons: u32,
     left_x: i16,
@@ -300,10 +301,10 @@ pub unsafe extern "C" fn cgb_mac_gamepad_state(
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_gamepad_connected(
-    app: *mut CgbMacApp,
+pub unsafe extern "C" fn cgb_host_gamepad_connected(
+    app: *mut CgbHostApp,
     port: u32,
     connected: bool,
 ) {
@@ -317,9 +318,14 @@ pub unsafe extern "C" fn cgb_mac_gamepad_connected(
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_resize(app: *mut CgbMacApp, width: u32, height: u32, scale: f64) {
+pub unsafe extern "C" fn cgb_host_resize(
+    app: *mut CgbHostApp,
+    width: u32,
+    height: u32,
+    scale: f64,
+) {
     if let Some(app) = unsafe { app.as_mut() } {
         app.gpu.resize(width, height, scale);
     }
@@ -329,9 +335,9 @@ pub unsafe extern "C" fn cgb_mac_resize(app: *mut CgbMacApp, width: u32, height:
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`; `path` a valid C string.
+/// `app` must be a live pointer from `cgb_host_start`; `path` a valid C string.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_dropped_file(app: *mut CgbMacApp, path: *const c_char) {
+pub unsafe extern "C" fn cgb_host_dropped_file(app: *mut CgbHostApp, path: *const c_char) {
     let Some(app) = (unsafe { app.as_mut() }) else {
         return;
     };
@@ -349,11 +355,11 @@ pub unsafe extern "C" fn cgb_mac_dropped_file(app: *mut CgbMacApp, path: *const 
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_pointer_move(app: *mut CgbMacApp, x: f32, y: f32) {
+pub unsafe extern "C" fn cgb_host_pointer_move(app: *mut CgbHostApp, x: f32, y: f32) {
     if let Some(app) = unsafe { app.as_mut() } {
-        app.emit(&MacEvent::PointerMove(Vec2::new(x, y)));
+        app.emit(&NativeEvent::PointerMove(Vec2::new(x, y)));
     }
 }
 
@@ -362,17 +368,17 @@ pub unsafe extern "C" fn cgb_mac_pointer_move(app: *mut CgbMacApp, x: f32, y: f3
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_pointer_down(
-    app: *mut CgbMacApp,
+pub unsafe extern "C" fn cgb_host_pointer_down(
+    app: *mut CgbHostApp,
     x: f32,
     y: f32,
     button: u32,
     click_count: u32,
 ) {
     if let Some(app) = unsafe { app.as_mut() } {
-        app.emit(&MacEvent::PointerDown {
+        app.emit(&NativeEvent::PointerDown {
             position: Vec2::new(x, y),
             button: pointer_button(button),
             click_count,
@@ -384,11 +390,11 @@ pub unsafe extern "C" fn cgb_mac_pointer_down(
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_pointer_up(app: *mut CgbMacApp, x: f32, y: f32, button: u32) {
+pub unsafe extern "C" fn cgb_host_pointer_up(app: *mut CgbHostApp, x: f32, y: f32, button: u32) {
     if let Some(app) = unsafe { app.as_mut() } {
-        app.emit(&MacEvent::PointerUp {
+        app.emit(&NativeEvent::PointerUp {
             position: Vec2::new(x, y),
             button: pointer_button(button),
         });
@@ -399,11 +405,11 @@ pub unsafe extern "C" fn cgb_mac_pointer_up(app: *mut CgbMacApp, x: f32, y: f32,
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_pointer_leave(app: *mut CgbMacApp) {
+pub unsafe extern "C" fn cgb_host_pointer_leave(app: *mut CgbHostApp) {
     if let Some(app) = unsafe { app.as_mut() } {
-        app.emit(&MacEvent::PointerLeave);
+        app.emit(&NativeEvent::PointerLeave);
     }
 }
 
@@ -412,11 +418,11 @@ pub unsafe extern "C" fn cgb_mac_pointer_leave(app: *mut CgbMacApp) {
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_scroll(app: *mut CgbMacApp, x: f32, y: f32, dx: f32, dy: f32) {
+pub unsafe extern "C" fn cgb_host_scroll(app: *mut CgbHostApp, x: f32, y: f32, dx: f32, dy: f32) {
     if let Some(app) = unsafe { app.as_mut() } {
-        app.emit(&MacEvent::Wheel {
+        app.emit(&NativeEvent::Wheel {
             position: Vec2::new(x, y),
             delta: Vec2::new(dx, dy),
         });
@@ -427,16 +433,18 @@ pub unsafe extern "C" fn cgb_mac_scroll(app: *mut CgbMacApp, x: f32, y: f32, dx:
 // Keyboard / text / IME
 // ---------------------------------------------------------------------------
 
-/// A key press. `characters` is `charactersIgnoringModifiers` (may be NULL).
-/// `modifiers`: 1 shift, 2 ctrl, 4 alt, 8 command.
+/// A key press. `key_code` is the shell's own code (AppKit `keyCode` on macOS,
+/// a Win32 virtual key on Windows); `characters` is the text the key produced
+/// with modifiers ignored (may be NULL). `modifiers`: 1 shift, 2 ctrl, 4 alt,
+/// 8 command/meta.
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`; `characters` a valid C
+/// `app` must be a live pointer from `cgb_host_start`; `characters` a valid C
 /// string or NULL.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_key_down(
-    app: *mut CgbMacApp,
+pub unsafe extern "C" fn cgb_host_key_down(
+    app: *mut CgbHostApp,
     key_code: u32,
     characters: *const c_char,
     modifiers: u32,
@@ -444,23 +452,23 @@ pub unsafe extern "C" fn cgb_mac_key_down(
     let Some(app) = (unsafe { app.as_mut() }) else {
         return;
     };
-    // Modifiers may change without a `flagsChanged` on the way in.
-    app.emit(&MacEvent::Modifiers(modifiers_from_bits(modifiers)));
+    // Modifiers may change without a dedicated message.
+    app.emit(&NativeEvent::Modifiers(modifiers_from_bits(modifiers)));
     let characters = unsafe { opt_string(characters) };
     if let Some(key) = key_from_code(key_code, characters.as_deref()) {
-        app.emit(&MacEvent::KeyDown(key));
+        app.emit(&NativeEvent::KeyDown(key));
     }
 }
 
-/// A key release.
+/// A key release. Same `key_code` convention as `cgb_host_key_down`.
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`; `characters` a valid C
+/// `app` must be a live pointer from `cgb_host_start`; `characters` a valid C
 /// string or NULL.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_key_up(
-    app: *mut CgbMacApp,
+pub unsafe extern "C" fn cgb_host_key_up(
+    app: *mut CgbHostApp,
     key_code: u32,
     characters: *const c_char,
 ) {
@@ -469,36 +477,36 @@ pub unsafe extern "C" fn cgb_mac_key_up(
     };
     let characters = unsafe { opt_string(characters) };
     if let Some(key) = key_from_code(key_code, characters.as_deref()) {
-        app.emit(&MacEvent::KeyUp(key));
+        app.emit(&NativeEvent::KeyUp(key));
     }
 }
 
-/// Committed text (from `insertText:`).
+/// Committed text (AppKit `insertText:` / Win32 `WM_CHAR`).
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`; `utf8` a valid C string.
+/// `app` must be a live pointer from `cgb_host_start`; `utf8` a valid C string.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_text(app: *mut CgbMacApp, utf8: *const c_char) {
+pub unsafe extern "C" fn cgb_host_text(app: *mut CgbHostApp, utf8: *const c_char) {
     let Some(app) = (unsafe { app.as_mut() }) else {
         return;
     };
     if let Some(text) = unsafe { opt_string(utf8) } {
         if !text.is_empty() {
-            app.emit(&MacEvent::Text(text));
+            app.emit(&NativeEvent::Text(text));
         }
     }
 }
 
-/// A modifier-state change (`flagsChanged`). Same bits as `cgb_mac_key_down`.
+/// A modifier-state change. Same bits as `cgb_host_key_down`.
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`.
+/// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_modifiers(app: *mut CgbMacApp, bits: u32) {
+pub unsafe extern "C" fn cgb_host_modifiers(app: *mut CgbHostApp, bits: u32) {
     if let Some(app) = unsafe { app.as_mut() } {
-        app.emit(&MacEvent::Modifiers(modifiers_from_bits(bits)));
+        app.emit(&NativeEvent::Modifiers(modifiers_from_bits(bits)));
     }
 }
 
@@ -507,11 +515,11 @@ pub unsafe extern "C" fn cgb_mac_modifiers(app: *mut CgbMacApp, bits: u32) {
 ///
 /// # Safety
 ///
-/// `app` must be a live pointer from `cgb_mac_start`; `text` a valid C string
+/// `app` must be a live pointer from `cgb_host_start`; `text` a valid C string
 /// or NULL.
 #[no_mangle]
-pub unsafe extern "C" fn cgb_mac_ime(
-    app: *mut CgbMacApp,
+pub unsafe extern "C" fn cgb_host_ime(
+    app: *mut CgbHostApp,
     kind: u32,
     text: *const c_char,
     sel_start: i32,
@@ -531,5 +539,5 @@ pub unsafe extern "C" fn cgb_mac_ime(
         3 => ImeEvent::Commit(text.unwrap_or_default()),
         _ => return,
     };
-    app.emit(&MacEvent::Ime(event));
+    app.emit(&NativeEvent::Ime(event));
 }

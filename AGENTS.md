@@ -12,11 +12,12 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 ## 现状
 
 - **布局**：产品是 **Swift/macOS app**（`macos/`，AppKit + `CAMetalLayer` + 原生事件）。
-  另有一个实验性的 **C++/Win32 host**（`windows/` + `src/win/`），形态与 macOS host
-  对称，见 `docs/architecture/windows-host-plan.md`（Rust 侧已类型检查，C++ 侧未编译）。
+  另有一个实验性的 **C++/Win32 host**（`windows/`）：两个壳共用一份 **`src/native/`**
+  的统一原生 host + `cgb_host_*` C ABI（见 `docs/architecture/windows-host-plan.md`；
+  已在 Win11 VM 跑通窗口 + 反复 resize）。
   Rust 侧两个包：**根包 `cgb-app`**（`src/`：`src/ui` + `src/app` 应用逻辑、`src/library`
-  游戏库、`src/paths`、`src/cores` 清单/下载、`src/audio`、`src/host` 契约、`src/mac` 是
-  Swift host 的 C ABI，产出 `libcgb_app.a` 供 Swift 链接）；**`crates/cgb-libretro`**
+  游戏库、`src/paths`、`src/cores` 清单/下载、`src/audio`、`src/host` 契约、`src/native`
+  是共享的原生 host + C ABI，产出 `libcgb_app.a` 供 Swift / C++ 链接）；**`crates/cgb-libretro`**
   （libretro front end + `system.rs`/`joypad.rs`/`core_choice.rs`/`input.rs` 纯域类型）。
   工作区根 `Cargo.toml` 同时是 workspace 与根包。
 - 分支 `refactor/app-root`（合并后可回 `main`）。
@@ -53,9 +54,9 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   “全屏”按钮进入，Esc 退出；只挂载右栏游戏视图，库网格与侧栏不入树）。
   后处理用 `igui_backend_wgpu::TextureEffect`（`igui` 自 `v0.2.0` 提供）。
 - **运行时**：`cgb-app` 跑在 igui 的 `igui_app` 插件运行时上，平台插件由
-  `src/mac/`（Swift host）提供：`MacGpuPlugin`（CAMetalLayer → wgpu surface）/
-  `MacInputPlugin` / `MacTextMeasurePlugin` / `MacClipboardPlugin` /
-  `MacGamepadPlugin`；`App` 实现 `AppLogic`（`update/layout/paint`）。帧由
+  `src/native/`（Swift host）提供：`NativeGpuPlugin`（CAMetalLayer → wgpu surface）/
+  `NativeInputPlugin` / `NativeTextMeasurePlugin` / `NativeClipboardPlugin` /
+  `NativeGamepadPlugin`；`App` 实现 `AppLogic`（`update/layout/paint`）。帧由
   `Session::advance(dt)` 的时间累积驱动，`needs_frame` 在跑游戏/带动画 overlay/倒带时为真。
   改名 / 搜索 / 标签编辑用上游 `igui_components::TextInput`（自带 caret/选区/IME 预编辑）。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
@@ -132,9 +133,9 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   **无即时存档（倒带已禁用）、键盘回调未接**（joypad 可玩，手机键盘已映射到手柄）。
 - **Swift/macOS host（主要产品）**：`macos/` 是产品前端——Swift 只做窗口 /
   `CAMetalLayer` / 原生事件，igui UI + wgpu 渲染 + libretro 模拟器全在 Rust
-  （`src/mac/`，经 `cgb_mac_*` C ABI；FFI 边界**包含 UI**）。窗口依赖抽成
+  （`src/native/`，经 `cgb_host_*` C ABI；FFI 边界**包含 UI**）。窗口依赖抽成
   `HostWindow` trait（`src/host.rs`），手柄抽成 `GamepadSource`，走 Swift
-  `GameController`（快照经 `cgb_mac_gamepad_*` 回灌）。Rust 侧产出 `libcgb_app.a`，
+  `GameController`（快照经 `cgb_host_gamepad_*` 回灌）。Rust 侧产出 `libcgb_app.a`，
   SwiftPM 静态链接。打包 `macos/scripts/package.sh`。剩余缺口见
   `docs/architecture/swift-macos-host-plan.md`。
 
@@ -202,8 +203,8 @@ macos/scripts/run.sh mario.nes --core ./mycore_libretro.dylib # 任意模块
 | 原生 core 构建 / 加核心流程 | `cores/README.md`、`cores/build.sh.example`、`cores/*/build.sh` |
 | J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
 | 核心清单（启动选核） | `cores/cores.json`、`src/cores/`、`src/cli.rs` |
-| Swift/macOS host（主要产品） | `macos/`（Swift 窗口/事件）、`src/mac/`（surface + 事件 + `cgb_mac_*` C ABI）、`docs/architecture/swift-macos-host-plan.md` |
-| C++/Win32 host（实验、未编译） | `windows/`（C++ 窗口/消息循环）、`src/win/`（surface + 事件 + `cgb_win_*` C ABI）、`docs/architecture/windows-host-plan.md` |
+| Swift/macOS host（主要产品） | `macos/`（Swift 窗口/事件）、`src/native/`（surface + 事件 + `cgb_host_*` C ABI）、`docs/architecture/swift-macos-host-plan.md` |
+| C++/Win32 host（实验、未编译） | `windows/`（C++ 窗口/消息循环）、`src/native/`（surface + 事件 + `cgb_host_*` C ABI）、`docs/architecture/windows-host-plan.md` |
 | 窗口/手柄 host 抽象 | `src/host.rs`（`HostWindow` / `GamepadSource`）、`src/app/mod.rs`（`App::init` 取源） |
 | 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `custom_nes_core/`（只读；`src/` 布局单 CMake 项目） |
 
@@ -222,9 +223,14 @@ macos/scripts/run.sh mario.nes --core ./mycore_libretro.dylib # 任意模块
   核心用 `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK` 收键盘、用 `MOUSE`/`POINTER`
   收触摸指针，宿主**均未接**（joypad 可用，手机键盘已映射到 16 键）。宿主的
   `GET_RUMBLE_INTERFACE` 只给一个 no-op（不真震动），仅为避免核心空指针崩溃。
-- **Windows（C++/Win32）host**：`windows/`（C++ 壳）+ `src/win/`（`cgb_win_*`
-  C ABI）对标 Swift/macOS host。Rust 侧由 macOS 的 `cargo clippy`/`test` 类型检查
-  （`src/win` 故意不做 `cfg` 门控）；C++ 侧可用 `windows/scripts/cross-build-mingw.sh`
+- **原生 host 统一（`src/native/`）**：macOS（Swift）与 Windows（C++）两个壳共用一份
+  原生 host + `cgb_host_*` C ABI。平台差异只有两处：`surface::create_surface`
+  （mac `CoreAnimationLayer` 分支 `#[cfg(target_os="macos")]`；win 用跨平台的
+  `raw-window-handle`，刻意不 gate，从而被 macOS 的 gate 类型检查）和
+  `input::key_from_code`（AppKit keyCode / Win32 VK 两张表，两张都在所有平台编译 + 单测）。
+  壳本身（AppKit/ Swift、Win32/ C++）仍必然分开。
+- **Windows（C++/Win32）host**：`windows/`（C++ 壳）+ `src/native/`（`cgb_host_*`
+  C ABI）对标 Swift/macOS host。C++ 侧可用 `windows/scripts/cross-build-mingw.sh`
   从 macOS 交叉编译出自包含 `.exe`，**已在一台 Parallels Win11 VM 上跑通窗口 +
   反复 resize**。实测两个 Windows 专属问题：DX12 `ResizeBuffers` 因 backend 保留
   上一帧 surface view 而失败（**已修在 igui 上游 `v0.3.1`**，cgb 已 bump），以及

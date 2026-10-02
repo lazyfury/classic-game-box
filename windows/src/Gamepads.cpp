@@ -6,7 +6,7 @@
 
 #include <xinput.h>
 
-#include "cgb_win.h"
+#include "cgb_host.h"
 
 namespace {
 
@@ -16,7 +16,7 @@ constexpr SHORT kStickDpad = 16384;
 
 }  // namespace
 
-void Gamepads::Poll(CgbWinApp* app) {
+void Gamepads::Poll(CgbHostApp* app) {
     if (!app) {
         return;
     }
@@ -26,7 +26,7 @@ void Gamepads::Poll(CgbWinApp* app) {
         bool now = (result == ERROR_SUCCESS);
         if (now != connected_[port]) {
             connected_[port] = now;
-            cgb_win_gamepad_connected(app, port, now);
+            cgb_host_gamepad_connected(app, port, now);
         }
         if (!now) {
             continue;
@@ -74,6 +74,6 @@ void Gamepads::Poll(CgbWinApp* app) {
         int16_t ly = static_cast<int16_t>(0 - static_cast<int>(pad.sThumbLY));
         int16_t rx = static_cast<int16_t>(pad.sThumbRX);
         int16_t ry = static_cast<int16_t>(0 - static_cast<int>(pad.sThumbRY));
-        cgb_win_gamepad_state(app, port, buttons, lx, ly, rx, ry);
+        cgb_host_gamepad_state(app, port, buttons, lx, ly, rx, ry);
     }
 }

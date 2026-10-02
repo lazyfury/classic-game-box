@@ -44,7 +44,7 @@ final class Gamepads {
         guard let controller = notification.object as? GCController else { return }
         guard let port = ports.removeValue(forKey: ObjectIdentifier(controller)) else { return }
         if let app {
-            cgb_mac_gamepad_connected(app, UInt32(port), false)
+            cgb_host_gamepad_connected(app, UInt32(port), false)
         }
     }
 
@@ -56,7 +56,7 @@ final class Gamepads {
         controller.playerIndex = port == 0 ? .index1 : .index2
 
         if let app {
-            cgb_mac_gamepad_connected(app, UInt32(port), true)
+            cgb_host_gamepad_connected(app, UInt32(port), true)
         }
         guard let pad = controller.extendedGamepad else { return }
         pad.valueChangedHandler = { [weak self] pad, _ in
@@ -104,7 +104,7 @@ final class Gamepads {
         if leftY > 0.5 { set(CGB_JOYPAD_UP, true) }
         if leftY < -0.5 { set(CGB_JOYPAD_DOWN, true) }
 
-        cgb_mac_gamepad_state(
+        cgb_host_gamepad_state(
             app,
             UInt32(port),
             buttons,

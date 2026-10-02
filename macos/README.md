@@ -6,10 +6,10 @@ Swift owns only the window and translates AppKit events.
 
 ```
 ┌──────────────────────────────┐         ┌───────────────────────────────────┐
-│  Swift (`macos/`)            │         │  Rust (`src/mac/`, in `cgb-app`)   │
+│  Swift (`macos/`)            │         │  Rust (`src/native/`, in `cgb-app`)   │
 │  NSWindow + NSView           │  C ABI  │  the app library                   │
 │  CAMetalLayer                │◀───────▶│  igui_app runtime + igui UI       │
-│  AppKit events → cgb_mac_*   │         │  wgpu backend + presenter         │
+│  AppKit events → cgb_host_*   │         │  wgpu backend + presenter         │
 │  an event-driven tick        │         │  cgb-app: library + emulator      │
 └──────────────────────────────┘         └───────────────────────────────────┘
 ```
@@ -55,16 +55,18 @@ swift build --package-path macos  # macos/.build/debug/cgb-mac
 
 | path | what |
 |---|---|
-| `src/mac/host.rs` | `MacGpuPlugin` (CAMetalLayer → wgpu surface → presenter), `MacTextMeasurePlugin`, `MacClipboardPlugin`, `MacGamepadPlugin`, `MacHostWindow` |
-| `src/mac/input.rs` | `MacEvent` → `igui_core::InputEvent`, key/modifier/button mapping |
-| `src/mac/ffi.rs` | the `cgb_mac_*` C ABI |
-| `src/mac/include/cgb_mac.h` | the header Swift imports (symlinked into the C target) |
+| `src/native/surface.rs` | `NativeSurface` + `create_surface` (the `CoreAnimationLayer` branch) |
+| `src/native/gpu.rs` | `NativeGpuPlugin` (handle → wgpu surface → backend → presenter) |
+| `src/native/plugins.rs` | `NativeHostWindow`, `NativeGamepadPlugin`, `NativeClipboardPlugin`, `NativeTextMeasurePlugin` |
+| `src/native/input.rs` | `NativeEvent` → `igui_core::InputEvent`, both key tables |
+| `src/native/ffi.rs` | the `cgb_host_*` C ABI (shared with the Windows host) |
+| `src/native/include/cgb_host.h` | the header Swift imports (symlinked into the C target) |
 | `macos/Sources/ClassicGameBoxMac/HostView.swift` | the layer + AppKit event forwarding + drag & drop |
 | `macos/Sources/ClassicGameBoxMac/Gamepads.swift` | `GCController` → libretro snapshot |
-| `macos/Sources/ClassicGameBoxMac/AppDelegate.swift` | window, `cgb_mac_start`, event-driven frame scheduling |
+| `macos/Sources/ClassicGameBoxMac/AppDelegate.swift` | window, `cgb_host_start`, event-driven frame scheduling |
 | `macos/packaging/Info.plist`, `macos/scripts/package.sh` | the `.app` bundle |
 
-The Rust side lives at **`src/mac/`** inside the root `cgb-app` package; the
+The Rust side lives at **`src/native/`** inside the root `cgb-app` package; the
 workspace root is also the app package, and the emulator boundary is the one
 member crate (`crates/cgb-libretro`).
 

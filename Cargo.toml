@@ -52,7 +52,7 @@ png.workspace = true
 dirs.workspace = true
 thiserror.workspace = true
 
-# System clipboard for the Swift host's text fields (src/mac/host.rs).
+# System clipboard for the Swift host's text fields (src/native/plugins.rs).
 arboard = "3"
 
 # Pins the `windows` crate `gpu-allocator` resolves to. `gpu-allocator` accepts

@@ -31,8 +31,8 @@ src/paths/      file layout (Paths) + settings (Settings)
 src/cores/      cores.json manifest, buildbot catalog, runtime downloader
 src/audio/      cpal output + SPSC ring buffer (int16 stereo)
 src/host.rs     the HostWindow / GamepadSource contract
-src/mac/        the Swift/macOS host: CAMetalLayer → wgpu surface, native
-                events, the cgb_mac_* C ABI (header in src/mac/include/)
+src/native/     the native host: CAMetalLayer / HWND → wgpu surface + native
+                events, the cgb_host_* C ABI (Swift/macOS + C++/Win32)
 src/cli.rs  src/cores_cli.rs  src/selfcheck.rs   headless surfaces
 ```
 

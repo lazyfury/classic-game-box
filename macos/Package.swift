@@ -2,7 +2,7 @@
 //
 // Experimental Swift/macOS front end: AppKit window + CAMetalLayer, with the
 // whole app (igui UI, wgpu renderer, libretro host, audio) linked in from Rust
-// via the `cgb_mac_*` C ABI.
+// via the `cgb_host_*` C ABI.
 //
 // Build the Rust side first:
 //     cargo build                # -> target/debug/libcgb_app.a  (root package)
