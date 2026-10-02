@@ -64,8 +64,9 @@ bool cgb_host_caret(const CgbHostApp *app, float *out_x, float *out_y,
                     float *out_width, float *out_height);
 
 /* -------------------------------------------------------------------------
- * Gamepad (Swift's GameController / Win32 XInput). libretro joypad ids are
- * mirrored here so the shell never hardcodes them.
+ * Gamepad. libretro joypad ids are mirrored here so the shell never hardcodes
+ * them. The shell reports each device's raw state by its own slot index; the
+ * app maps slots to libretro ports.
  * ------------------------------------------------------------------------- */
 
 enum {
@@ -87,14 +88,15 @@ enum {
     CGB_JOYPAD_R3 = 15
 };
 
-/* Replace one port's gamepad snapshot. `buttons`: bit i = CGB_JOYPAD_* i.
+/* Declare or update a gamepad device slot. `slot` is the shell's own index
+ * (connection order); `name` is the display label; `connected` false clears it. */
+void cgb_host_gamepad_device(CgbHostApp *app, uint32_t slot, const char *name, bool connected);
+
+/* Replace one device slot's state. `buttons`: bit i = CGB_JOYPAD_* i.
  * Axes are -32768..32767, libretro convention (Y positive is down). */
-void cgb_host_gamepad_state(CgbHostApp *app, uint32_t port, uint32_t buttons,
+void cgb_host_gamepad_state(CgbHostApp *app, uint32_t slot, uint32_t buttons,
                             int16_t left_x, int16_t left_y,
                             int16_t right_x, int16_t right_y);
-
-/* Mark a gamepad port connected/disconnected; disconnect clears it. */
-void cgb_host_gamepad_connected(CgbHostApp *app, uint32_t port, bool connected);
 
 /* Resize the drawable (physical pixels) and update the backing scale. */
 void cgb_host_resize(CgbHostApp *app, uint32_t width, uint32_t height, double scale);

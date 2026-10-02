@@ -37,11 +37,10 @@ mkdir -p "$OUT"
     windows/src/main.cpp \
     windows/src/WinWindow.cpp \
     windows/src/Input.cpp \
-    windows/src/Gamepads.cpp \
     windows/src/LaunchOptions.cpp \
     -L "target/$TARGET/debug" -lcgb_app \
     -luser32 -lgdi32 -lshell32 -lole32 -loleaut32 -ladvapi32 -lcomctl32 -limm32 \
-    -lws2_32 -lbcrypt -luserenv -lntdll -lxinput1_4 -lpropsys \
+    -lws2_32 -lbcrypt -luserenv -lntdll -lpropsys \
     -ld3dcompiler -lpathcch -lruntimeobject -lopengl32 -ldxgi -ld3d12 -ld3d11 \
     -static \
     -municode -mwindows \

@@ -34,7 +34,6 @@ add_executable(cgb-win WIN32
     src/main.cpp
     src/WinWindow.cpp
     src/Input.cpp
-    src/Gamepads.cpp
     src/LaunchOptions.cpp
 )
 
@@ -60,7 +59,7 @@ target_link_libraries(cgb-win PRIVATE
     # are listed too because a static library does not carry link directives.
     user32 gdi32 shell32 ole32 oleaut32 advapi32 comctl32
     imm32 ws2_32 bcrypt userenv ntdll
-    xinput1_4
+    # (gamepads are gilrs in Rust)
 )
 
 # Match the Rust staticlib's C runtime. The `x86_64-pc-windows-msvc` target

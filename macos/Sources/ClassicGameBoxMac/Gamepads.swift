@@ -1,9 +1,10 @@
 // Swift-native gamepad input, using Apple's GameController framework.
 //
-// This replaces `gilrs` on the embedded host: Swift owns the `GCController`s,
-// maps them to libretro joypad ids and pushes a per-port snapshot into Rust.
-// Apple's mapping is correct for the Xbox Wireless Controller over Bluetooth,
-// which `gilrs` mislabels here.
+// Swift owns the `GCController`s and reports each one's raw state by a **device
+// slot** (connection order) through the C ABI. The app maps slots to libretro
+// ports, so the assignment UI works the same as the `gilrs` path — and Apple's
+// mapping is correct for the Xbox Wireless Controller over Bluetooth, where
+// `gilrs` mislabels it.
 
 import CGBNative
 import Foundation
@@ -13,8 +14,8 @@ final class Gamepads {
     /// The Rust app, set once it has started.
     var app: OpaquePointer?
 
-    /// Controller → libretro port (0 or 1), in connection order.
-    private var ports: [ObjectIdentifier: Int] = [:]
+    /// Controller → device slot, in connection order.
+    private var slots: [ObjectIdentifier: Int] = [:]
 
     func start() {
         NotificationCenter.default.addObserver(
@@ -42,31 +43,39 @@ final class Gamepads {
 
     @objc private func controllerDisconnected(_ notification: Notification) {
         guard let controller = notification.object as? GCController else { return }
-        guard let port = ports.removeValue(forKey: ObjectIdentifier(controller)) else { return }
+        guard let slot = slots.removeValue(forKey: ObjectIdentifier(controller)) else { return }
         if let app {
-            cgb_host_gamepad_connected(app, UInt32(port), false)
+            Self.name(controller).withCString {
+                cgb_host_gamepad_device(app, UInt32(slot), $0, false)
+            }
         }
     }
 
     private func attach(_ controller: GCController) {
-        guard ports[ObjectIdentifier(controller)] == nil else { return }
-        let used = Set(ports.values)
-        guard let port = (0..<2).first(where: { !used.contains($0) }) else { return }
-        ports[ObjectIdentifier(controller)] = port
-        controller.playerIndex = port == 0 ? .index1 : .index2
+        guard slots[ObjectIdentifier(controller)] == nil else { return }
+        let used = Set(slots.values)
+        guard let slot = (0..<16).first(where: { !used.contains($0) }) else { return }
+        slots[ObjectIdentifier(controller)] = slot
 
         if let app {
-            cgb_host_gamepad_connected(app, UInt32(port), true)
+            Self.name(controller).withCString {
+                cgb_host_gamepad_device(app, UInt32(slot), $0, true)
+            }
         }
         guard let pad = controller.extendedGamepad else { return }
         pad.valueChangedHandler = { [weak self] pad, _ in
-            self?.push(pad, port: port)
+            self?.push(pad, slot: slot)
         }
-        push(pad, port: port)
+        push(pad, slot: slot)
+    }
+
+    /// A display name for the device list.
+    private static func name(_ controller: GCController) -> String {
+        controller.vendorName ?? controller.productCategory
     }
 
     /// Build the libretro bitmask + axes and hand them to Rust.
-    private func push(_ pad: GCExtendedGamepad, port: Int) {
+    private func push(_ pad: GCExtendedGamepad, slot: Int) {
         guard let app else { return }
         var buttons: UInt32 = 0
         func set(_ id: Int, _ pressed: Bool) {
@@ -106,7 +115,7 @@ final class Gamepads {
 
         cgb_host_gamepad_state(
             app,
-            UInt32(port),
+            UInt32(slot),
             buttons,
             Self.axis(leftX),
             Self.axis(-leftY),

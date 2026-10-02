@@ -8,7 +8,6 @@ use std::rc::Rc;
 use crate::app::App as CgbApp;
 use crate::cli::Args;
 use crate::host::SharedHostWindow;
-use cgb_libretro::GamepadSnapshot;
 use igui::igui_app::{App as IguiApp, AppConfig, PlatformEvent};
 use igui::igui_core::{Cursor, ImeEvent, Vec2};
 
@@ -17,7 +16,8 @@ use super::input::{
     key_from_code, modifiers_from_bits, pointer_button, NativeEvent, NativeInputPlugin,
 };
 use super::plugins::{
-    NativeClipboardPlugin, NativeGamepadPlugin, NativeHostWindow, NativeTextMeasurePlugin,
+    DeviceState, NativeClipboardPlugin, NativeGamepadPlugin, NativeHostWindow,
+    NativeTextMeasurePlugin,
 };
 use super::surface::NativeSurface;
 
@@ -26,7 +26,7 @@ pub struct CgbHostApp {
     app: IguiApp,
     gpu: NativeGpu,
     host_window: NativeHostWindow,
-    gamepad: Rc<RefCell<GamepadSnapshot>>,
+    gamepad: Rc<RefCell<Vec<DeviceState>>>,
     drops: Rc<RefCell<Vec<PathBuf>>>,
 }
 
@@ -268,8 +268,40 @@ pub unsafe extern "C" fn cgb_host_caret(
 // Gamepad (the shell's GameController / XInput)
 // ---------------------------------------------------------------------------
 
-/// Replace one port's gamepad snapshot. `buttons`: bit i = `CGB_JOYPAD_*` i.
-/// Axes are `-32768..32767`, libretro's convention (Y positive is down).
+/// Declare or update a gamepad device slot. `slot` is the shell's own index
+/// (connection order); `name` is the display label. `false` disconnects it.
+///
+/// # Safety
+///
+/// `app` must be a live pointer from `cgb_host_start`; `name` a valid C string.
+#[no_mangle]
+pub unsafe extern "C" fn cgb_host_gamepad_device(
+    app: *mut CgbHostApp,
+    slot: u32,
+    name: *const c_char,
+    connected: bool,
+) {
+    let Some(app) = (unsafe { app.as_mut() }) else {
+        return;
+    };
+    let name = unsafe { opt_string(name) }.unwrap_or_default();
+    let mut devices = app.gamepad.borrow_mut();
+    let slot = slot as usize;
+    if devices.len() <= slot {
+        devices.resize_with(slot + 1, DeviceState::default);
+    }
+    let device = &mut devices[slot];
+    device.name = name;
+    device.connected = connected;
+    if !connected {
+        device.buttons = 0;
+        device.analog = [[0; 2]; 2];
+    }
+}
+
+/// Replace one device slot's state. `buttons`: bit i = `CGB_JOYPAD_*` i. Axes
+/// are `-32768..32767`, libretro's convention (Y positive is down). The app
+/// maps device slots to ports.
 ///
 /// # Safety
 ///
@@ -277,7 +309,7 @@ pub unsafe extern "C" fn cgb_host_caret(
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_gamepad_state(
     app: *mut CgbHostApp,
-    port: u32,
+    slot: u32,
     buttons: u32,
     left_x: i16,
     left_y: i16,
@@ -287,31 +319,12 @@ pub unsafe extern "C" fn cgb_host_gamepad_state(
     let Some(app) = (unsafe { app.as_mut() }) else {
         return;
     };
-    let mut snapshot = app.gamepad.borrow_mut();
-    if let Some(slot) = snapshot.buttons.get_mut(port as usize) {
-        *slot = buttons as u16;
+    let mut devices = app.gamepad.borrow_mut();
+    if let Some(device) = devices.get_mut(slot as usize) {
+        device.buttons = buttons as u16;
+        device.analog[0] = [left_x, left_y];
+        device.analog[1] = [right_x, right_y];
     }
-    if let Some(sticks) = snapshot.analog.get_mut(port as usize) {
-        sticks[0] = [left_x, left_y];
-        sticks[1] = [right_x, right_y];
-    }
-}
-
-/// Mark a gamepad port connected or disconnected; disconnecting clears it.
-///
-/// # Safety
-///
-/// `app` must be a live pointer from `cgb_host_start`.
-#[no_mangle]
-pub unsafe extern "C" fn cgb_host_gamepad_connected(
-    app: *mut CgbHostApp,
-    port: u32,
-    connected: bool,
-) {
-    let Some(app) = (unsafe { app.as_mut() }) else {
-        return;
-    };
-    app.gamepad.borrow_mut().connect(port as usize, connected);
 }
 
 /// Resize the drawable (physical pixels) and update the backing scale.

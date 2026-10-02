@@ -23,5 +23,4 @@ exec "$CXX" -std=c++17 -fsyntax-only -Wall -Wextra \
     windows/src/main.cpp \
     windows/src/WinWindow.cpp \
     windows/src/Input.cpp \
-    windows/src/Gamepads.cpp \
     windows/src/LaunchOptions.cpp

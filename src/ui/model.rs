@@ -720,10 +720,11 @@ pub enum Action {
     OpenInputAssign {
         anchor: NodeId,
     },
-    /// Bind the next gamepad that presses a button to this port.
-    ClaimInputPort(usize),
-    /// Unassign the gamepad on this port.
-    ClearInputPort(usize),
+    /// Assign the gamepad `id` to `port`; `None` leaves it unassigned.
+    AssignInput {
+        id: String,
+        port: Option<usize>,
+    },
     /// Move every game into a per-console folder under the library.
     OrganizeBySystem,
     /// Filter the library to one console, or `None` for all of them.

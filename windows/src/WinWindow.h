@@ -11,7 +11,6 @@
 #include <cstdint>
 #include <string>
 
-#include "Gamepads.h"
 #include "LaunchOptions.h"
 
 struct CgbHostApp;
@@ -52,7 +51,6 @@ private:
     LaunchOptions options_;
     HWND hwnd_ = nullptr;
     CgbHostApp* app_ = nullptr;
-    Gamepads gamepads_;
 
     UINT dpi_ = 96;
     bool continuous_ = false;

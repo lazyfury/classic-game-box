@@ -5,11 +5,12 @@
 //! `igui` services and `arboard` — so both shells use this one implementation.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::app::SharedBackend;
-use crate::host::{GamepadSource, HostWindow};
-use cgb_libretro::{GamepadSnapshot, InputState};
+use crate::host::{GamepadDevice, GamepadSource, HostWindow};
+use cgb_libretro::InputState;
 use igui::igui_app::{App, AppBuilder, LifecycleObserver, Plugin};
 use igui::igui_backend_wgpu::FontMetrics;
 use igui::igui_core::FontWeight;
@@ -38,32 +39,90 @@ impl HostWindow for NativeHostWindow {
     }
 }
 
-/// The shell's gamepad source: a snapshot the shell fills through the C ABI
-/// (Apple `GameController` or Win32 `XInput`) and this applies to the shared
-/// [`InputState`] once per frame.
+/// One device the shell reports, in the shell's connection order.
+#[derive(Clone, Default)]
+pub struct DeviceState {
+    pub name: String,
+    pub connected: bool,
+    pub buttons: u16,
+    /// `[stick][axis]`, libretro's convention (Y positive down).
+    pub analog: [[i16; 2]; 2],
+}
+
+/// The device list the shell fills through the C ABI; shared with the source
+/// that reads it once per frame.
+pub type SharedDevices = Rc<RefCell<Vec<DeviceState>>>;
+
+/// The shell's gamepad source: it holds only raw per-device state, and Rust
+/// maps device slots to libretro ports, so one assignment UI works for every
+/// backend.
 struct NativeGamepad {
-    snapshot: Rc<RefCell<GamepadSnapshot>>,
+    devices: SharedDevices,
+    /// Device slot → the port it drives.
+    ports: HashMap<usize, usize>,
 }
 
 impl GamepadSource for NativeGamepad {
     fn poll(&mut self, state: &mut InputState) {
-        self.snapshot.borrow().apply(state);
+        let devices = self.devices.borrow();
+        for (slot, device) in devices.iter().enumerate() {
+            if !device.connected {
+                continue;
+            }
+            let Some(&port) = self.ports.get(&slot) else {
+                continue;
+            };
+            state.set_gamepad_mask(port, device.buttons);
+            for (stick, axes) in device.analog.iter().enumerate() {
+                for (axis, value) in axes.iter().enumerate() {
+                    state.set_analog(port, stick, axis, *value);
+                }
+            }
+        }
+    }
+
+    fn devices(&self) -> Vec<GamepadDevice> {
+        self.devices
+            .borrow()
+            .iter()
+            .enumerate()
+            .filter(|(_, device)| device.connected)
+            .map(|(slot, device)| GamepadDevice {
+                id: slot.to_string(),
+                name: device.name.clone(),
+                port: self.ports.get(&slot).copied(),
+            })
+            .collect()
+    }
+
+    fn assign(&mut self, id: &str, port: Option<usize>) {
+        let Ok(slot) = id.parse::<usize>() else {
+            return;
+        };
+        if let Some(port) = port {
+            self.ports.retain(|_, assigned| *assigned != port);
+            self.ports.insert(slot, port);
+        } else {
+            self.ports.remove(&slot);
+        }
     }
 }
 
 /// Publishes the shell's gamepad source as the `SharedGamepad` service.
 pub struct NativeGamepadPlugin {
-    source: Rc<RefCell<dyn GamepadSource>>,
+    devices: SharedDevices,
 }
 
 impl NativeGamepadPlugin {
-    /// Create the plugin and a handle to the snapshot the shell writes.
-    pub fn new() -> (Self, Rc<RefCell<GamepadSnapshot>>) {
-        let snapshot = Rc::new(RefCell::new(GamepadSnapshot::default()));
-        let source: Rc<RefCell<dyn GamepadSource>> = Rc::new(RefCell::new(NativeGamepad {
-            snapshot: snapshot.clone(),
-        }));
-        (Self { source }, snapshot)
+    /// Create the plugin and the device list the shell fills through the FFI.
+    pub fn new() -> (Self, SharedDevices) {
+        let devices: SharedDevices = Rc::new(RefCell::new(Vec::new()));
+        (
+            Self {
+                devices: devices.clone(),
+            },
+            devices,
+        )
     }
 }
 
@@ -73,7 +132,11 @@ impl Plugin for NativeGamepadPlugin {
     }
 
     fn build(&self, app: &mut AppBuilder) {
-        app.insert_service(self.source.clone());
+        let source: crate::host::SharedGamepad = Rc::new(RefCell::new(NativeGamepad {
+            devices: self.devices.clone(),
+            ports: HashMap::new(),
+        }));
+        app.insert_service(source);
     }
 }
 

@@ -9,7 +9,7 @@ use igui::igui_components::{Menu, MenuItem, Overlays};
 use igui::igui_core::{NodeId, Vec2};
 use igui::igui_theme::Theme;
 
-use cgb_libretro::{KeyboardMode, SystemId, SYSTEMS};
+use cgb_libretro::{SystemId, SYSTEMS};
 
 use crate::host::GamepadDevice;
 
@@ -17,55 +17,54 @@ use crate::ui::model::{Action, Confirm, CoreRow, GameRow};
 
 use super::ViewBridge;
 
-/// Open the input-assignment menu: each port's current source, a "press a pad
-/// to claim" item per port, and a clear item per port.
+/// How many ports the assignment menu offers per gamepad.
+const ASSIGN_PORTS: usize = 4;
+
+/// Open the input-assignment menu: one section per connected gamepad, each with
+/// its ports (`1P`..`4P`, ticked on the one it drives) and an unassign item.
 pub fn input_menu(
     theme: &'static dyn Theme,
     overlays: &mut Overlays,
     anchor: NodeId,
-    port_count: usize,
     devices: Vec<GamepadDevice>,
-    keyboard_mode: KeyboardMode,
     actions: &ViewBridge,
 ) {
     let actions = actions.clone();
     overlays.menu(anchor, move |tree, node| {
         let mut menu = Menu::new(theme);
-        for port in 0..port_count {
-            let source = port_source(port, &devices, keyboard_mode);
-            menu = menu.item(MenuItem::new(format!("P{}：{source}", port + 1), theme));
+        if devices.is_empty() {
+            menu = menu.item(MenuItem::new("没有检测到手柄", theme));
         }
-        menu = menu.separator();
-        for port in 0..port_count {
+        for (index, device) in devices.iter().enumerate() {
+            menu = menu.item(MenuItem::new(
+                format!("手柄 {}：{}", index + 1, device.name),
+                theme,
+            ));
+            for port in 0..ASSIGN_PORTS {
+                let ticked = device.port == Some(port);
+                let label = format!("{}P{}", port + 1, if ticked { " ✓" } else { "" });
+                let actions = actions.clone();
+                let id = device.id.clone();
+                menu = menu.item(MenuItem::new(label, theme).on_click(move |_tree, _id| {
+                    actions.push(Action::AssignInput {
+                        id: id.clone(),
+                        port: Some(port),
+                    })
+                }));
+            }
+            let ticked = device.port.is_none();
+            let label = if ticked { "未分配 ✓" } else { "未分配" };
             let actions = actions.clone();
-            menu = menu.item(
-                MenuItem::new(format!("认领 P{}（按下手柄任意键）", port + 1), theme)
-                    .on_click(move |_tree, _id| actions.push(Action::ClaimInputPort(port))),
-            );
-        }
-        menu = menu.separator();
-        for port in 0..port_count {
-            let actions = actions.clone();
-            menu = menu.item(
-                MenuItem::new(format!("清除 P{} 的手柄", port + 1), theme)
-                    .on_click(move |_tree, _id| actions.push(Action::ClearInputPort(port))),
-            );
+            let id = device.id.clone();
+            menu = menu.item(MenuItem::new(label, theme).on_click(move |_tree, _id| {
+                actions.push(Action::AssignInput {
+                    id: id.clone(),
+                    port: None,
+                })
+            }));
         }
         tree.add_child(node, menu);
     });
-}
-
-/// What drives `port`, for the assignment menu.
-fn port_source(port: usize, devices: &[GamepadDevice], mode: KeyboardMode) -> String {
-    if let Some(device) = devices.iter().find(|device| device.port == Some(port)) {
-        return device.name.clone();
-    }
-    match (port, mode) {
-        (0, KeyboardMode::Single) => "键盘（WASD + 方向键）".to_string(),
-        (0, KeyboardMode::TwoPlayer) => "键盘（WASD）".to_string(),
-        (1, KeyboardMode::TwoPlayer) => "键盘（方向键）".to_string(),
-        _ => "未分配".to_string(),
-    }
 }
 
 /// Open a game card's context menu at `position` (a right click).

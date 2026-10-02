@@ -76,7 +76,6 @@ windows/scripts/syntax-check.sh
 | `src/native/include/cgb_host.h` | the header the C++ shell imports |
 | `windows/src/WinWindow.cpp` | window class, `WndProc`, the message loop, fullscreen, cursor, IME caret |
 | `windows/src/Input.cpp` | `WndProc` message → `cgb_host_*` helpers (UTF, modifiers, key char) |
-| `windows/src/Gamepads.cpp` | `XInput` → libretro snapshot |
 | `windows/src/LaunchOptions.cpp` | command line → `cgb_host_start` arguments |
 | `windows/CMakeLists.txt`, `windows/scripts/*` | build |
 

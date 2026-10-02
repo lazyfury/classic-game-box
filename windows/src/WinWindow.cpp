@@ -142,7 +142,6 @@ void WinWindow::RunFrame() {
         return;
     }
     ApplyResizeIfNeeded();
-    gamepads_.Poll(app_);
     cgb_host_frame(app_);
     SyncCursor();
     SyncFullscreen();
