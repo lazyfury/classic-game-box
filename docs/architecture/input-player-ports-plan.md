@@ -98,5 +98,5 @@
 
 - **P1**：`cgb-libretro` N 端口 + 键盘双模式；app `InputBindings` + settings。
 - **P2 完成**：`gilrs` 已设为**非 macOS 默认**（`src/app/gamepads.rs`，`App::init` 的 `cfg!(target_os = "macos")` 判断逻辑：macOS 用 host 的 `GameController`，其余用 `gilrs`）。
-- **P3**：play view 的分配 UI（认领 + 手动选择）+ 设置页重映射。
+- **P3 完成**：设置页 → 输入 的「键盘分配」卡片（单人/双人）；play view 按钮组的「输入分配」菜单（每个端口当前来源、「认领 Pn（按下手柄任意键）」、「清除 Pn 的手柄」）。分配 UI 已可点，但设置页里还没做**逐键重映射**（列出现有 `bindings_card` 只展示默认键位）；**每核心端口数**暂用 `2.max(已连接手柄数)`，未接 `GET_INPUT_MAX_USERS`；macOS 的 `GameController` 路径还没有设备枚举（菜单里只显示键盘来源）。
 - **P4**（之后）：netplay（lockstep → rollback）。
