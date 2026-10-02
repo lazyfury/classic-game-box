@@ -15,6 +15,7 @@
 //! | [`audio`] | cpal output + ring buffer |
 //! | [`host`] | the `HostWindow` / `GamepadSource` contract |
 //! | [`mac`] | the Swift/macOS host FFI (`cgb_mac_*` C ABI) |
+//! | [`win`] | the C++/Win32 host FFI (`cgb_win_*` C ABI) |
 //! | [`cli`] / [`cores_cli`] / [`selfcheck`] | headless surfaces |
 
 pub mod app;
@@ -24,8 +25,13 @@ pub mod cores;
 pub mod cores_cli;
 pub mod host;
 pub mod library;
+// The `mac` host is platform-gated (it needs macOS's wgpu
+// `CoreAnimationLayer` target). `win` is not: its raw-window-handle use is
+// cross-platform, so the default gate type-checks it on the macOS dev machine.
+#[cfg(target_os = "macos")]
 pub mod mac;
 pub mod paths;
 pub mod selfcheck;
 pub mod session;
 pub mod ui;
+pub mod win;

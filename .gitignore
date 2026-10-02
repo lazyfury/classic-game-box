@@ -53,3 +53,7 @@ frames/
 
 # Experimental Swift/macOS client (SwiftPM).
 /macos/.build/
+
+# C++/Win32 host build trees (CMake; and the MinGW cross-build smoke test).
+/windows/build/
+/windows/build-mingw/

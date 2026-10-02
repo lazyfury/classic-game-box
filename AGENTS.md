@@ -12,6 +12,8 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 ## 现状
 
 - **布局**：产品是 **Swift/macOS app**（`macos/`，AppKit + `CAMetalLayer` + 原生事件）。
+  另有一个实验性的 **C++/Win32 host**（`windows/` + `src/win/`），形态与 macOS host
+  对称，见 `docs/architecture/windows-host-plan.md`（Rust 侧已类型检查，C++ 侧未编译）。
   Rust 侧两个包：**根包 `cgb-app`**（`src/`：`src/ui` + `src/app` 应用逻辑、`src/library`
   游戏库、`src/paths`、`src/cores` 清单/下载、`src/audio`、`src/host` 契约、`src/mac` 是
   Swift host 的 C ABI，产出 `libcgb_app.a` 供 Swift 链接）；**`crates/cgb-libretro`**
@@ -140,7 +142,7 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 
 1. **产品是 Swift/macOS app；Rust 两个包。** 根包 `cgb-app`（`src/`）+ 成员包
    `crates/cgb-libretro`。顶层只有 `Cargo.toml`、`src/`、`crates/`、`cores/`、`scripts/`、
-   `assets/`、`docs/`、`custom_nes_core/`、`macos/`。不要往根目录丢构建产物或临时文件。
+   `assets/`、`docs/`、`custom_nes_core/`、`macos/`、`windows/`。不要往根目录丢构建产物或临时文件。
 2. **只做 UI 与 libretro 兼容。** 不实现/移植自研模拟器；它已在 `custom_nes_core/`。
    新功能先问「libretro 有没有标准对应」。
 3. **libretro 是唯一对外契约。** 只加载标准 libretro core（`cores/cores.json`
@@ -201,6 +203,7 @@ macos/scripts/run.sh mario.nes --core ./mycore_libretro.dylib # 任意模块
 | J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
 | 核心清单（启动选核） | `cores/cores.json`、`src/cores/`、`src/cli.rs` |
 | Swift/macOS host（主要产品） | `macos/`（Swift 窗口/事件）、`src/mac/`（surface + 事件 + `cgb_mac_*` C ABI）、`docs/architecture/swift-macos-host-plan.md` |
+| C++/Win32 host（实验、未编译） | `windows/`（C++ 窗口/消息循环）、`src/win/`（surface + 事件 + `cgb_win_*` C ABI）、`docs/architecture/windows-host-plan.md` |
 | 窗口/手柄 host 抽象 | `src/host.rs`（`HostWindow` / `GamepadSource`）、`src/app/mod.rs`（`App::init` 取源） |
 | 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `custom_nes_core/`（只读；`src/` 布局单 CMake 项目） |
 
@@ -219,6 +222,15 @@ macos/scripts/run.sh mario.nes --core ./mycore_libretro.dylib # 任意模块
   核心用 `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK` 收键盘、用 `MOUSE`/`POINTER`
   收触摸指针，宿主**均未接**（joypad 可用，手机键盘已映射到 16 键）。宿主的
   `GET_RUMBLE_INTERFACE` 只给一个 no-op（不真震动），仅为避免核心空指针崩溃。
+- **Windows（C++/Win32）host**：`windows/`（C++ 壳）+ `src/win/`（`cgb_win_*`
+  C ABI）对标 Swift/macOS host。Rust 侧由 macOS 的 `cargo clippy`/`test` 类型检查
+  （`src/win` 故意不做 `cfg` 门控）；C++ 侧可用 `windows/scripts/cross-build-mingw.sh`
+  从 macOS 交叉编译出自包含 `.exe`，**已在一台 Parallels Win11 VM 上跑通窗口 +
+  反复 resize**。实测两个 Windows 专属问题并已规避：DX12 `ResizeBuffers` 因 backend
+  保留上一帧 surface view 而失败（重配前先渲染一帧离屏释放），以及 wgpu 校验错误在
+  `extern "C"` 边界 panic 导致 `__fastfail`（改为 `on_uncaptured_error` 打印）。
+  尚未验证：MSVC 构建、键鼠/IME/拖放/全屏/XInput、强制 WARP、硬件 GL 核心的 WGL。
+  见 `docs/architecture/windows-host-plan.md`。
 - igui 仍没有**标准 Image 内容类型**（上游 Stage 33 删了 `Widget`，改用
   `ControlContent`）：`src/ui/frame.rs` 的 `FrameImage` 仍用 `Component` +
   `Spec::foreground` 自绘 `DrawImage`。上游若有 image 内容类型，可考虑替换本地组件。
