@@ -212,9 +212,10 @@ macos/scripts/run.sh mario.nes --core ./mycore_libretro.dylib # 任意模块
 | J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
 | 核心清单（启动选核） | `cores/cores.json`、`src/cores/`、`src/cli.rs` |
 | Swift/macOS host（主要产品） | `macos/`（Swift 窗口/事件）、`src/native/`（surface + 事件 + `cgb_host_*` C ABI）、`docs/architecture/swift-macos-host-plan.md` |
-| C++/Win32 host（实验、未编译） | `windows/`（C++ 窗口/消息循环）、`src/native/`（surface + 事件 + `cgb_host_*` C ABI）、`docs/architecture/windows-host-plan.md` |
+| C++/Win32 host（实验） | `windows/`（C++ 窗口/消息循环）、`src/native/`（surface + 事件 + `cgb_host_*` C ABI）、`docs/architecture/windows-host-plan.md` |
 | 窗口/手柄 host 抽象 | `src/host.rs`（`HostWindow` / `GamepadSource`）、`src/app/mod.rs`（`App::init` 取源） |
 | 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `custom_nes_core/`（只读；`src/` 布局单 CMake 项目） |
+| 分享游戏数据包（zip + `manifest.json`，**待处理**） | `docs/architecture/share-bundle-plan.md` |
 
 ## 已知缺口（先记录，不擅自补）
 
