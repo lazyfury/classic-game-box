@@ -3,6 +3,7 @@
 # Packages the Swift/macOS host as a `.app`.
 #
 #     macos/scripts/package.sh            # release build, then assemble dist/
+#     macos/scripts/package.sh --no-cores # ... without the built cores
 #     macos/scripts/package.sh --open     # ... and launch it afterwards
 #
 # The Rust host is linked **statically** into the Swift binary, so the bundle
@@ -11,6 +12,10 @@
 #   Contents/Resources/cores/{cores.json,*.dylib}
 #   Contents/Resources/assets/…
 #   Contents/Resources/{freej2me_plus,ppsspp}/…  when built
+#
+# `--no-cores` skips every `cores/dist` dylib (and the freej2me / ppsspp
+# bundles) and ships only `cores.json`: the app downloads cores from the
+# libretro buildbot at runtime. This is how the released app is built.
 #
 # `cgb-app` looks for cores first in app data, then in the bundle's
 # `Resources/cores` (`resource_dir` / `resolve_module` in `crates/cgb-app`), so
@@ -35,9 +40,14 @@ ASSETS="$ROOT/assets"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 
 open_after=false
-if [ "${1:-}" = "--open" ]; then
-	open_after=true
-fi
+with_cores=true
+for arg in "$@"; do
+	case "$arg" in
+		--open) open_after=true ;;
+		--no-cores) with_cores=false ;;
+		*) echo "unknown flag: $arg（用法：package.sh [--no-cores] [--open]）" >&2; exit 2 ;;
+	esac
+done
 
 if [ "$(uname -s)" != "Darwin" ]; then
 	echo "这个脚本只在 macOS 上有意义（.app bundle 是 macOS 的概念）" >&2
@@ -67,10 +77,14 @@ echo "==> 打包 cores"
 if [ -f "$CORES_JSON" ]; then
 	mkdir -p "$APP/Contents/Resources/cores"
 	cp "$CORES_JSON" "$APP/Contents/Resources/cores/cores.json"
-	for dylib in "$CORES_DIST"/*.dylib; do
-		[ -f "$dylib" ] || continue
-		cp "$dylib" "$APP/Contents/Resources/cores/"
-	done
+	if [ "$with_cores" = true ]; then
+		for dylib in "$CORES_DIST"/*.dylib; do
+			[ -f "$dylib" ] || continue
+			cp "$dylib" "$APP/Contents/Resources/cores/"
+		done
+	else
+		echo "   （--no-cores：只带 cores.json，不带任何 dylib）"
+	fi
 else
 	echo "   注意：找不到 $CORES_JSON，打包后没有核心清单" >&2
 fi
@@ -79,11 +93,11 @@ echo "==> 打包 assets"
 mkdir -p "$APP/Contents/Resources/assets"
 cp -R "$ASSETS/." "$APP/Contents/Resources/assets/"
 
-if [ -d "$CORES_DIST/freej2me_plus" ]; then
+if [ "$with_cores" = true ] && [ -d "$CORES_DIST/freej2me_plus" ]; then
 	echo "==> 打包 freej2me（jar + 精简 JRE）"
 	cp -R "$CORES_DIST/freej2me_plus" "$APP/Contents/Resources/freej2me_plus"
 fi
-if [ -d "$CORES_DIST/ppsspp" ]; then
+if [ "$with_cores" = true ] && [ -d "$CORES_DIST/ppsspp" ]; then
 	echo "==> 打包 PPSSPP assets"
 	cp -R "$CORES_DIST/ppsspp" "$APP/Contents/Resources/ppsspp"
 fi
