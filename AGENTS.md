@@ -40,6 +40,9 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   单游戏可用卡片右键的**「选择核心…」**覆盖该游戏用的核心（存在库 `games.core`，
   `Library::set_core`，`None` 即跟随该机种设置；rescan 不覆盖）。优先级：
   `--core` > 游戏覆盖 > 机种设置 > 清单首个核心。
+  ROM 路径以**相对库根**存入 DB（schema v5，`Library::{key,resolve}`；旧库打开时自动
+  迁移），且 `sync` **非破坏**（父目录不存在就不删行）——所以同一个库被 macOS / Windows
+  两个 host 打开也不会互相删游戏/截图。注意：截图 PNG 一旦被删本地无法恢复。
 - **性能**：DrawList 复用（运行游戏不重排重绘）+ 图标纹理化 + 库网格可见行虚拟化；
   `CGB_PERF=1` 打点。
 - **Q5 打包**：`scripts/package-macos.sh` / `scripts/release.sh` 出 macOS `.app` + zip

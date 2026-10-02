@@ -6,6 +6,13 @@
 //! which a directory listing can express. A rescan reconciles the two: files
 //! that appeared are inserted, files that vanished are dropped, and a file that
 //! changed keeps every field the player set.
+//!
+//! ROM paths are stored **relative to the library root**, so the folder stays
+//! portable between machines and operating systems; [`Library::games`] hands
+//! them back as absolute paths. And a rescan never destroys a row unless the
+//! file is provably gone (its directory exists but the file does not), so a
+//! library that simply is not mounted here — or was written by another OS —
+//! survives a scan intact.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -17,12 +24,13 @@ use super::error::LibraryError;
 
 /// The schema this build understands, stored in `PRAGMA user_version`. A
 /// database with a higher number was written by a newer build.
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 /// One ROM found on disk. What a scan produces; the database reconciles it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiskGame {
-    /// Absolute path; the reconciliation key.
+    /// Absolute path from the scan; [`Library::sync`] stores it relative to the
+    /// library root.
     pub path: String,
     /// The file name with its extension (`mario.nes`).
     pub file_name: String,
@@ -70,7 +78,8 @@ impl DiskGame {
 pub struct Game {
     /// Row id; screenshots reference it.
     pub id: i64,
-    /// Absolute ROM path; the reconciliation key.
+    /// Absolute ROM path. The database stores it relative to the library root;
+    /// [`Library::games`] resolves it back against the current root.
     pub path: String,
     /// The actual file name (`mario.nes`), never edited by a rename.
     pub file_name: String,
@@ -135,6 +144,10 @@ pub struct Screenshot {
 /// The SQLite-backed library.
 pub struct Library {
     conn: Connection,
+    /// The library folder the database lives in (the database's parent).
+    /// `games.path` is stored relative to it, so the folder is portable
+    /// between machines and operating systems.
+    root: PathBuf,
     /// Where screenshot files live; a sibling of the database.
     screenshots_dir: PathBuf,
 }
@@ -147,16 +160,31 @@ impl Library {
         }
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
-        let screenshots_dir = path
+        let root = path
             .parent()
             .unwrap_or_else(|| Path::new("."))
-            .join("screenshots");
+            .to_path_buf();
+        let screenshots_dir = root.join("screenshots");
         let library = Self {
             conn,
+            root,
             screenshots_dir,
         };
         library.migrate()?;
         Ok(library)
+    }
+
+    /// The stored form of a ROM path: relative to the library root when the
+    /// file is inside it, otherwise the absolute path unchanged (an added ROM
+    /// may live outside the library). Storing the relative form is what makes
+    /// the library folder portable.
+    fn key(&self, path: &str) -> String {
+        key_for(&self.root, path)
+    }
+
+    /// The absolute ROM path for a stored key.
+    fn resolve(&self, key: &str) -> String {
+        resolve_against(&self.root, key)
     }
 
     // -- schema -------------------------------------------------------------
@@ -176,6 +204,9 @@ impl Library {
         }
         if version < 4 {
             self.migrate_game_core()?;
+        }
+        if version < 5 {
+            self.migrate_keys()?;
         }
         self.conn
             .execute(&format!("PRAGMA user_version = {SCHEMA_VERSION}"), [])?;
@@ -275,6 +306,31 @@ impl Library {
         Ok(())
     }
 
+    /// v5: store ROM paths relative to the library root.
+    ///
+    /// A path under the root becomes relative; anything else (an individually
+    /// added ROM outside the library) is left as it was.
+    fn migrate_keys(&self) -> Result<(), LibraryError> {
+        let mut statement = self.conn.prepare("SELECT id, path FROM games")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut updates = Vec::new();
+        for row in rows {
+            let (id, path) = row?;
+            let key = self.key(&path);
+            if key != path {
+                updates.push((id, key));
+            }
+        }
+        drop(statement);
+        for (id, key) in updates {
+            self.conn
+                .execute("UPDATE games SET path = ?2 WHERE id = ?1", params![id, key])?;
+        }
+        Ok(())
+    }
+
     /// The old table's rows have no file name; take it from the path.
     fn backfill_file_names(&self) -> Result<(), LibraryError> {
         let mut statement = self
@@ -325,23 +381,31 @@ impl Library {
     /// A path already known keeps its name, pin, play statistics, screenshots
     /// and cover; only the file name, size and modification time are refreshed.
     /// A path that appeared is inserted with its display name taken from the
-    /// file stem. A row whose file is gone is deleted. Returns how many rows
-    /// were removed.
+    /// file stem. Paths are compared in their stored (library-relative) form,
+    /// so the same library reconciles identically from any machine.
+    ///
+    /// Deletion is **non-destructive**: a row is forgotten only when its file
+    /// is provably gone (its directory exists but the file does not). A path
+    /// whose directory is missing is kept — the library may simply not be
+    /// mounted here, or the row may have been written by another OS.
+    ///
+    /// Returns how many rows were removed.
     pub fn sync(&self, found: &[DiskGame]) -> Result<usize, LibraryError> {
         let known = self.paths()?;
         let now = now_millis();
         for game in found {
-            if known.contains(game.path.as_str()) {
+            let key = self.key(&game.path);
+            if known.contains(&key) {
                 self.conn.execute(
                     "UPDATE games SET file_name = ?2, size = ?3, mtime_ms = ?4 WHERE path = ?1",
-                    params![game.path, game.file_name, game.size as i64, game.mtime_ms],
+                    params![key, game.file_name, game.size as i64, game.mtime_ms],
                 )?;
             } else {
                 self.conn.execute(
                     "INSERT INTO games (path, file_name, name, system, size, mtime_ms, added_at)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     params![
-                        game.path,
+                        key,
                         game.file_name,
                         stem_of(&game.file_name),
                         game.system.key(),
@@ -352,11 +416,21 @@ impl Library {
                 )?;
             }
         }
-        let keep: HashSet<&str> = found.iter().map(|game| game.path.as_str()).collect();
+        let keep: HashSet<String> = found.iter().map(|game| self.key(&game.path)).collect();
         let mut removed = 0;
-        for path in self.paths()? {
-            if !keep.contains(path.as_str()) {
-                self.remove(&path)?;
+        for key in self.paths()? {
+            if keep.contains(&key) {
+                continue;
+            }
+            // Non-destructive: only forget a game when its file is provably
+            // gone — the directory exists but the file does not. A key whose
+            // directory is missing means the library is not here (another
+            // machine, an unmounted volume, another OS's path), so keep the row
+            // and its screenshots rather than destroy them.
+            let file = PathBuf::from(self.resolve(&key));
+            let gone = file.parent().is_some_and(|dir| dir.exists()) && !file.exists();
+            if gone {
+                self.remove_key(&key)?;
                 removed += 1;
             }
         }
@@ -366,6 +440,7 @@ impl Library {
     /// Every known game, ordered the way the library shows them: pinned first,
     /// then most recently played, then by name.
     pub fn games(&self) -> Result<Vec<Game>, LibraryError> {
+        let root = self.root.clone();
         let mut statement = self.conn.prepare(
             "SELECT g.id, g.path, g.file_name, g.name, g.system, g.size, g.mtime_ms,
                     g.added_at, g.last_played_at, g.play_count, g.play_seconds, g.pinned,
@@ -376,10 +451,11 @@ impl Library {
              ORDER BY g.pinned DESC, g.last_played_at DESC, g.name COLLATE NOCASE",
         )?;
         let rows = statement.query_map([], |row| {
+            let stored: String = row.get(1)?;
             let system: String = row.get(4)?;
             Ok(Game {
                 id: row.get(0)?,
-                path: row.get(1)?,
+                path: resolve_against(&root, &stored),
                 file_name: row.get(2)?,
                 name: row.get(3)?,
                 system: SystemId::from_key(&system),
@@ -460,15 +536,29 @@ impl Library {
     }
 
     fn game_id(&self, path: &str) -> Result<Option<i64>, LibraryError> {
+        self.game_id_by_key(&self.key(path))
+    }
+
+    fn game_id_by_key(&self, key: &str) -> Result<Option<i64>, LibraryError> {
         let id = self
             .conn
             .query_row(
                 "SELECT id FROM games WHERE path = ?1",
-                params![path],
+                params![key],
                 |row| row.get(0),
             )
             .optional()?;
         Ok(id)
+    }
+
+    /// Forget the game stored under `key`, deleting its screenshot files.
+    fn remove_key(&self, key: &str) -> Result<(), LibraryError> {
+        if let Some(id) = self.game_id_by_key(key)? {
+            self.delete_screenshot_files(id)?;
+        }
+        self.conn
+            .execute("DELETE FROM games WHERE path = ?1", params![key])?;
+        Ok(())
     }
 
     fn prune_tags(&self) -> Result<(), LibraryError> {
@@ -483,7 +573,7 @@ impl Library {
     pub fn set_pinned(&self, path: &str, pinned: bool) -> Result<(), LibraryError> {
         self.conn.execute(
             "UPDATE games SET pinned = ?2 WHERE path = ?1",
-            params![path, pinned as i64],
+            params![self.key(path), pinned as i64],
         )?;
         Ok(())
     }
@@ -495,7 +585,7 @@ impl Library {
     pub fn set_system(&self, path: &str, system: SystemId) -> Result<(), LibraryError> {
         self.conn.execute(
             "UPDATE games SET system = ?2 WHERE path = ?1",
-            params![path, system.key()],
+            params![self.key(path), system.key()],
         )?;
         Ok(())
     }
@@ -507,7 +597,7 @@ impl Library {
     pub fn set_core(&self, path: &str, core: Option<&str>) -> Result<(), LibraryError> {
         self.conn.execute(
             "UPDATE games SET core = ?2 WHERE path = ?1",
-            params![path, core],
+            params![self.key(path), core],
         )?;
         Ok(())
     }
@@ -518,7 +608,7 @@ impl Library {
     pub fn note_played(&self, path: &str, at: i64) -> Result<(), LibraryError> {
         self.conn.execute(
             "UPDATE games SET last_played_at = ?2, play_count = play_count + 1 WHERE path = ?1",
-            params![path, at],
+            params![self.key(path), at],
         )?;
         Ok(())
     }
@@ -531,7 +621,7 @@ impl Library {
         }
         self.conn.execute(
             "UPDATE games SET play_seconds = play_seconds + ?2 WHERE path = ?1",
-            params![path, seconds],
+            params![self.key(path), seconds],
         )?;
         Ok(())
     }
@@ -540,19 +630,14 @@ impl Library {
     pub fn rename(&self, path: &str, name: &str) -> Result<(), LibraryError> {
         self.conn.execute(
             "UPDATE games SET name = ?2 WHERE path = ?1",
-            params![path, name],
+            params![self.key(path), name],
         )?;
         Ok(())
     }
 
     /// Forget a ROM: its screenshots (rows and files) go with it.
     pub fn remove(&self, path: &str) -> Result<(), LibraryError> {
-        if let Some(id) = self.game_id(path)? {
-            self.delete_screenshot_files(id)?;
-        }
-        self.conn
-            .execute("DELETE FROM games WHERE path = ?1", params![path])?;
-        Ok(())
+        self.remove_key(&self.key(path))
     }
 
     // -- screenshots --------------------------------------------------------
@@ -767,6 +852,25 @@ fn stem_of(file_name: &str) -> String {
         .unwrap_or_else(|| file_name.to_string())
 }
 
+/// The stored form of a ROM path relative to `root` (the library folder):
+/// relative when the file is inside it, otherwise the path unchanged. See
+/// [`Library::key`].
+fn key_for(root: &Path, path: &str) -> String {
+    match Path::new(path).strip_prefix(root) {
+        Ok(relative) => relative.to_string_lossy().into_owned(),
+        Err(_) => path.to_string(),
+    }
+}
+
+/// The absolute ROM path for a stored key. See [`Library::resolve`].
+fn resolve_against(root: &Path, key: &str) -> String {
+    if Path::new(key).is_absolute() {
+        key.to_string()
+    } else {
+        root.join(key).to_string_lossy().into_owned()
+    }
+}
+
 /// Tags trimmed, de-duplicated case-insensitively, and sorted for display.
 fn normalise_tags(tags: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
@@ -958,6 +1062,87 @@ mod tests {
             .map(|game| game.path)
             .collect();
         assert_eq!(paths, ["/b.nes", "/c.nes"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn paths_are_stored_relative_and_returned_absolute() {
+        let root = temp_dir("relative");
+        std::fs::create_dir_all(root.join("roms")).unwrap();
+        std::fs::write(root.join("roms/mario.nes"), b"x").unwrap();
+        let library = open_library(&root);
+        library.sync(&scan_dir(root.join("roms"))).unwrap();
+
+        // Stored relative to the library root, so the folder is portable...
+        let stored: String = library
+            .conn
+            .query_row("SELECT path FROM games", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(stored, "roms/mario.nes");
+        // ...but handed back absolute for the app to open.
+        let game = library.games().unwrap().into_iter().next().unwrap();
+        assert_eq!(game.path, root.join("roms/mario.nes").to_string_lossy());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_scan_keeps_a_row_whose_directory_is_not_here() {
+        let root = temp_dir("absent");
+        let library = open_library(&root);
+        // A row written elsewhere: its directory does not exist on this host
+        // (another machine, an unmounted volume, another OS's path).
+        let foreign = format!("{}/not-mounted/foreign.nes", root.display());
+        library.sync(&[disk(&foreign)]).unwrap();
+        assert_eq!(library.games().unwrap().len(), 1);
+
+        // A scan that finds nothing here must not wipe it (or its screenshots).
+        let removed = library.sync(&[]).unwrap();
+        assert_eq!(removed, 0);
+        assert_eq!(library.games().unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_scan_still_removes_a_file_that_was_deleted() {
+        let root = temp_dir("deleted");
+        std::fs::create_dir_all(root.join("roms")).unwrap();
+        std::fs::write(root.join("roms/gone.nes"), b"x").unwrap();
+        let library = open_library(&root);
+        library.sync(&scan_dir(root.join("roms"))).unwrap();
+        assert_eq!(library.games().unwrap().len(), 1);
+
+        // The directory is still there and the file is gone: a real deletion.
+        std::fs::remove_file(root.join("roms/gone.nes")).unwrap();
+        let removed = library.sync(&scan_dir(root.join("roms"))).unwrap();
+        assert_eq!(removed, 1);
+        assert!(library.games().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn opening_an_absolute_path_database_migrates_paths_to_relative() {
+        let root = temp_dir("migrate");
+        std::fs::create_dir_all(root.join("roms")).unwrap();
+        std::fs::write(root.join("roms/mario.nes"), b"x").unwrap();
+        let db_path = root.join("library.db");
+        let absolute = root.join("roms/mario.nes").to_string_lossy().into_owned();
+        {
+            let library = Library::open(&db_path).unwrap();
+            library.sync(&[disk(&absolute)]).unwrap();
+            // Rewrite the row the way a pre-v5 build stored it, then rewind.
+            library
+                .conn
+                .execute("UPDATE games SET path = ?1", params![absolute])
+                .unwrap();
+            library.conn.execute("PRAGMA user_version = 4", []).unwrap();
+        }
+
+        let library = Library::open(&db_path).unwrap();
+        let stored: String = library
+            .conn
+            .query_row("SELECT path FROM games", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(stored, "roms/mario.nes");
         let _ = std::fs::remove_dir_all(&root);
     }
 
