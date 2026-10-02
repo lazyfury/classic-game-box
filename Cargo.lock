@@ -262,7 +262,7 @@ checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
 name = "cgb-app"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "arboard",
  "cgb-libretro",
@@ -288,7 +288,7 @@ dependencies = [
 
 [[package]]
 name = "cgb-libretro"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "cc",
  "cgb-app",

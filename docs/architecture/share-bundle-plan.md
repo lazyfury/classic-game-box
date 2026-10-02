@@ -18,7 +18,7 @@
 ```json
 {
   "format_version": 1,
-  "created_by": "Classic Game Box 0.2.0",
+  "created_by": "Classic Game Box 0.3.0",
   "games": [
     {
       "file_name": "Super Mario Bros. 3.nes",

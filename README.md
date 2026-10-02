@@ -431,4 +431,4 @@ Nestopia 的 Blargg NTSC filter 在本进程内先跑过 Mesen 后会段错误�
 | — | Windows（C++/Win32）壳 | 🔧 实验性，窗口 + 库界面 + resize 已实测 |
 | — | 分享游戏数据包 | 📋 计划中 |
 
-许可：MIT OR Apache-2.0。
+许可：MIT。仓库内第三方核心各自遵循其原始许可（如 Mesen 为 GPLv3、mGBA 为 MPL-2.0），不随本项目的 MIT 授权改变；打包或分发前请核对 [`cores/README.md`](cores/README.md)。
