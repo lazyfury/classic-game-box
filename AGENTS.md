@@ -226,9 +226,10 @@ macos/scripts/run.sh mario.nes --core ./mycore_libretro.dylib # 任意模块
   C ABI）对标 Swift/macOS host。Rust 侧由 macOS 的 `cargo clippy`/`test` 类型检查
   （`src/win` 故意不做 `cfg` 门控）；C++ 侧可用 `windows/scripts/cross-build-mingw.sh`
   从 macOS 交叉编译出自包含 `.exe`，**已在一台 Parallels Win11 VM 上跑通窗口 +
-  反复 resize**。实测两个 Windows 专属问题并已规避：DX12 `ResizeBuffers` 因 backend
-  保留上一帧 surface view 而失败（重配前先渲染一帧离屏释放），以及 wgpu 校验错误在
-  `extern "C"` 边界 panic 导致 `__fastfail`（改为 `on_uncaptured_error` 打印）。
+  反复 resize**。实测两个 Windows 专属问题：DX12 `ResizeBuffers` 因 backend 保留
+  上一帧 surface view 而失败（**已修在 igui 上游 `v0.3.1`**，cgb 已 bump），以及
+  wgpu 校验错误在 `extern "C"` 边界 panic 导致 `__fastfail`（host 改为
+  `on_uncaptured_error` 打印）。
   尚未验证：MSVC 构建、键鼠/IME/拖放/全屏/XInput、强制 WARP、硬件 GL 核心的 WGL。
   见 `docs/architecture/windows-host-plan.md`。
 - igui 仍没有**标准 Image 内容类型**（上游 Stage 33 删了 `Widget`，改用

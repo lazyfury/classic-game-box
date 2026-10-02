@@ -85,11 +85,11 @@ let surface = unsafe { instance.create_surface_unsafe(target) }?;
 - `WM_SIZE` / `WM_DPICHANGED` 里**只记录**尺寸/缩放，`surface.configure` 留到帧边界
   （抄 `WinPresenter` 里对 `Lost`/`Outdated` 返回 `PresentOutcome::Reconfigured` 的做法）。
 - `PresentMode::Fifo` + `desired_maximum_frame_latency = 2`（与 mac 一致）。
-- **DX12 resize 的坑（已实测并规避）**：DX12 的 `ResizeBuffers` 在后备缓冲还被引用时
-  会失败，而 `igui_backend_wgpu` 的 `end_frame` **不会释放**上一帧的 surface
-  `TextureView`（它一直留在 backend 的 `frame` 里）。于是 `surface.configure` 报
-  `Invalid surface`。`src/win/host.rs::WinGpu::resize` 在重配前先 `begin_frame` +
-  `end_frame` 渲染一个离屏帧，把这个 view 换掉，从而释放后备缓冲；Metal 不需要这步。
+- **DX12 resize 的坑（已修在 igui 上游）**：DX12 的 `ResizeBuffers` 在后备缓冲还被引用时
+  会失败，而 igui `v0.3.0` 的 `igui_backend_wgpu::end_frame` **不释放**上一帧的 surface
+  `TextureView`（它一直留在 backend 的 `frame` 里），于是 `surface.configure` 报
+  `Invalid surface`。已在 igui 侧修复（`end_frame` 现在丢弃 frame；`is_offscreen_frame`
+  改用 `last_frame_offscreen`），cgb 已 bump 到 `v0.3.1`。Metal 不需要这个，无需额外处理。
 - **不因 wgpu 校验错误而 abort**：`extern "C"` 函数里的 panic 会 `__fastfail`
   （Windows 事件日志里的 `0xc0000409`）。host 用
   `device.on_uncaptured_error` 把错误改成打印；否则任何一次驱动拒绝都会把进程打死。

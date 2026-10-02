@@ -68,20 +68,6 @@ impl WinGpu {
             return;
         };
         if width > 0 && height > 0 {
-            // DX12's `ResizeBuffers` fails while a reference to a swap-chain
-            // back buffer is alive, and igui `v0.3.0` keeps the previous
-            // frame's surface texture view in its frame state. Render one
-            // offscreen frame first so that view is dropped before we
-            // reconfigure. Upstream now drops the frame in `end_frame`, so
-            // this can go once cgb's igui dependency is bumped past `v0.3.0`.
-            // (Metal reconfigures fine without it either way.)
-            let viewport = WinPresenter::viewport_of(state);
-            {
-                let mut backend = state.backend.borrow_mut();
-                if backend.begin_frame(viewport).is_ok() {
-                    let _ = backend.end_frame();
-                }
-            }
             state.config.width = width;
             state.config.height = height;
             state

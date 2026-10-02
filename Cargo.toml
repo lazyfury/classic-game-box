@@ -55,6 +55,13 @@ thiserror.workspace = true
 # System clipboard for the Swift host's text fields (src/mac/host.rs).
 arboard = "3"
 
+# Pins the `windows` crate `gpu-allocator` resolves to. `gpu-allocator` accepts
+# a range (`>=0.53,<=0.58`) and cpal pulls `windows 0.54`, so a re-resolve can
+# unify it onto 0.54 while wgpu-hal uses 0.58 — their `ID3D12*` types then
+# mismatch and the DX12 build fails. Referenced (unused) below to hold 0.58.
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true
+
 # The headless UI benchmark (`benches/ui.rs`) uses igui's measurement harness.
 [dev-dependencies]
 igui = { workspace = true, features = ["bench"] }
@@ -68,19 +75,22 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 # ---------------------------------------------------------------------------
 # igui — the UI stack, a GitHub dependency (`lazyfury/igui`, formerly `quill`),
-# pinned to the `v0.3.0` tag. Two crates are not in the facade and are declared
+# pinned to the `v0.3.1` tag. Two crates are not in the facade and are declared
 # from the same source: `igui_svg` (icon vector fallback) and `igui_core` (the
 # app's input state). Bump with `cargo update -p igui -p igui_svg -p igui_core`.
 # ---------------------------------------------------------------------------
-igui = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0", default-features = false }
-igui_svg = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
-igui_core = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
-igui_scene = { git = "https://github.com/lazyfury/igui", tag = "v0.3.0" }
+igui = { git = "https://github.com/lazyfury/igui", tag = "v0.3.1", default-features = false }
+igui_svg = { git = "https://github.com/lazyfury/igui", tag = "v0.3.1" }
+igui_core = { git = "https://github.com/lazyfury/igui", tag = "v0.3.1" }
+igui_scene = { git = "https://github.com/lazyfury/igui", tag = "v0.3.1" }
 
 cgb-libretro = { path = "crates/cgb-libretro" }
 
 # Platform / host dependencies.
 libloading = "0.8"
+# See the root package's `cfg(windows)` dependencies: keeps `gpu-allocator` on
+# `windows 0.58` so its DX12 types match wgpu-hal's.
+windows = { version = "0.58", default-features = false }
 # Build-dependency of `cgb-libretro`: compiles the C variadic log shim.
 cc = "1"
 cpal = "0.15"

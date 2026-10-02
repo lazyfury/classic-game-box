@@ -91,13 +91,12 @@ it runs in a Parallels Windows 11 VM (DX12 on the "Parallels Display Adapter"):
 the window opens, the library UI renders, and the message loop is stable across
 repeated resizes.
 
-One Windows-specific fix came out of it: wgpu's DX12 swap-chain resize
-(`ResizeBuffers`) fails while a back-buffer reference is alive, and
-`igui_backend_wgpu` keeps the previous frame's surface texture view. `src/win/
-host.rs` renders one offscreen frame before reconfiguring the surface to release
-it (see the `WinGpu::resize` comment; macOS/Metal needs no such workaround). The
-host also installs a non-panicking wgpu error handler: a validation error
-crossing the `extern "C"` boundary would otherwise abort the process.
+Two Windows-specific issues came out of it. wgpu's DX12 swap-chain resize
+(`ResizeBuffers`) failed while a back-buffer reference was alive, because
+`igui_backend_wgpu::end_frame` kept the frame's surface texture view; **fixed in
+igui `v0.3.1`** (cgb's dependency is bumped). The host also installs a
+non-panicking wgpu error handler: a validation error crossing the `extern "C"`
+boundary would otherwise abort the process (`__fastfail` / `0xc0000409`).
 
 Still to verify on Windows: keyboard / pointer / IME / drag-drop / fullscreen,
 XInput, then the W4 items (forcing WARP, and a WGL offscreen context for the
