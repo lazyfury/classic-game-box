@@ -50,8 +50,11 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   注意：截图/存档 PNG 一旦被删本地无法恢复。
 - **性能**：DrawList 复用（运行游戏不重排重绘）+ 图标纹理化 + 库网格可见行虚拟化；
   `CGB_PERF=1` 打点。
-- **Q5 打包**：`scripts/package-macos.sh` / `scripts/release.sh` 出 macOS `.app` + zip
-  （cores/assets 入 Resources）；`--selfcheck` 无头自检。
+- **Q5 打包**：`macos/scripts/package.sh` 出 macOS `.app`（Rust release 静态库 + Swift
+  release，cores/assets 入 Resources，ad-hoc 签名）；GitHub Actions 在 `release-*` /
+  `beta-*` tag 上构建并发 Release（`.github/workflows/release.yml`，只带 `--minimal`
+  核，其余运行时下载），push/PR 跑 `./scripts/dev.sh` gate（`.github/workflows/ci.yml`）；
+  `--selfcheck` 无头自检。
 - **Q6 定制**：输入能力对齐（16 键 + 模拟轴 + capabilities + 按机种绑定 + core descriptors）；
   即时存档（按 core 隔离 + 缩略图）：**快速存档是 3 档 LIFO 轮转**（`fast01` 最新，
   存档时旧的依次下移、超出 3 档丢最旧，避免死档；`Library::{roll_quick,compact_quick}`，

@@ -112,7 +112,7 @@ crates/
 - `git mv crates/cgb-app/src src`；把 `crates/cgb-app/Cargo.toml` 的 `[package]`/`[[bin]]`/
   `[dependencies]` 合并进根 `Cargo.toml`，并加 `[workspace] members = ["crates/*"]`。
 - `[workspace.dependencies]` 里 `cgb-app` 的 path 由 `crates/cgb-app` 改为 `.`（其余 crate 不变）。
-- 更新 `scripts/package-macos.sh`、`scripts/release.sh` 中 `crates/cgb-app` 注释/路径
+- 更新 `macos/scripts/package.sh` 中 `crates/cgb-app` 注释/路径
   （`-p cgb-app`、bin 名不变，命令多数无需改）。
 - Gate 绿 + `cargo run`（无 `-p`）可编译。
 

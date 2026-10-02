@@ -29,9 +29,9 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 
 ## Bundled set vs. downloaded cores
 
-Not every core needs to be shipped. `scripts/package-macos.sh` (and
-`scripts/release.sh`) take the same `--minimal` / `--only` selection as
-`build-cores.sh`: only the selected dylibs are copied into the bundle. The
+Not every core needs to be shipped. `macos/scripts/package.sh` copies every
+`cores/dist/*.dylib` into the bundle, so build only the set you want to ship
+first (`./scripts/build-cores.sh --minimal`, or `--only a,b,c`). The
 **full `cores.json` still ships**; at load the app drops rows whose module is
 absent (`resolve_module` in `src/app/helpers.rs`), so it never offers a core it
 cannot run, and keeps the rest so the library page can recommend a download.
@@ -217,7 +217,7 @@ system directory and the firmware scan finds it. `.cue`/`.ccd`/`.toc`/`.m3u`/`.i
 select PS1; `.iso`/`.chd`/`.pbp` stay with PSP, and a card's “选择机种…” menu
 overrides the extension per game. The script also fetches the upstream `assets/` tree
 into `cores/dist/ppsspp/`; the app seeds that into `<system dir>/PPSSPP/` at
-startup (without `compat.ini` the core warns at init), and `package-macos.sh`
+startup (without `compat.ini` the core warns at init), and `package.sh`
 ships it in `Resources/ppsspp/`.
 
 `freej2me_plus` is the odd one: the libretro module is only a shim that
@@ -262,7 +262,7 @@ the host already covers:
 - **System / save directories** — `GET_SYSTEM_DIRECTORY` (`<app data>/system`)
   and `GET_SAVE_DIRECTORY` are answered. A core that reads its own assets or
   firmware from the system dir (PPSSPP, FreeJ2ME-Plus) also needs a seed step in
-  `src/app/mod.rs` and a copy in `scripts/package-macos.sh`; a BIOS is just a
+  `src/app/mod.rs` and a copy in `macos/scripts/package.sh`; a BIOS is just a
   file the user drops in, no code.
 
 Touch `ffi.rs` / `host.rs` only when the ABI genuinely needs it, keep the
@@ -311,7 +311,7 @@ Once the core runs, pick how it reaches the player: not every core is bundled.
 - **Bundled** — add the key to `CGB_MINIMAL_CORES` in
   `scripts/core-profiles.sh` when the core is small, clean to redistribute and
   has no buildbot build (or must work offline out of the box), the way
-  `custom_nes_core` and `freej2me_plus` are. `scripts/package-macos.sh` then
+  `custom_nes_core` and `freej2me_plus` are. `macos/scripts/package.sh` then
   copies its dylib into the app.
 - **Download-only** — leave it out and let the library page's “缺少核心” card /
   the settings 下载核心 card offer it at runtime. Check the libretro buildbot

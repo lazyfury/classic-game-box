@@ -66,7 +66,7 @@ app 启动时（`src/app/mod.rs`）：
   所以必须是绝对路径。**没有改动 core**。
 - 没构建 bundle 时不改 `PATH`，退回系统 `java`。
 
-打包 `scripts/package-macos.sh` 把 `cores/dist/freej2me_plus/` 拷进
+打包 `macos/scripts/package.sh` 把 `cores/dist/freej2me_plus/` 拷进
 `Resources/freej2me_plus/`，并用 `codesign --deep` 连嵌套 JRE 一起签名。
 
 ## 5. 运行时版本（实测）

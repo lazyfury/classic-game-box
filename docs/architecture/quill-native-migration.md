@@ -401,7 +401,7 @@ cargo bench --bench ui -- --baseline benches/baseline.txt        # 回归门（�
 | **Q2** | 音频（cpal）+ gilrs 手柄 + 存档槽 + `.srm` | 🚧 音频/手柄/`.srm`/即时存取已接线，待人眼试听与存读验收 |
 | **Q3** ✅ | `src/ui` 最小闭环 + 库（SQLite）+ 打开目录对话框 | 从库列表选游戏进入游玩；库模型含元数据/标签/截图/封面 |
 | **Q4** | mGBA 接入（原生）+ 机种路由 + 动态分辨率/帧率/输入描述 | 🚧 上游 mGBA 已构建并过 host（RGB565）；`.gba` 整机与输入描述待做 |
-| **Q5** ✅ | 打包 `.app`、无头自检、发版脚本 | `.app` + zip（`scripts/release.sh`）；`--selfcheck` 绿（paths/library/settings/cores/icons） |
+| **Q5** ✅ | 打包 `.app`、无头自检、发版脚本 | `.app`（`macos/scripts/package.sh`）+ zip，GitHub Actions 在 `release-*`/`beta-*` tag 上发 Release；`--selfcheck` 绿（paths/library/settings/cores/icons） |
 
 ---
 

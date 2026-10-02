@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Shared core-set selection for scripts/build-cores.sh and scripts/package-macos.sh.
+# Core-set selection for scripts/build-cores.sh. `macos/scripts/package.sh`
+# bundles whatever ends up in `cores/dist`, so pick the set here first.
 #
 # A "core set" is a list of core keys, each naming a `cores/<key>/` directory
 # with a `build.sh`. Two ways to pick one:
