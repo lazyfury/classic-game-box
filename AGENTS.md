@@ -216,6 +216,7 @@ macos/scripts/run.sh mario.nes --core ./mycore_libretro.dylib # 任意模块
 | 窗口/手柄 host 抽象 | `src/host.rs`（`HostWindow` / `GamepadSource`）、`src/app/mod.rs`（`App::init` 取源） |
 | 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `custom_nes_core/`（只读；`src/` 布局单 CMake 项目） |
 | 分享游戏数据包（zip + `manifest.json`，**待处理**） | `docs/architecture/share-bundle-plan.md` |
+| 输入与玩家/端口分配（键盘/多手柄/1P、2P…，**进行中**） | `docs/architecture/input-player-ports-plan.md` |
 
 ## 已知缺口（先记录，不擅自补）
 
