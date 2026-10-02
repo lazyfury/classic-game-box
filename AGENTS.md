@@ -175,6 +175,9 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
    的 libretro 契约对照时改动；要改需明确要求。
 8. **不确定就问，不要猜。** 需求模糊、要动公共 API 或路线图时，先停下来问。
 9. **不擅自开工。** 只实现已确认的任务；顺手发现的问题只汇报，不动手。
+10. **发版要等指令。** 不打 tag、不 `gh release create`、不手动触发 GitHub Actions，
+    除非用户明确要求发布；平时只做本地构建（`macos/scripts/package.sh`），
+    `./scripts/dev.sh` 也只在本地跑。
 
 ## 构建与验证（每阶段 gate）
 
