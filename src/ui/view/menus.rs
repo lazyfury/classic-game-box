@@ -5,81 +5,181 @@
 //! the actions they push are view content. [`Ui`](crate::ui::Ui) only owns the
 //! overlay layer and asks for `repaint`, so the host stays free of view code.
 
-use igui::igui_components::{Column, Component, Menu, MenuItem, Overlays, Text};
+use igui::igui_components::{Column, Component, Menu, MenuItem, OverlayId, Overlays, Row, Text};
 use igui::igui_core::{NodeId, Vec2};
-use igui::igui_theme::{space, Theme};
+use igui::igui_theme::{space, Theme, Tone};
 
 use cgb_libretro::{KeyboardMode, SystemId, SYSTEMS};
 
 use crate::host::GamepadDevice;
 
-use super::components::{chip, chip_group};
-
 use crate::ui::model::{Action, Confirm, CoreRow, GameRow};
 
 use super::ViewBridge;
 
-/// How many ports the assignment panel offers per gamepad.
+/// How many ports the assignment menu offers per gamepad.
 const ASSIGN_PORTS: usize = 4;
 
-/// Open the input-assignment panel: a centered modal listing the connected
-/// gamepads, each with its ports (`1P`..`4P`, the current one ticked) and an
-/// unassign chip. A modal, not a drop-down: the play-view button sits near the
-/// bottom of the window, where a below-anchored menu would be clipped.
-pub fn input_modal(
+/// Open the input-assignment menu: the connected gamepads, each showing its
+/// current port and opening a port picker. Anchored at the play-view button.
+pub fn input_menu(
     theme: &'static dyn Theme,
     overlays: &mut Overlays,
+    anchor: NodeId,
     devices: Vec<GamepadDevice>,
     keyboard_mode: KeyboardMode,
     actions: &ViewBridge,
 ) {
     let actions = actions.clone();
-    let id = overlays.modal("输入分配", move |tree, node| {
-        let mut column = Column::new().gap(space::SM);
-        column = column.child(Text::small(
-            format!("键盘：{}", keyboard_mode.label()),
-            theme,
-        ));
+    overlays.menu(anchor, move |tree, node| {
+        let mut menu = Menu::new(theme)
+            .item(MenuItem::new(format!("键盘：{}", keyboard_mode.label()), theme).disabled(true));
         if devices.is_empty() {
-            column = column.child(Text::small("没有检测到手柄。连上手柄后重新打开。", theme));
-        }
-        for (index, device) in devices.iter().enumerate() {
-            column = column.child(Text::small(
-                format!("手柄 {}：{}", index + 1, device.name),
-                theme,
-            ));
-            let mut ports = chip_group();
-            for port in 0..ASSIGN_PORTS {
+            menu = menu
+                .item(MenuItem::new("没有检测到手柄。连上手柄后重新打开。", theme).disabled(true));
+        } else {
+            menu = menu.separator();
+            for (index, device) in devices.iter().enumerate() {
+                let current = match device.port {
+                    Some(port) => format!("{}P", port + 1),
+                    None => "未分配".to_string(),
+                };
                 let actions = actions.clone();
-                let device_id = device.id.clone();
-                let label = format!("{}P", port + 1);
-                ports = ports.child(chip(theme, &label, device.port == Some(port)).on_click(
-                    move |_tree, _id| {
-                        actions.push(Action::AssignInput {
-                            id: device_id.clone(),
-                            port: Some(port),
-                        })
-                    },
-                ));
+                let id = device.id.clone();
+                let name = device.name.clone();
+                menu = menu.item(
+                    MenuItem::new(format!("手柄 {}：{}", index + 1, device.name), theme)
+                        .shortcut(current)
+                        .on_click(move |_tree, _id| {
+                            actions.push(Action::OpenInputPorts {
+                                id: id.clone(),
+                                name: name.clone(),
+                                anchor,
+                            })
+                        }),
+                );
             }
-            let actions = actions.clone();
-            let device_id = device.id.clone();
-            ports = ports.child(chip(theme, "未分配", device.port.is_none()).on_click(
-                move |_tree, _id| {
-                    actions.push(Action::AssignInput {
-                        id: device_id.clone(),
-                        port: None,
-                    })
-                },
-            ));
-            column = column.child(ports);
         }
+        let mode = actions.clone();
+        menu = menu.separator().item(
+            MenuItem::new("分配模式（按 Start 认领）…", theme)
+                .on_click(move |_tree, _id| mode.push(Action::OpenAssignMode)),
+        );
+        tree.add_child(node, menu);
+    });
+}
+
+/// Open the "press Start to claim" assignment modal: the connected gamepads
+/// and the port each drives, finished with the confirm row.
+pub fn assign_modal(
+    theme: &'static dyn Theme,
+    overlays: &mut Overlays,
+    devices: Vec<GamepadDevice>,
+    waiting: bool,
+    confirming: bool,
+) -> OverlayId {
+    overlays.close_all();
+    let id = overlays.modal("分配模式", move |tree, node| {
+        let mut column = Column::new().gap(space::SM);
+        let (hint, tone) = if confirming {
+            ("再长按主控 Select 确认重置全部？", Tone::Error)
+        } else if waiting {
+            ("等待手柄反馈：按 Start 认领", Tone::Default)
+        } else {
+            ("没有可分配的空位", Tone::Default)
+        };
+        column = column.child(Text::small(hint, theme).tone(tone));
+        column = column.child(Text::small("手柄列表", theme).tone(Tone::Muted));
+        if devices.is_empty() {
+            column = column.child(Text::small("没有检测到手柄。", theme));
+        }
+        for device in &devices {
+            let name = if device.name.is_empty() {
+                format!("手柄 {}", device.id)
+            } else {
+                format!("{}（{}）", device.name, device.id)
+            };
+            column = column.child(
+                Row::new()
+                    .gap(space::SM)
+                    .child(Text::small(name, theme).grow(1.0))
+                    .child(Text::small(port_label(device.port), theme).tone(Tone::Muted)),
+            );
+        }
+        column =
+            column.child(Text::caption("主控（1P）长按 Select 重置全部", theme).tone(Tone::Muted));
         tree.add_child(node, column);
     });
-    overlays.confirm_label(id, "关闭");
-    overlays.cancel_label(id, "关闭");
-    overlays.on_confirm(id, || {});
-    overlays.on_cancel(id, || {});
+    overlays.confirm_label(id, "确认完成分配");
+    overlays.cancel_label(id, "取消");
+    id
+}
+
+/// The port as the assignment modal shows it: `1P` is the main controller.
+fn port_label(port: Option<usize>) -> String {
+    match port {
+        Some(0) => "1P（主控）".to_string(),
+        Some(port) => format!("{}P", port + 1),
+        None => "未分配".to_string(),
+    }
+}
+
+/// Open the port picker for one gamepad: `1P`..`4P` and unassign, with the
+/// current port ticked, and a row back to the gamepad list. Anchored at the
+/// play-view button.
+pub fn input_ports_menu(
+    theme: &'static dyn Theme,
+    overlays: &mut Overlays,
+    anchor: NodeId,
+    id: String,
+    name: String,
+    current: Option<usize>,
+    actions: &ViewBridge,
+) {
+    let actions = actions.clone();
+    overlays.menu(anchor, move |tree, node| {
+        let mut menu = Menu::new(theme)
+            .item(MenuItem::new(format!("手柄：{name}"), theme).disabled(true))
+            .separator();
+        for port in 0..ASSIGN_PORTS {
+            let label = if current == Some(port) {
+                format!("{}P ✓", port + 1)
+            } else {
+                format!("{}P", port + 1)
+            };
+            let actions = actions.clone();
+            let id = id.clone();
+            menu = menu.item(MenuItem::new(label, theme).on_click(move |_tree, _id| {
+                actions.push(Action::AssignInput {
+                    id: id.clone(),
+                    port: Some(port),
+                })
+            }));
+        }
+        let unassigned = if current.is_none() {
+            "未分配 ✓"
+        } else {
+            "未分配"
+        };
+        let assign = actions.clone();
+        let assign_id = id.clone();
+        let back = actions.clone();
+        menu = menu
+            .item(
+                MenuItem::new(unassigned, theme).on_click(move |_tree, _id| {
+                    assign.push(Action::AssignInput {
+                        id: assign_id.clone(),
+                        port: None,
+                    })
+                }),
+            )
+            .separator()
+            .item(
+                MenuItem::new("返回", theme)
+                    .on_click(move |_tree, _id| back.push(Action::OpenInputAssign { anchor })),
+            );
+        tree.add_child(node, menu);
+    });
 }
 
 /// Open a game card's context menu at `position` (a right click).

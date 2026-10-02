@@ -350,16 +350,66 @@ impl Ui {
         Some(hovered_cursor(&self.tree))
     }
 
-    /// Open the input-assignment panel with the connected gamepads.
-    pub fn open_input_modal(
+    /// Open the input-assignment menu, anchored at the play-view button.
+    pub fn open_input_menu(
         &mut self,
         theme: &'static dyn Theme,
+        anchor: NodeId,
         devices: Vec<crate::host::GamepadDevice>,
         keyboard_mode: cgb_libretro::KeyboardMode,
         actions: &ViewBridge,
     ) {
-        view::menus::input_modal(theme, &mut self.overlays, devices, keyboard_mode, actions);
+        view::menus::input_menu(
+            theme,
+            &mut self.overlays,
+            anchor,
+            devices,
+            keyboard_mode,
+            actions,
+        );
         self.repaint = true;
+    }
+
+    /// Open the port picker for one gamepad, anchored at the same button.
+    pub fn open_input_ports_menu(
+        &mut self,
+        theme: &'static dyn Theme,
+        anchor: NodeId,
+        id: String,
+        name: String,
+        current: Option<usize>,
+        actions: &ViewBridge,
+    ) {
+        view::menus::input_ports_menu(
+            theme,
+            &mut self.overlays,
+            anchor,
+            id,
+            name,
+            current,
+            actions,
+        );
+        self.repaint = true;
+    }
+
+    /// Open the "press Start to claim" assignment modal, replacing any open
+    /// overlay, and return its id so the host can tell when it closes.
+    pub fn open_assign_modal(
+        &mut self,
+        theme: &'static dyn Theme,
+        devices: Vec<crate::host::GamepadDevice>,
+        waiting: bool,
+        confirming: bool,
+    ) -> OverlayId {
+        let id = view::menus::assign_modal(theme, &mut self.overlays, devices, waiting, confirming);
+        self.repaint = true;
+        id
+    }
+
+    /// Whether the overlay `id` is still open. The host uses this to notice a
+    /// modal dismissed by confirm / Escape / an outside click.
+    pub fn overlay_is_open(&self, id: OverlayId) -> bool {
+        self.overlays.is_open(id)
     }
 
     /// Open the per-game console picker: every console the app knows, with the

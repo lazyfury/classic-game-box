@@ -11,11 +11,15 @@
 //! every frame.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use cgb_libretro::{InputState, JoypadButton, MAX_PORTS};
 use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
 
 use crate::host::{GamepadDevice, GamepadSource};
+
+/// How long the main pad must hold Select to request a full reset.
+const RESET_HOLD: Duration = Duration::from_secs(1);
 
 /// gilrs button → libretro joypad button.
 ///
@@ -47,6 +51,12 @@ pub struct GilrsGamepads {
     ports: HashMap<GamepadId, usize>,
     /// A port waiting for the next pad to press a button ("press to claim").
     claim: Option<usize>,
+    /// When the main pad's Select started being held, for the reset long-press.
+    select_since: Option<Instant>,
+    /// Whether the current Select hold already fired a reset request.
+    reset_latched: bool,
+    /// A pending reset request, taken by the app.
+    reset_requested: bool,
 }
 
 impl GilrsGamepads {
@@ -56,6 +66,9 @@ impl GilrsGamepads {
             gilrs,
             ports: HashMap::new(),
             claim: None,
+            select_since: None,
+            reset_latched: false,
+            reset_requested: false,
         })
     }
 
@@ -64,16 +77,24 @@ impl GilrsGamepads {
         (0..MAX_PORTS).find(|port| !self.ports.values().any(|assigned| assigned == port))
     }
 
-    /// The id of the first connected pad reporting a button press, if any.
-    fn pressed_gamepad(&self) -> Option<GamepadId> {
-        self.gilrs
-            .gamepads()
-            .find(|(_, gamepad)| {
-                BUTTONS
-                    .iter()
-                    .any(|(button, _)| gamepad.is_pressed(*button))
-            })
-            .map(|(id, _)| id)
+    /// A long Select press on the main pad (port 0) requests a full reset.
+    fn detect_reset(&mut self, now: Instant) {
+        let main = self
+            .ports
+            .iter()
+            .find(|(_, port)| **port == 0)
+            .map(|(id, _)| *id);
+        let held = main.is_some_and(|id| self.gilrs.gamepad(id).is_pressed(Button::Select));
+        if !held {
+            self.select_since = None;
+            self.reset_latched = false;
+            return;
+        }
+        let since = *self.select_since.get_or_insert(now);
+        if !self.reset_latched && now.duration_since(since) >= RESET_HOLD {
+            self.reset_requested = true;
+            self.reset_latched = true;
+        }
     }
 }
 
@@ -83,7 +104,9 @@ impl GamepadSource for GilrsGamepads {
         while let Some(event) = self.gilrs.next_event() {
             match event.event {
                 EventType::Connected => {
-                    if !self.ports.contains_key(&event.id) {
+                    // While a claim is waiting a fresh pad takes no port: the
+                    // user claims it explicitly by pressing Start.
+                    if self.claim.is_none() && !self.ports.contains_key(&event.id) {
                         if let Some(port) = self.free_port() {
                             self.ports.insert(event.id, port);
                         }
@@ -94,18 +117,21 @@ impl GamepadSource for GilrsGamepads {
                         state.clear(port);
                     }
                 }
+                // Only an unassigned pad claims: an assigned pad ignores Start,
+                // so a lone pad cannot hop between ports.
+                EventType::ButtonPressed(Button::Start, _)
+                    if !self.ports.contains_key(&event.id) =>
+                {
+                    if let Some(port) = self.claim.take() {
+                        self.ports.retain(|_, assigned| *assigned != port);
+                        self.ports.insert(event.id, port);
+                    }
+                }
                 _ => {}
             }
         }
 
-        // "Press to claim": the first pad to report a press takes the port.
-        if let Some(port) = self.claim {
-            if let Some(id) = self.pressed_gamepad() {
-                self.ports.retain(|_, assigned| *assigned != port);
-                self.ports.insert(id, port);
-                self.claim = None;
-            }
-        }
+        self.detect_reset(Instant::now());
 
         // Then read the current value of every assigned pad (gilrs tracks the
         // state, so there is no per-frame event bookkeeping).
@@ -159,8 +185,12 @@ impl GamepadSource for GilrsGamepads {
         }
     }
 
-    fn claim(&mut self, port: usize) {
-        self.claim = Some(port);
+    fn claim(&mut self, port: Option<usize>) {
+        self.claim = port;
+    }
+
+    fn take_reset_request(&mut self) -> bool {
+        std::mem::take(&mut self.reset_requested)
     }
 }
 

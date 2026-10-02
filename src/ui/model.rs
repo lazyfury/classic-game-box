@@ -571,6 +571,9 @@ pub struct ViewModel {
     pub bindings: Vec<BindingRow>,
     /// The console the bindings belong to (they are per console).
     pub bindings_system: String,
+    /// The port each connected gamepad drives, in connection order; the
+    /// "输入分配" button summarizes it.
+    pub gamepad_ports: Vec<Option<usize>>,
     /// The input descriptors the running core declared, if any.
     pub core_inputs: Vec<InputDescriptorRow>,
     /// The post-process preset for the game picture.
@@ -621,6 +624,26 @@ impl ViewModel {
     pub fn selected_game(&self) -> Option<&GameRow> {
         self.selected.and_then(|index| self.games.get(index))
     }
+
+    /// The "输入分配" button's label: the keyboard mode, plus the gamepad
+    /// assignment (a lone pad is called out with its port; several become a
+    /// count).
+    pub fn input_label(&self) -> String {
+        let mode = match self.keyboard_mode {
+            KeyboardMode::Single => "单人",
+            KeyboardMode::TwoPlayer => "双人",
+        };
+        match self.gamepad_ports.len() {
+            0 => format!("键盘{mode}"),
+            1 => {
+                let port = self.gamepad_ports[0]
+                    .map(|port| format!("{}P", port + 1))
+                    .unwrap_or_else(|| "未分配".to_string());
+                format!("键盘{mode} + 手柄1（{port}）")
+            }
+            count => format!("键盘{mode} + {count} 个手柄"),
+        }
+    }
 }
 
 impl Default for ViewModel {
@@ -664,6 +687,7 @@ impl Default for ViewModel {
             library_root: None,
             bindings: Vec::new(),
             bindings_system: String::new(),
+            gamepad_ports: Vec::new(),
             core_inputs: Vec::new(),
             shader: ShaderKind::Off,
             msaa: MsaaKind::Auto,
@@ -716,8 +740,19 @@ pub enum Action {
     RescanLibrary,
     /// Pick how the keyboard is shared (`single` / `two_player`).
     SetKeyboardMode(KeyboardMode),
-    /// Open the input-assignment panel.
-    OpenInputAssign,
+    /// Open the input-assignment menu, anchored at the play-view button.
+    OpenInputAssign {
+        anchor: NodeId,
+    },
+    /// Open the "press Start to claim" assignment modal.
+    OpenAssignMode,
+    /// Open the port picker for one gamepad (`name` is its label), anchored at
+    /// the same button.
+    OpenInputPorts {
+        id: String,
+        name: String,
+        anchor: NodeId,
+    },
     /// Assign the gamepad `id` to `port`; `None` leaves it unassigned.
     AssignInput {
         id: String,
@@ -862,5 +897,21 @@ mod tests {
         }
         // A removed or unknown key falls back to auto, not to a fixed count.
         assert_eq!(MsaaKind::from_key("nonsense"), MsaaKind::Auto);
+    }
+
+    #[test]
+    fn input_label_summarizes_keyboard_and_gamepads() {
+        let mut model = ViewModel::default();
+        assert_eq!(model.input_label(), "键盘单人");
+        model.keyboard_mode = KeyboardMode::TwoPlayer;
+        assert_eq!(model.input_label(), "键盘双人");
+        // A lone unassigned pad is still called out, with its (empty) port.
+        model.gamepad_ports = vec![None];
+        assert_eq!(model.input_label(), "键盘双人 + 手柄1（未分配）");
+        model.gamepad_ports = vec![Some(0)];
+        assert_eq!(model.input_label(), "键盘双人 + 手柄1（1P）");
+        // Two or more collapse to a count.
+        model.gamepad_ports = vec![Some(0), Some(1)];
+        assert_eq!(model.input_label(), "键盘双人 + 2 个手柄");
     }
 }

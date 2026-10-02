@@ -169,6 +169,12 @@ impl super::App {
 
         if self.dirty {
             self.rebuild_ui();
+            // A rebuild closes every overlay (layout anchors die with the tree),
+            // so a rebuild while the assignment modal is up re-opens it with the
+            // fresh device list.
+            if self.assign_overlay.is_some() {
+                self.open_assign_mode_overlay();
+            }
         }
         // Rebuild the draw list only when something changed. A running game
         // updates its texture in place, so its frames re-submit the previous

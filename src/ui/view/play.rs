@@ -112,10 +112,17 @@ pub(super) fn play_column(
         Button::ghost("设为封面", theme)
             .on_click(move |_tree, _id| cover.push(Action::ScreenshotCover)),
     );
+    let assign_node = NodeRef::new();
+    let assign_anchor = assign_node.clone();
     let assign = actions.clone();
     controls = controls.child(
-        Button::ghost("输入分配", theme)
-            .on_click(move |_tree, _id| assign.push(Action::OpenInputAssign)),
+        Button::ghost(model.input_label(), theme)
+            .on_click(move |_tree, _id| {
+                if let Some(anchor) = assign_anchor.get() {
+                    assign.push(Action::OpenInputAssign { anchor });
+                }
+            })
+            .ref_(&assign_node),
     );
     let full = actions.clone();
     let full_label = if model.fullscreen {

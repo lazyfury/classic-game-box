@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::host::GamepadDevice;
+
 impl super::App {
     /// App-level keyboard commands, handled before the UI or the emulator sees
     /// the key. While a text field is open it owns the keyboard, except that
@@ -277,8 +279,17 @@ impl super::App {
                 Action::SwitchLibrary => self.switch_library(),
                 Action::RescanLibrary => self.rescan_library(),
                 Action::SetKeyboardMode(mode) => self.set_keyboard_mode(mode),
-                Action::OpenInputAssign => {
-                    self.open_input_assign();
+                Action::OpenInputAssign { anchor } => {
+                    self.open_input_assign(anchor);
+                    opened_overlay = true;
+                }
+                Action::OpenAssignMode => {
+                    self.assign_confirm_reset = false;
+                    self.open_assign_mode_overlay();
+                    opened_overlay = true;
+                }
+                Action::OpenInputPorts { id, name, anchor } => {
+                    self.open_input_ports(&id, &name, anchor);
                     opened_overlay = true;
                 }
                 Action::AssignInput { id, port } => self.assign_input(&id, port),
@@ -690,20 +701,131 @@ impl super::App {
     }
 
     pub(super) fn step_gamepad(&mut self) {
-        if let Some(gamepads) = self.gamepads.clone() {
-            gamepads.borrow_mut().poll(&mut self.input);
+        let Some(gamepads) = self.gamepads.clone() else {
+            return;
+        };
+        gamepads.borrow_mut().poll(&mut self.input);
+        let devices = gamepads.borrow().devices();
+        // Refresh the "输入分配" button's gamepad summary; only a change builds.
+        let ports: Vec<Option<usize>> = devices.iter().map(|device| device.port).collect();
+        if ports != self.model.gamepad_ports {
+            self.model.gamepad_ports = ports;
+            self.dirty = true;
         }
+        // Take the main-controller reset request even when the modal is not up,
+        // so a stale one does not fire later.
+        let reset = gamepads.borrow_mut().take_reset_request();
+        // Keep the assignment modal in step: re-arm the next free port while it
+        // is up, and notice a confirm / Escape / outside close.
+        let Some(id) = self.assign_overlay else {
+            return;
+        };
+        if !self.ui.overlay_is_open(id) {
+            self.assign_overlay = None;
+            self.assign_confirm_reset = false;
+            gamepads.borrow_mut().claim(None);
+            self.dirty = true;
+            return;
+        }
+        if reset {
+            self.handle_main_reset();
+        }
+        // Always re-arm from the freshest device list, including on the reset
+        // frame: a reset leaves every pad unassigned, so the next free port is
+        // where a Start press should land.
+        let devices = gamepads.borrow().devices();
+        gamepads.borrow_mut().claim(next_free_port(&devices));
     }
-    /// Open the input-assignment panel with the connected gamepads.
-    pub(super) fn open_input_assign(&mut self) {
+
+    /// A main-controller Select long-press: the first asks to confirm, a second
+    /// one clears every gamepad assignment.
+    pub(super) fn handle_main_reset(&mut self) {
+        if self.assign_confirm_reset {
+            let Some(gamepads) = self.gamepads.clone() else {
+                return;
+            };
+            let ids: Vec<String> = gamepads
+                .borrow()
+                .devices()
+                .iter()
+                .map(|device| device.id.clone())
+                .collect();
+            for id in ids {
+                gamepads.borrow_mut().assign(&id, None);
+            }
+            self.assign_confirm_reset = false;
+        } else {
+            self.assign_confirm_reset = true;
+        }
+        // Re-open now so the list / hint follow the reset and the claim stays
+        // armed even before the tree rebuild that `dirty` triggers.
+        self.open_assign_mode_overlay();
+        self.dirty = true;
+    }
+
+    /// Open the "press Start to claim" assignment modal, arming the next free
+    /// port.
+    pub(super) fn open_assign_mode_overlay(&mut self) {
         let devices = self
             .gamepads
             .as_ref()
             .map(|gamepads| gamepads.borrow().devices())
             .unwrap_or_default();
-        self.ui
-            .open_input_modal(self.theme, devices, self.keyboard_mode, &self.actions);
-        self.dirty = true;
+        let target = next_free_port(&devices);
+        if let Some(gamepads) = &self.gamepads {
+            gamepads.borrow_mut().claim(target);
+        }
+        self.assign_overlay = Some(self.ui.open_assign_modal(
+            self.theme,
+            devices,
+            target.is_some(),
+            self.assign_confirm_reset,
+        ));
+    }
+    /// Open the input-assignment menu, anchored at the play-view button.
+    ///
+    /// The menu lives on the overlay layer and is built from the current device
+    /// list, so it must **not** mark the tree dirty: that rebuild would close
+    /// the overlay (a menu is anchored to a tree node, so a rebuild does close
+    /// it — but with the anchor still valid there is no reason to).
+    pub(super) fn open_input_assign(&mut self, anchor: NodeId) {
+        let devices = self
+            .gamepads
+            .as_ref()
+            .map(|gamepads| gamepads.borrow().devices())
+            .unwrap_or_default();
+        self.ui.close_overlays();
+        self.ui.open_input_menu(
+            self.theme,
+            anchor,
+            devices,
+            self.keyboard_mode,
+            &self.actions,
+        );
+    }
+
+    /// Open the port picker for one gamepad, replacing the gamepad list.
+    pub(super) fn open_input_ports(&mut self, id: &str, name: &str, anchor: NodeId) {
+        let current = self
+            .gamepads
+            .as_ref()
+            .and_then(|gamepads| {
+                gamepads
+                    .borrow()
+                    .devices()
+                    .into_iter()
+                    .find(|device| device.id == id)
+            })
+            .and_then(|device| device.port);
+        self.ui.close_overlays();
+        self.ui.open_input_ports_menu(
+            self.theme,
+            anchor,
+            id.to_string(),
+            name.to_string(),
+            current,
+            &self.actions,
+        );
     }
 
     /// Assign a gamepad to a port, or unassign it (`None`).
@@ -711,8 +833,12 @@ impl super::App {
         if let Some(gamepads) = &self.gamepads {
             gamepads.borrow_mut().assign(id, port);
         }
-        self.dirty = true;
     }
+}
+
+/// The first port no connected gamepad drives, if any.
+fn next_free_port(devices: &[GamepadDevice]) -> Option<usize> {
+    (0..MAX_PORTS).find(|port| !devices.iter().any(|device| device.port == Some(*port)))
 }
 
 /// Map a UI key to the input crate's bindable key, or `None` when the key

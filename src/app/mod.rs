@@ -30,10 +30,11 @@ use crate::ui::{
     CONTENT_MAX_WIDTH, CONTENT_MIN_WIDTH,
 };
 use cgb_libretro::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
-use cgb_libretro::{InputState, KeyboardBindings, KeyboardMode};
+use cgb_libretro::{InputState, KeyboardBindings, KeyboardMode, MAX_PORTS};
 use igui::igui_app::{AppLogic, EventContext, EventResult, FrameContext, InitContext};
 use igui::igui_backend_wgpu::{TextureEffect, WgpuBackend};
-use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, Rect, ViewportSize};
+use igui::igui_components::OverlayId;
+use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, NodeId, Rect, ViewportSize};
 use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, Severity, StageTimes};
 use igui::igui_render::{DrawList, PaintContext, TextureId};
 use igui::igui_theme::{Mode, Theme};
@@ -308,6 +309,13 @@ pub struct App {
     /// handled. Set when games are added, opened from `update` so the action
     /// dispatch does not immediately close it.
     pending_core_prompt: Option<String>,
+    /// The "press Start to claim" assignment modal, while it is open. The app
+    /// polls [`Ui::overlay_is_open`] to notice a confirm / Escape / outside
+    /// close and stop claiming.
+    assign_overlay: Option<OverlayId>,
+    /// While the assignment modal is up, whether a main-controller long-press
+    /// has asked to reset and is waiting for a second one to confirm.
+    assign_confirm_reset: bool,
     /// Keyboard modifiers, so save-state hotkeys can tell save from load.
     modifiers: Modifiers,
     /// Files dropped onto the window since the last frame.
@@ -515,6 +523,8 @@ impl App {
             download_rx: None,
             download_queue: VecDeque::new(),
             pending_core_prompt: None,
+            assign_overlay: None,
+            assign_confirm_reset: false,
             modifiers: Modifiers::NONE,
             pending_drops: Rc::new(RefCell::new(Vec::new())),
             last_viewport: None,
@@ -681,12 +691,14 @@ impl AppLogic for App {
     }
 
     fn needs_frame(&self) -> bool {
-        // A running game drives its own clock; an overlay timer or a held
-        // rewind key needs frames too. Otherwise the loop waits for an event.
+        // A running game drives its own clock; an overlay timer, a held rewind
+        // key, or the assignment modal (which polls the pads for a Start press)
+        // needs frames too. Otherwise the loop waits for an event.
         self.rewinding
             || self.transition.is_some()
             || self.pending_fullscreen.is_some()
             || self.download_rx.is_some()
+            || self.assign_overlay.is_some()
             || self.ui.overlays_animating()
             || self
                 .session

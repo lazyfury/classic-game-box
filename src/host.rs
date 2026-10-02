@@ -42,9 +42,17 @@ pub trait GamepadSource {
     /// `None`.
     fn assign(&mut self, _id: &str, _port: Option<usize>) {}
 
-    /// Bind the next pad that reports a button press to `port` ("press to
-    /// claim"). Cleared once a pad is claimed.
-    fn claim(&mut self, _port: usize) {}
+    /// Arm the port a pad can claim by pressing its Start button ("press to
+    /// claim"), or `None` to stop waiting. The source clears the armed port
+    /// once a pad claims it.
+    fn claim(&mut self, _port: Option<usize>) {}
+
+    /// Take a pending reset request: the **main** controller (the pad on port
+    /// `0`) held Select for the long-press interval. Cleared once read, so the
+    /// host acts on each press once.
+    fn take_reset_request(&mut self) -> bool {
+        false
+    }
 }
 
 /// One connected gamepad, as the assignment UI sees it.
