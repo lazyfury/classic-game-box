@@ -115,7 +115,7 @@ pub(super) fn play_column(
     let assign = actions.clone();
     controls = controls.child(
         Button::ghost("输入分配", theme)
-            .on_click(move |_tree, id| assign.push(Action::OpenInputAssign { anchor: id })),
+            .on_click(move |_tree, _id| assign.push(Action::OpenInputAssign)),
     );
     let full = actions.clone();
     let full_label = if model.fullscreen {

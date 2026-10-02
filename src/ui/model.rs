@@ -716,10 +716,8 @@ pub enum Action {
     RescanLibrary,
     /// Pick how the keyboard is shared (`single` / `two_player`).
     SetKeyboardMode(KeyboardMode),
-    /// Open the input-assignment menu, anchored to the play-view button.
-    OpenInputAssign {
-        anchor: NodeId,
-    },
+    /// Open the input-assignment panel.
+    OpenInputAssign,
     /// Assign the gamepad `id` to `port`; `None` leaves it unassigned.
     AssignInput {
         id: String,

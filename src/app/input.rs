@@ -277,8 +277,8 @@ impl super::App {
                 Action::SwitchLibrary => self.switch_library(),
                 Action::RescanLibrary => self.rescan_library(),
                 Action::SetKeyboardMode(mode) => self.set_keyboard_mode(mode),
-                Action::OpenInputAssign { anchor } => {
-                    self.open_input_assign(anchor);
+                Action::OpenInputAssign => {
+                    self.open_input_assign();
                     opened_overlay = true;
                 }
                 Action::AssignInput { id, port } => self.assign_input(&id, port),
@@ -694,15 +694,15 @@ impl super::App {
             gamepads.borrow_mut().poll(&mut self.input);
         }
     }
-    /// Open the input-assignment menu with the connected gamepads.
-    pub(super) fn open_input_assign(&mut self, anchor: NodeId) {
+    /// Open the input-assignment panel with the connected gamepads.
+    pub(super) fn open_input_assign(&mut self) {
         let devices = self
             .gamepads
             .as_ref()
             .map(|gamepads| gamepads.borrow().devices())
             .unwrap_or_default();
         self.ui
-            .open_input_menu(self.theme, anchor, devices, &self.actions);
+            .open_input_modal(self.theme, devices, self.keyboard_mode, &self.actions);
         self.dirty = true;
     }
 

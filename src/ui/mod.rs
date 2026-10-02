@@ -350,15 +350,15 @@ impl Ui {
         Some(hovered_cursor(&self.tree))
     }
 
-    /// Open the input-assignment menu, anchored to the play-view button.
-    pub fn open_input_menu(
+    /// Open the input-assignment panel with the connected gamepads.
+    pub fn open_input_modal(
         &mut self,
         theme: &'static dyn Theme,
-        anchor: NodeId,
         devices: Vec<crate::host::GamepadDevice>,
+        keyboard_mode: cgb_libretro::KeyboardMode,
         actions: &ViewBridge,
     ) {
-        view::menus::input_menu(theme, &mut self.overlays, anchor, devices, actions);
+        view::menus::input_modal(theme, &mut self.overlays, devices, keyboard_mode, actions);
         self.repaint = true;
     }
 
