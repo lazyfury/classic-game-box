@@ -276,6 +276,10 @@ impl super::App {
                 Action::AddGames => self.add_games_dialog(),
                 Action::SwitchLibrary => self.switch_library(),
                 Action::RescanLibrary => self.rescan_library(),
+                Action::SetKeyboardMode(mode) => self.set_keyboard_mode(mode),
+                Action::OpenInputAssign { anchor } => self.open_input_assign(anchor),
+                Action::ClaimInputPort(port) => self.claim_input_port(port),
+                Action::ClearInputPort(port) => self.clear_input_port(port),
                 Action::OrganizeBySystem => self.organize_by_system(),
                 Action::FilterSystem(system) => {
                     self.model.system_filter = system;
@@ -687,6 +691,52 @@ impl super::App {
         if let Some(gamepads) = self.gamepads.clone() {
             gamepads.borrow_mut().poll(&mut self.input);
         }
+    }
+    /// Open the input-assignment menu with the current ports and devices.
+    pub(super) fn open_input_assign(&mut self, anchor: NodeId) {
+        let devices = self
+            .gamepads
+            .as_ref()
+            .map(|gamepads| gamepads.borrow().devices())
+            .unwrap_or_default();
+        let port_count = 2usize.max(devices.len()).min(cgb_libretro::MAX_PORTS);
+        self.ui.open_input_menu(
+            self.theme,
+            anchor,
+            port_count,
+            devices,
+            self.keyboard_mode,
+            &self.actions,
+        );
+        self.dirty = true;
+    }
+
+    /// Bind the next gamepad that presses a button to `port`.
+    pub(super) fn claim_input_port(&mut self, port: usize) {
+        match &self.gamepads {
+            Some(gamepads) => {
+                gamepads.borrow_mut().claim(port);
+                self.model.set_status(
+                    format!("按下手柄任意键以认领 P{}…", port + 1),
+                    StatusKind::Info,
+                );
+            }
+            None => self
+                .model
+                .set_status("没有可用的手柄后端".to_string(), StatusKind::Error),
+        }
+        self.dirty = true;
+    }
+
+    /// Unassign the gamepad currently on `port`.
+    pub(super) fn clear_input_port(&mut self, port: usize) {
+        if let Some(gamepads) = &self.gamepads {
+            let devices = gamepads.borrow().devices();
+            if let Some(device) = devices.into_iter().find(|device| device.port == Some(port)) {
+                gamepads.borrow_mut().assign(&device.id, None);
+            }
+        }
+        self.dirty = true;
     }
 }
 

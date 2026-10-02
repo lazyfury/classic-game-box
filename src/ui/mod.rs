@@ -350,6 +350,28 @@ impl Ui {
         Some(hovered_cursor(&self.tree))
     }
 
+    /// Open the input-assignment menu, anchored to the play-view button.
+    pub fn open_input_menu(
+        &mut self,
+        theme: &'static dyn Theme,
+        anchor: NodeId,
+        port_count: usize,
+        devices: Vec<crate::host::GamepadDevice>,
+        keyboard_mode: cgb_libretro::KeyboardMode,
+        actions: &ViewBridge,
+    ) {
+        view::menus::input_menu(
+            theme,
+            &mut self.overlays,
+            anchor,
+            port_count,
+            devices,
+            keyboard_mode,
+            actions,
+        );
+        self.repaint = true;
+    }
+
     /// Open the per-game console picker: every console the app knows, with the
     /// current one ticked. Picking one overrides the system the file extension
     /// suggests (a `.chd` can be a PlayStation or a PSP disc).

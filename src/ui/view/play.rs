@@ -112,6 +112,11 @@ pub(super) fn play_column(
         Button::ghost("设为封面", theme)
             .on_click(move |_tree, _id| cover.push(Action::ScreenshotCover)),
     );
+    let assign = actions.clone();
+    controls = controls.child(
+        Button::ghost("输入分配", theme)
+            .on_click(move |_tree, id| assign.push(Action::OpenInputAssign { anchor: id })),
+    );
     let full = actions.clone();
     let full_label = if model.fullscreen {
         "退出全屏"

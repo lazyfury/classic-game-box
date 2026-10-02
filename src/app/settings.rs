@@ -146,6 +146,7 @@ impl super::App {
             .map(binding_rows)
             .unwrap_or_default();
         self.model.bindings_system = self.active_system.name().to_string();
+        self.model.keyboard_mode = self.keyboard_mode;
         self.model.shader = self.shader;
         self.model.msaa = self.msaa;
         self.model.theme_choice = self.theme_choice;
@@ -176,6 +177,15 @@ impl super::App {
             })
             .collect();
         self.rebuild_catalog();
+        self.dirty = true;
+    }
+
+    /// Pick how the one keyboard is shared, and remember it.
+    pub(super) fn set_keyboard_mode(&mut self, mode: KeyboardMode) {
+        self.keyboard_mode = mode;
+        self.settings.keyboard_mode = mode.key().to_string();
+        let _ = self.settings.save(&self.paths.settings_json);
+        self.model.keyboard_mode = mode;
         self.dirty = true;
     }
 

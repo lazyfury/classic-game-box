@@ -1,7 +1,7 @@
 //! Pure view data for the UI. No igui, no platform — just what the screen
 //! needs to know, so the view builder can be tested headlessly.
 
-use cgb_libretro::SystemId;
+use cgb_libretro::{KeyboardMode, SystemId};
 use igui::igui_core::{NodeId, Vec2};
 use igui::igui_render::TextureId;
 
@@ -497,6 +497,8 @@ pub struct ViewModel {
     pub section: Section,
     /// Which settings group the settings page's right column shows.
     pub settings_group: SettingsGroup,
+    /// How the one keyboard is shared between players.
+    pub keyboard_mode: KeyboardMode,
     /// Platform chrome the header must clear (macOS title bar / traffic lights).
     pub safe_area: SafeArea,
     pub games: Vec<GameRow>,
@@ -626,6 +628,7 @@ impl Default for ViewModel {
         Self {
             section: Section::Library,
             settings_group: SettingsGroup::Library,
+            keyboard_mode: KeyboardMode::default(),
             safe_area: SafeArea::ZERO,
             games: Vec::new(),
             selected: None,
@@ -711,6 +714,16 @@ pub enum Action {
     SwitchLibrary,
     /// Rescan the library folders and reconcile the database.
     RescanLibrary,
+    /// Pick how the keyboard is shared (`single` / `two_player`).
+    SetKeyboardMode(KeyboardMode),
+    /// Open the input-assignment menu, anchored to the play-view button.
+    OpenInputAssign {
+        anchor: NodeId,
+    },
+    /// Bind the next gamepad that presses a button to this port.
+    ClaimInputPort(usize),
+    /// Unassign the gamepad on this port.
+    ClearInputPort(usize),
     /// Move every game into a per-console folder under the library.
     OrganizeBySystem,
     /// Filter the library to one console, or `None` for all of them.

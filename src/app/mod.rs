@@ -33,7 +33,7 @@ use cgb_libretro::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemI
 use cgb_libretro::{InputState, KeyboardBindings, KeyboardMode};
 use igui::igui_app::{AppLogic, EventContext, EventResult, FrameContext, InitContext};
 use igui::igui_backend_wgpu::{TextureEffect, WgpuBackend};
-use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, Rect, ViewportSize};
+use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, NodeId, Rect, ViewportSize};
 use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, Severity, StageTimes};
 use igui::igui_render::{DrawList, PaintContext, TextureId};
 use igui::igui_theme::{Mode, Theme};

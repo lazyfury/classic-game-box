@@ -13,6 +13,7 @@ use igui::igui_ui::{Align, Justify, MouseFilter, SizeBasis, SurfaceStyle};
 use crate::ui::icons::{Icon as SvgIcon, IconName};
 use crate::ui::model::{Action, EditTarget, MsaaKind, SettingsGroup, ShaderKind, ViewModel};
 use crate::ui::theme::ThemeChoice;
+use cgb_libretro::KeyboardMode;
 
 use super::components::{chip, chip_group, text_field};
 use super::Page;
@@ -146,6 +147,23 @@ fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBrid
         .padding(Edges::all(space::SM))
         .child(search)
         .child(list)
+}
+
+/// The game-library card: the one library folder, and the switch button.
+fn keyboard_mode_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBridge) -> Card {
+    let mut chips = chip_group();
+    for mode in KeyboardMode::ALL {
+        let pick = actions.clone();
+        chips = chips.child(
+            chip(theme, mode.label(), model.keyboard_mode == mode)
+                .on_click(move |_tree, _id| pick.push(Action::SetKeyboardMode(mode))),
+        );
+    }
+    Card::new(theme)
+        .gap(space::SM)
+        .padding(Edges::all(space::SM))
+        .child(Text::small("键盘分配", theme))
+        .child(chips)
 }
 
 /// The game-library card: the one library folder, and the switch button.
@@ -471,7 +489,9 @@ pub(super) fn settings_detail(
             }
         }
         SettingsGroup::Input => {
-            let body = body.child(bindings_card(theme, model));
+            let body = body
+                .child(keyboard_mode_card(theme, model, actions))
+                .child(bindings_card(theme, model));
             if model.core_inputs.is_empty() {
                 body
             } else {
