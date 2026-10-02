@@ -30,7 +30,7 @@ use crate::ui::{
     CONTENT_MAX_WIDTH, CONTENT_MIN_WIDTH,
 };
 use cgb_libretro::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
-use cgb_libretro::{InputState, KeyboardBindings};
+use cgb_libretro::{InputState, KeyboardBindings, KeyboardMode};
 use igui::igui_app::{AppLogic, EventContext, EventResult, FrameContext, InitContext};
 use igui::igui_backend_wgpu::{TextureEffect, WgpuBackend};
 use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, Rect, ViewportSize};
@@ -267,7 +267,14 @@ pub struct App {
     pending_confirm: Option<Confirm>,
     input: InputState,
     /// Keyboard bindings, one set per console (a NES and a GBA layout differ).
+    /// Used in single-player mode: both WASD and the arrow keys drive player 1.
     bindings: HashMap<SystemId, KeyboardBindings>,
+    /// Two-player mode's player-one bindings (the WASD cluster), per console.
+    bindings_p1: HashMap<SystemId, KeyboardBindings>,
+    /// Two-player mode's player-two bindings (the arrow cluster), per console.
+    bindings_p2: HashMap<SystemId, KeyboardBindings>,
+    /// How the one keyboard is shared.
+    keyboard_mode: KeyboardMode,
     /// The console whose binding set the keyboard feeds right now.
     active_system: SystemId,
     /// The last card single click (index, time), so two in quick succession
@@ -447,6 +454,7 @@ impl App {
         };
         let ui = Ui::new(theme, &model, &actions);
 
+        let keyboard_mode = KeyboardMode::from_key(&settings.keyboard_mode);
         let mut app = Self {
             backend: None,
             window: None,
@@ -483,6 +491,15 @@ impl App {
                 .iter()
                 .map(|system| (*system, KeyboardBindings::default_bindings_for(*system)))
                 .collect(),
+            bindings_p1: cgb_libretro::SYSTEMS
+                .iter()
+                .map(|system| (*system, KeyboardBindings::default_p1_for(*system)))
+                .collect(),
+            bindings_p2: cgb_libretro::SYSTEMS
+                .iter()
+                .map(|system| (*system, KeyboardBindings::default_p2_for(*system)))
+                .collect(),
+            keyboard_mode,
             active_system: SystemId::Nes,
             card_click: None,
             rewinding: false,

@@ -104,7 +104,9 @@ mod system;
 
 pub mod input;
 pub use core_choice::{choose_core, cores_for_system, CoreSpec};
-pub use input::{default_key_hints, GamepadSnapshot, InputState, Key, KeyboardBindings};
+pub use input::{
+    default_key_hints, GamepadSnapshot, InputState, Key, KeyboardBindings, KeyboardMode, MAX_PORTS,
+};
 pub use joypad::{
     JoypadButton, RETRO_DEVICE_ANALOG, RETRO_DEVICE_ANALOG_BIT, RETRO_DEVICE_ID_ANALOG_X,
     RETRO_DEVICE_ID_ANALOG_Y, RETRO_DEVICE_ID_JOYPAD_MASK, RETRO_DEVICE_INDEX_ANALOG_LEFT,

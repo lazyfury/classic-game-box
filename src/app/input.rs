@@ -59,19 +59,31 @@ impl super::App {
                 // back to the UI.
                 if matches!(event, InputEvent::KeyDown { key: Key::Escape }) {
                     self.escape_game();
-                } else if let Some(bindings) = self.bindings.get(&self.active_system) {
-                    match event {
-                        InputEvent::KeyDown { key } => {
-                            if let Some(key) = to_input_key(*key) {
-                                bindings.apply(key, true, &mut self.input, 0);
+                } else {
+                    let key_event = match event {
+                        InputEvent::KeyDown { key } => Some((*key, true)),
+                        InputEvent::KeyUp { key } => Some((*key, false)),
+                        _ => None,
+                    };
+                    if let Some((key, down)) =
+                        key_event.and_then(|(key, down)| to_input_key(key).map(|key| (key, down)))
+                    {
+                        let system = self.active_system;
+                        match self.keyboard_mode {
+                            KeyboardMode::Single => {
+                                if let Some(bindings) = self.bindings.get(&system) {
+                                    bindings.apply(key, down, &mut self.input, 0);
+                                }
+                            }
+                            KeyboardMode::TwoPlayer => {
+                                if let Some(bindings) = self.bindings_p1.get(&system) {
+                                    bindings.apply(key, down, &mut self.input, 0);
+                                }
+                                if let Some(bindings) = self.bindings_p2.get(&system) {
+                                    bindings.apply(key, down, &mut self.input, 1);
+                                }
                             }
                         }
-                        InputEvent::KeyUp { key } => {
-                            if let Some(key) = to_input_key(*key) {
-                                bindings.apply(key, false, &mut self.input, 0);
-                            }
-                        }
-                        _ => {}
                     }
                 }
             } else {

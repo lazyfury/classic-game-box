@@ -14,6 +14,11 @@ use std::collections::HashMap;
 
 use crate::{JoypadButton, SystemId};
 
+/// The most controller ports the front end tracks, aligned with libretro's
+/// 8-player convention (RetroArch's `MAX_PLAYERS`). A core may support fewer;
+/// it reports its own maximum through `RETRO_ENVIRONMENT_GET_INPUT_MAX_USERS`.
+pub const MAX_PORTS: usize = 8;
+
 /// A key the keyboard bindings can bind.
 ///
 /// Deliberately not `igui_core::Key`: this crate owns only the keys it can
@@ -42,12 +47,12 @@ pub enum Key {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct InputState {
     /// Buttons held by the keyboard bindings.
-    keyboard: [u16; 2],
+    keyboard: [u16; MAX_PORTS],
     /// Buttons held by a gamepad.
-    gamepad: [u16; 2],
+    gamepad: [u16; MAX_PORTS],
     /// Analog sticks: `[port][stick][axis]` in `-32768..=32767`, libretro's
     /// convention (Y positive is down). Only a gamepad produces these.
-    analog: [[[i16; 2]; 2]; 2],
+    analog: [[[i16; 2]; 2]; MAX_PORTS],
 }
 
 impl InputState {
@@ -122,7 +127,7 @@ impl InputState {
 }
 
 /// Set or clear one bit in a per-port mask.
-fn set_bit(masks: &mut [u16; 2], port: usize, button: JoypadButton, down: bool) {
+fn set_bit(masks: &mut [u16], port: usize, button: JoypadButton, down: bool) {
     let Some(mask) = masks.get_mut(port) else {
         return;
     };
@@ -142,11 +147,11 @@ fn set_bit(masks: &mut [u16; 2], port: usize, button: JoypadButton, down: bool) 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GamepadSnapshot {
     /// Buttons held per port, as a libretro joypad bitmask.
-    pub buttons: [u16; 2],
+    pub buttons: [u16; MAX_PORTS],
     /// Analog sticks: `[port][stick][axis]`, libretro's convention.
-    pub analog: [[[i16; 2]; 2]; 2],
+    pub analog: [[[i16; 2]; 2]; MAX_PORTS],
     /// Whether a pad is connected on each port (informational).
-    pub connected: [bool; 2],
+    pub connected: [bool; MAX_PORTS],
 }
 
 impl GamepadSnapshot {
@@ -198,13 +203,51 @@ impl GamepadSnapshot {
     /// Write this snapshot into the gamepad half of `state` (the keyboard half
     /// is left alone, so the two sources still OR).
     pub fn apply(&self, state: &mut InputState) {
-        for port in 0..2 {
+        for port in 0..MAX_PORTS {
             state.set_gamepad_mask(port, self.buttons[port]);
             for stick in 0..2 {
                 for axis in 0..2 {
                     state.set_analog(port, stick, axis, self.analog[port][stick][axis]);
                 }
             }
+        }
+    }
+}
+
+/// How the one keyboard is shared between players.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum KeyboardMode {
+    /// Both WASD and the arrow keys drive player one.
+    #[default]
+    Single,
+    /// WASD drives player one, the arrow keys player two.
+    TwoPlayer,
+}
+
+impl KeyboardMode {
+    pub const ALL: [Self; 2] = [Self::Single, Self::TwoPlayer];
+
+    /// The stable settings key.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Single => "single",
+            Self::TwoPlayer => "two_player",
+        }
+    }
+
+    /// Parse the settings key, defaulting to [`Self::Single`].
+    pub fn from_key(key: &str) -> Self {
+        match key {
+            "two_player" => Self::TwoPlayer,
+            _ => Self::Single,
+        }
+    }
+
+    /// A human label for the settings UI.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Single => "单人（WASD + 方向键）",
+            Self::TwoPlayer => "双人（WASD / 方向键）",
         }
     }
 }
@@ -330,6 +373,43 @@ impl KeyboardBindings {
         bindings
     }
 
+    /// The two-player table for `system`'s **player one**: the single-player
+    /// layout without the arrow keys (which move to player two).
+    pub fn default_p1_for(system: SystemId) -> Self {
+        Self::default_bindings_for(system).without_arrows()
+    }
+
+    /// The default **player two** table: the arrow keys drive the D-pad, and
+    /// nearby punctuation drives the face buttons.
+    pub fn default_p2_for(_system: SystemId) -> Self {
+        use JoypadButton::*;
+        let mut bindings = Vec::new();
+        let mut bind = |keys: &[Key], button: JoypadButton| {
+            for key in keys {
+                bindings.push((*key, button));
+            }
+        };
+        bind(&[Key::ArrowUp], Up);
+        bind(&[Key::ArrowDown], Down);
+        bind(&[Key::ArrowLeft], Left);
+        bind(&[Key::ArrowRight], Right);
+        bind(&[Key::Character(','), Key::Character('<')], B);
+        bind(&[Key::Character('.'), Key::Character('>')], A);
+        bind(&[Key::Character(';'), Key::Character(':')], Start);
+        bind(&[Key::Character('\''), Key::Character('"')], Select);
+        Self { bindings }
+    }
+
+    /// Drop every arrow-key binding (used to split the single-player layout).
+    fn without_arrows(mut self) -> Self {
+        self.bindings.retain(|(key, _)| {
+            !matches!(
+                key,
+                Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft | Key::ArrowRight
+            )
+        });
+        self
+    }
     /// Rebind a key to a button, replacing any existing mapping for that key.
     pub fn bind(&mut self, key: Key, button: JoypadButton) {
         self.bindings.retain(|(existing, _)| *existing != key);
@@ -570,5 +650,39 @@ mod tests {
         state.set_gamepad(0, JoypadButton::A, true);
         state.set(0, JoypadButton::A, false);
         assert!(state.is_down(0, JoypadButton::A));
+    }
+
+    #[test]
+    fn two_player_p1_has_no_arrows_and_p2_does() {
+        let p1 = KeyboardBindings::default_p1_for(SystemId::Nes);
+        assert_eq!(p1.button_for(Key::Character('w')), Some(JoypadButton::Up));
+        assert_eq!(p1.button_for(Key::ArrowUp), None, "arrows belong to P2");
+
+        let p2 = KeyboardBindings::default_p2_for(SystemId::Nes);
+        assert_eq!(p2.button_for(Key::ArrowUp), Some(JoypadButton::Up));
+        assert_eq!(p2.button_for(Key::Character('.')), Some(JoypadButton::A));
+    }
+
+    #[test]
+    fn keyboard_mode_keys_round_trip() {
+        for mode in KeyboardMode::ALL {
+            assert_eq!(KeyboardMode::from_key(mode.key()), mode);
+        }
+        assert_eq!(KeyboardMode::from_key("nonsense"), KeyboardMode::Single);
+    }
+
+    #[test]
+    fn all_ports_are_independent_and_out_of_range_is_ignored() {
+        let mut state = InputState::new();
+        let bindings = KeyboardBindings::default_bindings();
+        bindings.apply(Key::ArrowUp, true, &mut state, 0);
+        assert!(state.is_down(0, JoypadButton::Up));
+        assert!(!state.is_down(1, JoypadButton::Up));
+
+        state.set_gamepad_mask(7, 1 << JoypadButton::A.id());
+        assert!(state.is_down(7, JoypadButton::A));
+        // Out-of-range ports are ignored, not a panic.
+        state.set_gamepad_mask(MAX_PORTS, 0xffff);
+        assert_eq!(state.mask(MAX_PORTS), 0);
     }
 }

@@ -64,6 +64,10 @@ pub struct Settings {
     /// The middle column's width in logical pixels (0 means the default).
     #[serde(alias = "middle_width")]
     pub content_width: f32,
+    /// How the one keyboard is shared (`"single"` / `"two_player"`); an
+    /// unknown or missing key means single.
+    #[serde(default)]
+    pub keyboard_mode: String,
 }
 
 impl Settings {

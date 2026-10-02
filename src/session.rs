@@ -204,7 +204,7 @@ impl Session {
     fn step(&mut self, backend: &mut WgpuBackend, input: &InputState) {
         // The core queries what it wants: buttons as a bitmask, sticks as raw
         // axes (so an arcade core gets a real stick, not a fake D-pad).
-        for port in 0..2 {
+        for port in 0..cgb_libretro::MAX_PORTS {
             self.core.set_buttons(port, input.mask(port));
             for stick in 0..2 {
                 for axis in 0..2 {
