@@ -1,0 +1,111 @@
+# Build the macOS `.app` from a git tag and attach it to a GitHub Release.
+#
+#   release-*  -> a normal Release
+#   beta-*     -> a pre-release
+#
+# The heavy part is the bundled cores. `scripts/build-cores.sh --minimal`
+# clones and builds mesen / mgba / custom_nes_core / freej2me_plus (cmake, a
+# JDK for `jlink`, Xcode command line tools). Every other core is offered as a
+# runtime download from the libretro buildbot instead, so the bundle stays
+# redistributable — see `scripts/core-profiles.sh` and `cores/README.md`.
+#
+# `macos/scripts/package.sh` does the assembly: the Rust host as a static lib
+# linked into the Swift binary, then cores/assets under `Contents/Resources`,
+# ad-hoc codesigned. The app is **not notarized**, so a downloaded copy is
+# quarantined by Gatekeeper: testers may need right-click -> Open, or
+# `xattr -dr com.apple.quarantine "Classic Game Box (Swift).app"`.
+#
+# The whole thing must run on an **arm64** macOS runner: the buildbot cores and
+# the shipped dylibs are arm64 only.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'release-*'
+      - 'beta-*'
+  # A dry run from the Actions tab (tags only publish a Release; a manual run
+  # just uploads the workflow artifact).
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 90
+    env:
+      # Match the Swift package's deployment target (see macos/Package.swift).
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require an arm64 runner
+        run: |
+          set -euo pipefail
+          arch="$(uname -m)"
+          echo "arch=$arch"
+          if [ "$arch" != "arm64" ]; then
+            echo "::error::the app and the bundled cores are arm64 only; use a macOS arm64 runner"
+            exit 1
+          fi
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: JDK (for the freej2me_plus bundle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache core sources
+        uses: actions/cache@v4
+        with:
+          path: cores/sources
+          key: cores-${{ runner.os }}-${{ hashFiles('cores/*/build.sh', 'scripts/core-profiles.sh') }}
+
+      - name: Build the bundled cores
+        run: ./scripts/build-cores.sh --minimal
+
+      - name: Package the app
+        run: macos/scripts/package.sh
+
+      - name: Stamp the tag version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#release-}"
+          version="${version#beta-}"
+          app="dist/Classic Game Box (Swift).app"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $version" "$app/Contents/Info.plist"
+          # Editing the plist invalidates the ad-hoc signature; re-sign it.
+          codesign --force --deep --sign - "$app"
+
+      - name: Zip the app
+        run: |
+          set -euo pipefail
+          suffix="${GITHUB_REF_NAME:-snapshot}"
+          ditto -c -k --keepParent "dist/Classic Game Box (Swift).app" "dist/ClassicGameBox-${suffix}.zip"
+          ls -lh dist/*.zip
+
+      - name: Upload the workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: dist/ClassicGameBox-*.zip
+
+      - name: Publish the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          prerelease: ${{ startsWith(github.ref_name, 'beta-') }}
+          generate_release_notes: true
+          files: dist/ClassicGameBox-*.zip
