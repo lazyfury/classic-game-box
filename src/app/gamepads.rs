@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use cgb_libretro::{InputState, JoypadButton, MAX_PORTS};
 use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
 
-use crate::host::GamepadSource;
+use crate::host::{GamepadDevice, GamepadSource};
 
 /// gilrs button → libretro joypad button.
 ///
@@ -45,6 +45,8 @@ pub struct GilrsGamepads {
     gilrs: Gilrs,
     /// Connected pads, in the port each drives.
     ports: HashMap<GamepadId, usize>,
+    /// A port waiting for the next pad to press a button ("press to claim").
+    claim: Option<usize>,
 }
 
 impl GilrsGamepads {
@@ -53,12 +55,25 @@ impl GilrsGamepads {
         Gilrs::new().ok().map(|gilrs| Self {
             gilrs,
             ports: HashMap::new(),
+            claim: None,
         })
     }
 
     /// The first port no pad has claimed, if any.
     fn free_port(&self) -> Option<usize> {
         (0..MAX_PORTS).find(|port| !self.ports.values().any(|assigned| assigned == port))
+    }
+
+    /// The id of the first connected pad reporting a button press, if any.
+    fn pressed_gamepad(&self) -> Option<GamepadId> {
+        self.gilrs
+            .gamepads()
+            .find(|(_, gamepad)| {
+                BUTTONS
+                    .iter()
+                    .any(|(button, _)| gamepad.is_pressed(*button))
+            })
+            .map(|(id, _)| id)
     }
 }
 
@@ -83,6 +98,15 @@ impl GamepadSource for GilrsGamepads {
             }
         }
 
+        // "Press to claim": the first pad to report a press takes the port.
+        if let Some(port) = self.claim {
+            if let Some(id) = self.pressed_gamepad() {
+                self.ports.retain(|_, assigned| *assigned != port);
+                self.ports.insert(id, port);
+                self.claim = None;
+            }
+        }
+
         // Then read the current value of every assigned pad (gilrs tracks the
         // state, so there is no per-frame event bookkeeping).
         for (id, &port) in &self.ports {
@@ -104,6 +128,39 @@ impl GamepadSource for GilrsGamepads {
                 state.set_analog(port, stick, 1, to_i16(-gamepad.value(y_axis)));
             }
         }
+    }
+
+    fn devices(&self) -> Vec<GamepadDevice> {
+        self.gilrs
+            .gamepads()
+            .map(|(id, gamepad)| GamepadDevice {
+                id: usize::from(id).to_string(),
+                name: gamepad.name().to_string(),
+                port: self.ports.get(&id).copied(),
+            })
+            .collect()
+    }
+
+    fn assign(&mut self, id: &str, port: Option<usize>) {
+        let Some(target) = self
+            .gilrs
+            .gamepads()
+            .find(|(gamepad_id, _)| usize::from(*gamepad_id).to_string() == id)
+            .map(|(gamepad_id, _)| gamepad_id)
+        else {
+            return;
+        };
+        // One pad per port: bump whatever was there off it.
+        if let Some(port) = port {
+            self.ports.retain(|_, assigned| *assigned != port);
+            self.ports.insert(target, port);
+        } else {
+            self.ports.remove(&target);
+        }
+    }
+
+    fn claim(&mut self, port: usize) {
+        self.claim = Some(port);
     }
 }
 
