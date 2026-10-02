@@ -13,7 +13,10 @@ mod saves;
 mod schema;
 
 pub use cheats::{load_cheats, parse_cht, save_cheats, write_cht, Cheat};
-pub use db::{collect_games, scan_dir, DiskGame, Game, Library, Screenshot};
+pub use db::{
+    collect_games, scan_cheats, scan_dir, scan_saves, DiskCheat, DiskGame, DiskSave, Game, Library,
+    SaveKind, Screenshot,
+};
 pub use error::LibraryError;
 pub use import::{import_roms, ImportReport};
 pub use png_codec::{decode_png, encode_png};

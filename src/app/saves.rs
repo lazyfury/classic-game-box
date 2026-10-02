@@ -134,6 +134,10 @@ impl super::App {
                 thumb,
             });
         }
+        // Keep the database's save rows in step with the files just written.
+        if let Some(library) = &self.library {
+            let _ = library.sync_saves(&crate::library::scan_saves(&self.paths.saves));
+        }
     }
 }
 

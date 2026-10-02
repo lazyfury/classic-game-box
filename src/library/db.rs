@@ -27,7 +27,7 @@ use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 
 use super::error::LibraryError;
-use super::schema::{game_tags, games, screenshots, tags};
+use super::schema::{cheats, game_tags, games, save_states, screenshots, tags};
 
 /// The schema this build writes. A database with any other version is wiped.
 const SCHEMA_VERSION: i64 = 1;
@@ -207,6 +207,49 @@ pub struct Screenshot {
     pub height: i64,
 }
 
+/// Which save-state stack a slot belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SaveKind {
+    /// A fixed slot `1..=9`.
+    Manual,
+    /// The rolling quick stack, `0` (newest) `..=2`.
+    Quick,
+}
+
+impl SaveKind {
+    /// The stored key (and the file-name infix).
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Quick => "quick",
+        }
+    }
+}
+
+/// One save-state file found on disk, before it is linked to a game.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiskSave {
+    /// The ROM file name the state's name is built from (`mario.nes`).
+    pub rom_file: String,
+    pub core_key: String,
+    pub kind: SaveKind,
+    pub slot: u8,
+    /// File name inside the `saves/` directory.
+    pub state_file: String,
+    /// Its thumbnail, if one was written.
+    pub thumb_file: Option<String>,
+    pub modified_ms: i64,
+}
+
+/// One cheat file found on disk (named after the ROM's file stem).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiskCheat {
+    /// The game file stem (`mario`), which is how the file names its game.
+    pub stem: String,
+    /// File name inside the `cheats/` directory.
+    pub file: String,
+}
+
 /// A `games` row as diesel loads it.
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = games)]
@@ -260,6 +303,10 @@ pub struct Library {
     root: PathBuf,
     /// Where screenshot files live; a sibling of the database.
     screenshots_dir: PathBuf,
+    /// Where save-state files live.
+    saves_dir: PathBuf,
+    /// Where cheat files live.
+    cheats_dir: PathBuf,
     /// Whether opening discarded a database written by another version.
     reset: bool,
 }
@@ -283,10 +330,14 @@ impl Library {
             .unwrap_or_else(|| Path::new("."))
             .to_path_buf();
         let screenshots_dir = root.join("screenshots");
+        let saves_dir = root.join("saves");
+        let cheats_dir = root.join("cheats");
         Ok(Self {
             conn: RefCell::new(conn),
             root,
             screenshots_dir,
+            saves_dir,
+            cheats_dir,
             reset,
         })
     }
@@ -368,6 +419,66 @@ impl Library {
             }
         }
         Ok(removed)
+    }
+
+    /// Reconcile the `save_states` table with the files on disk.
+    ///
+    /// Saves have no metadata beyond the files themselves, so the scan is the
+    /// whole truth: the table is replaced. A state whose ROM is not in the
+    /// library stays on disk but is not linked.
+    pub fn sync_saves(&self, saves: &[DiskSave]) -> Result<(), LibraryError> {
+        let mut conn = self.conn.borrow_mut();
+        let by_name: HashMap<String, i64> = games::table
+            .select((games::file_name, games::id))
+            .load::<(String, i64)>(&mut *conn)?
+            .into_iter()
+            .collect();
+        conn.transaction::<_, LibraryError, _>(|conn| {
+            diesel::delete(save_states::table).execute(conn)?;
+            for save in saves {
+                let Some(&game_id) = by_name.get(&save.rom_file) else {
+                    continue;
+                };
+                diesel::insert_into(save_states::table)
+                    .values((
+                        save_states::game_id.eq(game_id),
+                        save_states::core_key.eq(&save.core_key),
+                        save_states::kind.eq(save.kind.key()),
+                        save_states::slot.eq(save.slot as i64),
+                        save_states::state_file.eq(&save.state_file),
+                        save_states::thumb_file.eq(save.thumb_file.clone()),
+                        save_states::modified_ms.eq(save.modified_ms),
+                    ))
+                    .execute(conn)?;
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    /// Reconcile the `cheats` table with the files on disk. Like saves, cheats
+    /// are named after their game, so the table is replaced from the scan.
+    pub fn sync_cheats(&self, found: &[DiskCheat]) -> Result<(), LibraryError> {
+        let mut conn = self.conn.borrow_mut();
+        let by_stem: HashMap<String, i64> = games::table
+            .select((games::file_name, games::id))
+            .load::<(String, i64)>(&mut *conn)?
+            .into_iter()
+            .map(|(name, id)| (stem_of(&name), id))
+            .collect();
+        conn.transaction::<_, LibraryError, _>(|conn| {
+            diesel::delete(cheats::table).execute(conn)?;
+            for cheat in found {
+                let Some(&game_id) = by_stem.get(&cheat.stem) else {
+                    continue;
+                };
+                diesel::insert_into(cheats::table)
+                    .values((cheats::game_id.eq(game_id), cheats::file.eq(&cheat.file)))
+                    .execute(conn)?;
+            }
+            Ok(())
+        })?;
+        Ok(())
     }
 
     /// Every known game, ordered the way the library shows them: pinned first,
@@ -534,6 +645,8 @@ impl Library {
     fn remove_key(&self, conn: &mut SqliteConnection, key: &str) -> Result<(), LibraryError> {
         if let Some(id) = game_id_by_key(conn, key)? {
             self.delete_screenshot_files(conn, id)?;
+            self.delete_save_files(conn, id)?;
+            self.delete_cheat_files(conn, id)?;
         }
         diesel::delete(games::table.filter(games::key.eq(key))).execute(conn)?;
         Ok(())
@@ -667,6 +780,42 @@ impl Library {
         }
         Ok(())
     }
+
+    /// Delete a game's save-state files (state and thumbnail) before its rows
+    /// cascade away.
+    fn delete_save_files(
+        &self,
+        conn: &mut SqliteConnection,
+        game_id: i64,
+    ) -> Result<(), LibraryError> {
+        let rows: Vec<(String, Option<String>)> = save_states::table
+            .filter(save_states::game_id.eq(game_id))
+            .select((save_states::state_file, save_states::thumb_file))
+            .load(conn)?;
+        for (state, thumb) in rows {
+            let _ = std::fs::remove_file(self.saves_dir.join(&state));
+            if let Some(thumb) = thumb {
+                let _ = std::fs::remove_file(self.saves_dir.join(&thumb));
+            }
+        }
+        Ok(())
+    }
+
+    /// Delete a game's cheat files before its rows cascade away.
+    fn delete_cheat_files(
+        &self,
+        conn: &mut SqliteConnection,
+        game_id: i64,
+    ) -> Result<(), LibraryError> {
+        let files: Vec<String> = cheats::table
+            .filter(cheats::game_id.eq(game_id))
+            .select(cheats::file)
+            .load(conn)?;
+        for file in files {
+            let _ = std::fs::remove_file(self.cheats_dir.join(&file));
+        }
+        Ok(())
+    }
 }
 
 /// Read and write `PRAGMA user_version`.
@@ -750,6 +899,95 @@ pub fn collect_games(dirs: &[PathBuf], extra: &[String]) -> (Vec<DiskGame>, Vec<
         }
     }
     (games, kept)
+}
+
+/// Parse a save file name into `(rom file, core key, kind, slot, is thumbnail)`.
+///
+/// The convention is `<rom file name>.<core key>.state<N>` (manual) or
+/// `...stateq<N>` (quick), each optionally with a `.png` thumbnail.
+fn parse_save_name(name: &str) -> Option<(String, String, SaveKind, u8, bool)> {
+    let (base, is_thumb) = match name.strip_suffix(".png") {
+        Some(base) => (base, true),
+        None => (name, false),
+    };
+    let mut parts: Vec<&str> = base.split('.').collect();
+    let last = parts.pop()?;
+    let (kind, digits) = if let Some(digits) = last.strip_prefix("stateq") {
+        (SaveKind::Quick, digits)
+    } else {
+        let digits = last.strip_prefix("state")?;
+        (SaveKind::Manual, digits)
+    };
+    let slot: u8 = digits.parse().ok()?;
+    let core_key = parts.pop()?.to_string();
+    if parts.is_empty() {
+        return None;
+    }
+    Some((parts.join("."), core_key, kind, slot, is_thumb))
+}
+
+/// Scan a `saves/` directory for save-state files, pairing each state with its
+/// thumbnail. Only the ROM's file name links a save to a game.
+pub fn scan_saves(dir: &Path) -> Vec<DiskSave> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut by_key: HashMap<(String, String, SaveKind, u8), DiskSave> = HashMap::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some((rom_file, core_key, kind, slot, is_thumb)) = parse_save_name(&name) else {
+            continue;
+        };
+        let modified_ms = std::fs::metadata(&path)
+            .map(|meta| mtime_millis(&meta))
+            .unwrap_or(0);
+        let row = by_key
+            .entry((rom_file.clone(), core_key.clone(), kind, slot))
+            .or_insert_with(|| DiskSave {
+                rom_file,
+                core_key,
+                kind,
+                slot,
+                state_file: String::new(),
+                thumb_file: None,
+                modified_ms,
+            });
+        if is_thumb {
+            row.thumb_file = Some(name);
+        } else {
+            row.state_file = name;
+            row.modified_ms = modified_ms;
+        }
+    }
+    by_key
+        .into_values()
+        .filter(|save| !save.state_file.is_empty())
+        .collect()
+}
+
+/// Scan a `cheats/` directory for `.cht` files (named after the game's stem).
+pub fn scan_cheats(dir: &Path) -> Vec<DiskCheat> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for entry in entries.flatten() {
+        if !entry.path().is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if let Some(stem) = name.strip_suffix(".cht") {
+            found.push(DiskCheat {
+                stem: stem.to_string(),
+                file: name,
+            });
+        }
+    }
+    found
 }
 
 /// Recursively collect every ROM under `dir` this app knows.
@@ -1191,6 +1429,67 @@ mod tests {
         assert!(library.games().unwrap().is_empty());
         library.sync(&scan_dir(root.join("roms"))).unwrap();
         assert_eq!(library.games().unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scan_saves_pairs_states_with_thumbnails() {
+        let root = temp_dir("saves");
+        let saves = root.join("saves");
+        std::fs::create_dir_all(&saves).unwrap();
+        std::fs::write(saves.join("Super Mario Bros. 3.nes.mesen.state1"), b"x").unwrap();
+        std::fs::write(saves.join("Super Mario Bros. 3.nes.mesen.state1.png"), b"x").unwrap();
+        std::fs::write(saves.join("mario.nes.mgba.stateq0"), b"x").unwrap();
+
+        let found = scan_saves(&saves);
+        assert_eq!(found.len(), 2);
+        let manual = found.iter().find(|s| s.kind == SaveKind::Manual).unwrap();
+        assert_eq!(manual.rom_file, "Super Mario Bros. 3.nes");
+        assert_eq!(manual.core_key, "mesen");
+        assert_eq!(manual.slot, 1);
+        assert_eq!(
+            manual.thumb_file.as_deref(),
+            Some("Super Mario Bros. 3.nes.mesen.state1.png")
+        );
+        let quick = found.iter().find(|s| s.kind == SaveKind::Quick).unwrap();
+        assert_eq!(quick.rom_file, "mario.nes");
+        assert_eq!(quick.slot, 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sync_saves_and_cheats_link_to_games_and_delete_their_files() {
+        let root = temp_dir("saves-link");
+        let library = open_library(&root);
+        library.sync(&[disk("/mario.nes")]).unwrap();
+        std::fs::create_dir_all(root.join("saves")).unwrap();
+        std::fs::write(root.join("saves/mario.nes.mesen.state1"), b"x").unwrap();
+        std::fs::write(root.join("saves/mario.nes.mesen.state1.png"), b"x").unwrap();
+        std::fs::create_dir_all(root.join("cheats")).unwrap();
+        std::fs::write(root.join("cheats/mario.cht"), b"x").unwrap();
+
+        library
+            .sync_saves(&scan_saves(&root.join("saves")))
+            .unwrap();
+        library
+            .sync_cheats(&scan_cheats(&root.join("cheats")))
+            .unwrap();
+        assert_eq!(
+            count_rows(&library, "SELECT COUNT(*) AS n FROM save_states"),
+            1
+        );
+        assert_eq!(count_rows(&library, "SELECT COUNT(*) AS n FROM cheats"), 1);
+
+        // Deleting the game removes its save and cheat files too.
+        library.remove("/mario.nes").unwrap();
+        assert!(!root.join("saves/mario.nes.mesen.state1").exists());
+        assert!(!root.join("saves/mario.nes.mesen.state1.png").exists());
+        assert!(!root.join("cheats/mario.cht").exists());
+        assert_eq!(
+            count_rows(&library, "SELECT COUNT(*) AS n FROM save_states"),
+            0
+        );
+        assert_eq!(count_rows(&library, "SELECT COUNT(*) AS n FROM cheats"), 0);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

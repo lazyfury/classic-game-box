@@ -40,9 +40,14 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   单游戏可用卡片右键的**「选择核心…」**覆盖该游戏用的核心（存在库 `games.core`，
   `Library::set_core`，`None` 即跟随该机种设置；rescan 不覆盖）。优先级：
   `--core` > 游戏覆盖 > 机种设置 > 清单首个核心。
-  ROM 路径以**相对库根**存入 DB（schema v5，`Library::{key,resolve}`；旧库打开时自动
-  迁移），且 `sync` **非破坏**（父目录不存在就不删行）——所以同一个库被 macOS / Windows
-  两个 host 打开也不会互相删游戏/截图。注意：截图 PNG 一旦被删本地无法恢复。
+  库持久化用 **diesel**（`src/library/schema.rs` 是整套模型：games / screenshots /
+  save_states / cheats / tags / game_tags，子表都 `ON DELETE CASCADE`）。ROM 路径以
+  **相对库根**存入 DB，`sync` **非破坏**（父目录不存在就不删行）。存档/金手指文件名
+  由 `scan_saves`/`scan_cheats` 解析进 DB，删游戏会连存档/金手指文件一起清。
+  **不做 schema 迁移**：`Library::open` 若 `user_version` 不是当前值就整库重建，然后
+  自动重扫一次（这是唯一的自动 sync）。平时 **不自动 sync**，由库页面「重新扫描」
+  （`Action::RescanLibrary`）手动触发。库跨 macOS/Windows 打开是安全的。
+  注意：截图/存档 PNG 一旦被删本地无法恢复。
 - **性能**：DrawList 复用（运行游戏不重排重绘）+ 图标纹理化 + 库网格可见行虚拟化；
   `CGB_PERF=1` 打点。
 - **Q5 打包**：`scripts/package-macos.sh` / `scripts/release.sh` 出 macOS `.app` + zip

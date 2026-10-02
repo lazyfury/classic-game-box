@@ -33,6 +33,8 @@ impl super::App {
 
         if let Some(library) = &self.library {
             let _ = library.sync(&disk);
+            let _ = library.sync_saves(&crate::library::scan_saves(&self.paths.saves));
+            let _ = library.sync_cheats(&crate::library::scan_cheats(&self.paths.cheats));
         }
         self.reload_library();
     }
