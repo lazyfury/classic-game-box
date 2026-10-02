@@ -327,15 +327,14 @@ pub struct SaveSlotRow {
     pub thumb: Option<TextureHandle>,
 }
 
-/// What to call a save-state slot. Slot `0` is the quick slot; the numbered
-/// slots read 1-based (`槽 1` … `槽 9`) so the label matches the `F1`–`F3`
-/// hotkeys.
-pub fn save_slot_label(slot: u8) -> String {
-    if slot == 0 {
-        "快速".to_string()
-    } else {
-        format!("槽 {slot}")
-    }
+/// What to call a rolling quick save. Rank `0` is the newest, shown `fast01`.
+pub fn quick_slot_label(rank: u8) -> String {
+    format!("fast{:02}", rank + 1)
+}
+
+/// What to call a fixed manual slot, shown `save01` for slot 1.
+pub fn manual_slot_label(slot: u8) -> String {
+    format!("save{:02}", slot)
 }
 
 /// One screenshot in the screenshots section.
@@ -522,8 +521,11 @@ pub struct ViewModel {
     /// The game whose screenshots the section shows, by game id. `None` falls
     /// back to the playing/selected game.
     pub screenshot_game: Option<i64>,
-    /// The running game's save slots. Empty when nothing is running; the
-    /// section shows a note instead.
+    /// The running game's rolling quick saves, newest first. Empty when
+    /// nothing is running; the section shows a note instead.
+    pub quick_saves: Vec<SaveSlotRow>,
+    /// The running game's fixed manual save slots. Empty when nothing is
+    /// running; the section shows a note instead.
     pub save_states: Vec<SaveSlotRow>,
     /// Whether the running core supports save states at all.
     pub save_states_supported: bool,
@@ -638,6 +640,7 @@ impl Default for ViewModel {
             status_kind: StatusKind::Info,
             screenshots: Vec::new(),
             screenshot_game: None,
+            quick_saves: Vec::new(),
             save_states: Vec::new(),
             save_states_supported: false,
             cheats: Vec::new(),
@@ -761,12 +764,18 @@ pub enum Action {
     StepPreview(i32),
     /// Make the screenshot with this id its game's cover.
     SetCover(i64),
-    /// Write a save state to this slot (`0` is the quick slot).
+    /// Write a save state to a fixed manual slot (`1`..=9).
     SaveToSlot(u8),
-    /// Load the save state in this slot (`0` is the quick slot).
+    /// Load the save state in a fixed manual slot (`1`..=9).
     LoadFromSlot(u8),
-    /// Delete the save state in this slot.
+    /// Delete the save state in a fixed manual slot.
     DeleteSlot(u8),
+    /// Quick-save into the newest slot of the rolling stack (`fast01`).
+    QuickSave,
+    /// Load the rolling quick save at this rank (`0` is the newest).
+    LoadQuick(u8),
+    /// Delete the rolling quick save at this rank (`0` is the newest).
+    DeleteQuick(u8),
     /// Import a `.cht` cheat file for the running game.
     ImportCheats,
     /// Enable or disable the cheat at this index.

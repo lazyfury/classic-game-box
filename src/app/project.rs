@@ -133,13 +133,14 @@ pub(crate) fn import_status(report: &ImportReport) -> String {
 }
 
 /// The save-state hotkey for a key, matching the old front end's layout: `F5`
-/// quick-saves, `F6` quick-loads, `F1`–`F3` save slots 1–3, and
-/// `Shift`+`F1`–`F3` loads them. `F11` toggles fullscreen.
+/// quick-saves (the newest of the rolling stack), `F6` loads the newest quick
+/// save, `F1`–`F3` write manual slots 1–3, and `Shift`+`F1`–`F3` read them.
+/// `F11` toggles fullscreen.
 pub(crate) fn state_shortcut(key: Key, shift: bool) -> Option<Action> {
     match key {
         Key::F11 => Some(Action::ToggleFullscreen),
-        Key::F5 => Some(Action::SaveToSlot(0)),
-        Key::F6 => Some(Action::LoadFromSlot(0)),
+        Key::F5 => Some(Action::QuickSave),
+        Key::F6 => Some(Action::LoadQuick(0)),
         Key::F1 if shift => Some(Action::LoadFromSlot(1)),
         Key::F2 if shift => Some(Action::LoadFromSlot(2)),
         Key::F3 if shift => Some(Action::LoadFromSlot(3)),

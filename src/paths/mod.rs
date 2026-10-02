@@ -8,7 +8,7 @@ mod layout;
 mod settings;
 
 pub use layout::{
-    battery_save_path, cheat_file, save_state_path, save_state_thumb_path, seed_dir,
-    seed_dir_recursive, Paths,
+    battery_save_path, cheat_file, quick_state_path, quick_state_thumb_path, save_state_path,
+    save_state_thumb_path, seed_dir, seed_dir_recursive, Paths,
 };
 pub use settings::Settings;

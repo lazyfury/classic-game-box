@@ -96,12 +96,12 @@ pub(super) fn play_column(
     let save = actions.clone();
     controls = controls.child(
         Button::secondary("快速存档", theme)
-            .on_click(move |_tree, _id| save.push(Action::SaveToSlot(0))),
+            .on_click(move |_tree, _id| save.push(Action::QuickSave)),
     );
     let load = actions.clone();
     controls = controls.child(
         Button::secondary("快速读档", theme)
-            .on_click(move |_tree, _id| load.push(Action::LoadFromSlot(0))),
+            .on_click(move |_tree, _id| load.push(Action::LoadQuick(0))),
     );
     let shot = actions.clone();
     controls = controls.child(

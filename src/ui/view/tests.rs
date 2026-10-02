@@ -696,7 +696,8 @@ fn the_search_bar_starts_and_reflects_the_query() {
     assert!(has("mario"), "the field renders the current query");
 }
 
-/// The saves section lists the slots and its buttons emit the slot actions.
+/// The saves section lists both stacks — rolling quick saves and fixed manual
+/// slots — and its buttons emit the matching actions.
 #[test]
 fn the_saves_page_lists_slots_and_emits_actions() {
     let actions = ViewBridge::default();
@@ -705,20 +706,18 @@ fn the_saves_page_lists_slots_and_emits_actions() {
         has_session: true,
         core_name: "Mesen".to_string(),
         save_states_supported: true,
-        save_states: vec![
-            SaveSlotRow {
-                slot: 0,
-                exists: true,
-                modified_ms: 0,
-                thumb: None,
-            },
-            SaveSlotRow {
-                slot: 1,
-                exists: false,
-                modified_ms: 0,
-                thumb: None,
-            },
-        ],
+        quick_saves: vec![SaveSlotRow {
+            slot: 0,
+            exists: true,
+            modified_ms: 0,
+            thumb: None,
+        }],
+        save_states: vec![SaveSlotRow {
+            slot: 1,
+            exists: false,
+            modified_ms: 0,
+            thumb: None,
+        }],
         ..ViewModel::default()
     };
     let (mut tree, list) = laid_out(&model, &actions);
@@ -728,15 +727,16 @@ fn the_saves_page_lists_slots_and_emits_actions() {
                     DrawCommand::DrawText { text, .. } if text.contains(needle))
         })
     };
-    assert!(has("快速"));
-    assert!(has("槽 1"));
+    assert!(has("fast01"));
+    assert!(has("save01"));
 
+    // The quick row's load/delete target the quick stack, not a manual slot.
     click(&mut tree, text_position(&list, "存"));
-    assert_eq!(actions.drain(), vec![Action::SaveToSlot(0)]);
+    assert_eq!(actions.drain(), vec![Action::QuickSave]);
     click(&mut tree, text_position(&list, "读"));
-    assert_eq!(actions.drain(), vec![Action::LoadFromSlot(0)]);
+    assert_eq!(actions.drain(), vec![Action::LoadQuick(0)]);
     click(&mut tree, text_position(&list, "删"));
-    assert_eq!(actions.drain(), vec![Action::DeleteSlot(0)]);
+    assert_eq!(actions.drain(), vec![Action::DeleteQuick(0)]);
 }
 
 /// The rail has a save section entry.

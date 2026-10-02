@@ -337,6 +337,9 @@ impl super::App {
                 Action::SaveToSlot(slot) => self.save_to_slot(slot),
                 Action::LoadFromSlot(slot) => self.load_from_slot(slot),
                 Action::DeleteSlot(slot) => self.delete_slot(slot),
+                Action::QuickSave => self.quick_save(),
+                Action::LoadQuick(rank) => self.load_quick(rank),
+                Action::DeleteQuick(rank) => self.delete_quick(rank),
                 Action::ImportCheats => self.import_cheats(),
                 Action::ToggleCheat(index) => self.toggle_cheat(index),
             }

@@ -18,13 +18,14 @@ use crate::cores::{
     registry_path, update_catalog, write_catalog, Catalog, Platform, DEFAULT_SOURCE,
 };
 use crate::library::{
-    collect_games, decode_png, encode_png, import_roms, Game, ImportReport, Library,
+    collect_games, decode_png, encode_png, import_roms, remove_legacy_quick, Game, ImportReport,
+    Library, StateSlot,
 };
 use crate::paths::{seed_dir, seed_dir_recursive, Paths, Settings};
 use crate::ui::{
-    library_columns, save_slot_label, Action, BindingRow, CatalogRow, Confirm, CoreOptionRow,
-    CoreRow, EditTarget, GameRow, InputDescriptorRow, MissingCoreRow, MsaaKind, SafeArea,
-    SaveSlotRow, ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount,
+    library_columns, manual_slot_label, quick_slot_label, Action, BindingRow, CatalogRow, Confirm,
+    CoreOptionRow, CoreRow, EditTarget, GameRow, InputDescriptorRow, MissingCoreRow, MsaaKind,
+    SafeArea, SaveSlotRow, ScreenshotRow, Section, ShaderKind, SortKey, StatusKind, SystemCount,
     TextureHandle, ThemeChoice, Ui, ViewBridge, ViewModel, CONTENT_DEFAULT_WIDTH,
     CONTENT_MAX_WIDTH, CONTENT_MIN_WIDTH,
 };
@@ -96,8 +97,31 @@ const SCREENSHOT_TEXTURE_BASE: u32 = 0x1_0000;
 /// Rasterized icon textures, above the screenshots.
 const ICON_TEXTURE_BASE: u32 = 0x2_0000;
 
-/// Save-state thumbnails, above the icons, one per slot.
+/// Save-state thumbnails, above the icons, one per slot. Rolling quick saves
+/// and fixed manual slots share this id space but never collide: quick ranks
+/// map to `0..`[`crate::library::QUICK_SLOT_COUNT`], manual slots to `16+slot`.
 const SAVE_TEXTURE_BASE: u32 = 0x3_0000;
+
+/// Which save stack a thumbnail belongs to, so a quick save and a manual slot
+/// with the same number do not share a cached texture.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum SaveThumb {
+    /// A rolling quick save, by rank (`0` is the newest).
+    Quick(u8),
+    /// A fixed manual slot (`1`..=9).
+    Manual(u8),
+}
+
+impl SaveThumb {
+    /// A stable texture id for this entry, inside the save-texture range.
+    fn texture_id(self) -> TextureId {
+        let index = match self {
+            SaveThumb::Quick(rank) => rank as u32,
+            SaveThumb::Manual(slot) => 16 + slot as u32,
+        };
+        TextureId::new(SAVE_TEXTURE_BASE + index)
+    }
+}
 
 /// The pixel size icons are rasterized at. They are drawn smaller, so the
 /// bilinear downscale stays smooth.
@@ -224,9 +248,9 @@ pub struct App {
     cover_textures: HashMap<i64, CoverTexture>,
     /// Registered screenshot thumbnails, keyed by screenshot id.
     screenshot_textures: HashMap<i64, ScreenshotTexture>,
-    /// Registered save-state thumbnails, keyed by slot, with the modified time
-    /// they were uploaded for.
-    save_textures: HashMap<u8, (i64, TextureHandle)>,
+    /// Registered save-state thumbnails, keyed by stack + slot, with the
+    /// modified time they were uploaded for.
+    save_textures: HashMap<SaveThumb, (i64, TextureHandle)>,
     /// The running game's cheats, and the `.cht` file they came from.
     cheats: Vec<crate::library::Cheat>,
     cheat_path: Option<PathBuf>,
@@ -326,6 +350,10 @@ impl App {
             paths = Paths::new(paths.user_data.clone(), Some(dir));
         }
         let _ = paths.ensure();
+        // The rolling quick stack replaced the old single quick slot (`state0`
+        // -> `stateqN`); drop the unreachable leftovers. Manual slots are
+        // unchanged and stay.
+        remove_legacy_quick(&paths.saves);
         // Arcade cores need a BIOS. Seed the writable system dir the core
         // actually reads from the bundled assets; a player-supplied file wins.
         // A packaged app keeps its assets in the bundle's Resources.

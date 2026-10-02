@@ -76,11 +76,9 @@ fn system_counts_tally_each_console_in_systems_order() {
 
 #[test]
 fn save_state_hotkeys_match_the_old_layout() {
-    assert_eq!(state_shortcut(Key::F5, false), Some(Action::SaveToSlot(0)));
-    assert_eq!(
-        state_shortcut(Key::F6, false),
-        Some(Action::LoadFromSlot(0))
-    );
+    // F5/F6 act on the rolling quick stack; the numbered keys stay manual.
+    assert_eq!(state_shortcut(Key::F5, false), Some(Action::QuickSave));
+    assert_eq!(state_shortcut(Key::F6, false), Some(Action::LoadQuick(0)));
     assert_eq!(state_shortcut(Key::F1, false), Some(Action::SaveToSlot(1)));
     assert_eq!(state_shortcut(Key::F1, true), Some(Action::LoadFromSlot(1)));
     assert_eq!(state_shortcut(Key::F4, false), None);

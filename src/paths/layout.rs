@@ -125,7 +125,7 @@ impl Default for Paths {
     }
 }
 
-/// A ROM's save-state path for a slot (1..=4), or the quick slot (`0`).
+/// A ROM's manual save-state path for a slot (1..=9).
 ///
 /// The core key is part of the name because libretro save states are core
 /// private: a state a Mesen made cannot be read by FBNeo, so the two must not
@@ -138,14 +138,35 @@ pub fn save_state_path(saves: &Path, rom: &Path, core_key: &str, slot: u8) -> Pa
     saves.join(format!("{name}.{core_key}.state{slot}"))
 }
 
-/// A slot's thumbnail (a PNG beside the state), or `None` for the quick slot
-/// if it has none.
+/// A manual slot's thumbnail (a PNG beside the state).
 pub fn save_state_thumb_path(saves: &Path, rom: &Path, core_key: &str, slot: u8) -> PathBuf {
     let name = rom
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "game".to_string());
     saves.join(format!("{name}.{core_key}.state{slot}.png"))
+}
+
+/// A ROM's quick-save path for a rolling rank (`0` is the newest).
+///
+/// Quick saves are a stack of the last few saves, not fixed slots, so they use
+/// their own `stateqN` namespace and can never collide with the manual
+/// `stateN` slots.
+pub fn quick_state_path(saves: &Path, rom: &Path, core_key: &str, rank: u8) -> PathBuf {
+    let name = rom
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "game".to_string());
+    saves.join(format!("{name}.{core_key}.stateq{rank}"))
+}
+
+/// A quick save's thumbnail (a PNG beside the state).
+pub fn quick_state_thumb_path(saves: &Path, rom: &Path, core_key: &str, rank: u8) -> PathBuf {
+    let name = rom
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "game".to_string());
+    saves.join(format!("{name}.{core_key}.stateq{rank}.png"))
 }
 
 /// A ROM's battery-save (`RETRO_MEMORY_SAVE_RAM`) path.
@@ -246,6 +267,25 @@ mod tests {
             2,
         );
         assert_eq!(path, PathBuf::from("/saves/mario.nes.mesen.state2"));
+    }
+
+    #[test]
+    fn a_quick_path_uses_its_own_namespace() {
+        let path = quick_state_path(
+            Path::new("/saves"),
+            Path::new("/roms/mario.nes"),
+            "mesen",
+            1,
+        );
+        // `stateq1`, not `state1`: a quick rank must not shadow manual slot 1.
+        assert_eq!(path, PathBuf::from("/saves/mario.nes.mesen.stateq1"));
+        let thumb = quick_state_thumb_path(
+            Path::new("/saves"),
+            Path::new("/roms/mario.nes"),
+            "mesen",
+            1,
+        );
+        assert_eq!(thumb, PathBuf::from("/saves/mario.nes.mesen.stateq1.png"));
     }
 
     #[test]

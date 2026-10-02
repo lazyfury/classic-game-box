@@ -9,8 +9,14 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use crate::audio::AudioOutput;
-use crate::library::{encode_png, exists, list_slots, read, remove, write, StateSlot};
-use crate::paths::{battery_save_path, save_state_path, save_state_thumb_path};
+use crate::library::{
+    compact_quick, encode_png, exists, list_quick_slots, list_slots, read, remove, roll_quick,
+    write, StateSlot,
+};
+use crate::paths::{
+    battery_save_path, quick_state_path, quick_state_thumb_path, save_state_path,
+    save_state_thumb_path,
+};
 use crate::ui::TextureHandle;
 use cgb_libretro::CoreHost;
 use cgb_libretro::InputState;
@@ -266,23 +272,28 @@ impl Session {
         self.core.reset();
     }
 
-    /// Write a save state for `slot` to disk (`0` is the quick slot), with a
-    /// thumbnail of the last frame beside it.
-    pub fn save_state(&self, slot: u8) -> Result<(), String> {
+    /// Serialize the machine and write it to `state`, with a thumbnail of the
+    /// last frame beside it.
+    fn write_state(&self, state: &Path, thumb: &Path) -> Result<(), String> {
         let bytes = self.core.serialize();
         if bytes.is_empty() {
             return Err("核心不支持即时存档".to_string());
         }
-        let path = save_state_path(&self.save_dir, &self.rom_path, &self.core_key, slot);
-        write(&path, &bytes).map_err(|error| error.to_string())?;
+        write(state, &bytes).map_err(|error| error.to_string())?;
         if let Some((width, height, pixels)) = self.last_pixels.as_ref() {
             if let Ok(png) = encode_png(*width, *height, pixels) {
-                let thumb =
-                    save_state_thumb_path(&self.save_dir, &self.rom_path, &self.core_key, slot);
-                let _ = write(&thumb, &png);
+                let _ = write(thumb, &png);
             }
         }
         Ok(())
+    }
+
+    /// Write a manual save state to `slot` (1..=9).
+    pub fn save_state(&self, slot: u8) -> Result<(), String> {
+        self.write_state(
+            &save_state_path(&self.save_dir, &self.rom_path, &self.core_key, slot),
+            &save_state_thumb_path(&self.save_dir, &self.rom_path, &self.core_key, slot),
+        )
     }
 
     /// Restore the save state in `slot`, if one exists.
@@ -290,6 +301,37 @@ impl Session {
         let path = save_state_path(&self.save_dir, &self.rom_path, &self.core_key, slot);
         let Some(bytes) = read(&path) else {
             return Err("该槽位还没有存档".to_string());
+        };
+        if self.core.unserialize(&bytes) {
+            Ok(())
+        } else {
+            Err("核心拒绝了这份存档".to_string())
+        }
+    }
+
+    /// Write a quick save as the newest of [`crate::library::QUICK_SLOT_COUNT`]
+    /// rolling saves, pushing the older ones down a rank and dropping the
+    /// oldest. This is the dead-save guard: a bad save can always be rolled
+    /// back to the previous one.
+    pub fn quick_save(&self) -> Result<(), String> {
+        // Check before rotating, or a core that cannot serialize would still
+        // consume the oldest save for nothing.
+        if !self.save_supported() {
+            return Err("核心不支持即时存档".to_string());
+        }
+        roll_quick(&self.save_dir, &self.rom_path, &self.core_key);
+        self.write_state(
+            &quick_state_path(&self.save_dir, &self.rom_path, &self.core_key, 0),
+            &quick_state_thumb_path(&self.save_dir, &self.rom_path, &self.core_key, 0),
+        )
+    }
+
+    /// Restore the quick save at `rank` (`0` is the newest). Reading does not
+    /// consume it, so it can be loaded again and again.
+    pub fn quick_load(&self, rank: u8) -> Result<(), String> {
+        let path = quick_state_path(&self.save_dir, &self.rom_path, &self.core_key, rank);
+        let Some(bytes) = read(&path) else {
+            return Err("这个快速存档是空的".to_string());
         };
         if self.core.unserialize(&bytes) {
             Ok(())
@@ -374,17 +416,27 @@ impl Session {
         self.core.serialize_size() > 0
     }
 
-    /// This game's save slots for the running core.
+    /// This game's fixed manual save slots for the running core.
     pub fn save_slots(&self) -> Vec<StateSlot> {
         list_slots(&self.save_dir, &self.rom_path, &self.core_key)
     }
 
-    /// A slot's thumbnail path, for the app to decode and upload.
+    /// This game's rolling quick saves for the running core, newest first.
+    pub fn quick_slots(&self) -> Vec<StateSlot> {
+        list_quick_slots(&self.save_dir, &self.rom_path, &self.core_key)
+    }
+
+    /// A manual slot's thumbnail path, for the app to decode and upload.
     pub fn save_thumbnail_path(&self, slot: u8) -> PathBuf {
         save_state_thumb_path(&self.save_dir, &self.rom_path, &self.core_key, slot)
     }
 
-    /// Delete a slot's state and thumbnail, ignoring missing files.
+    /// A quick save's thumbnail path, for the app to decode and upload.
+    pub fn quick_thumbnail_path(&self, rank: u8) -> PathBuf {
+        quick_state_thumb_path(&self.save_dir, &self.rom_path, &self.core_key, rank)
+    }
+
+    /// Delete a manual slot's state and thumbnail, ignoring missing files.
     pub fn delete_save(&self, slot: u8) {
         remove(&save_state_path(
             &self.save_dir,
@@ -398,6 +450,12 @@ impl Session {
             &self.core_key,
             slot,
         ));
+    }
+
+    /// Delete the quick save at `rank` and compact the older ones into the
+    /// freed rank, so the stack stays contiguous (newest first).
+    pub fn delete_quick(&self, rank: u8) {
+        compact_quick(&self.save_dir, &self.rom_path, &self.core_key, rank);
     }
 
     /// Disable every cheat, then apply the enabled ones.

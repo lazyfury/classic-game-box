@@ -16,4 +16,7 @@ pub use db::{collect_games, scan_dir, DiskGame, Game, Library, Screenshot};
 pub use error::LibraryError;
 pub use import::{import_roms, ImportReport};
 pub use png_codec::{decode_png, encode_png};
-pub use saves::{exists, list_slots, read, remove, write, StateSlot, SLOT_COUNT};
+pub use saves::{
+    compact_quick, exists, list_quick_slots, list_slots, read, remove, remove_legacy_quick,
+    roll_quick, write, StateSlot, MANUAL_SLOT_COUNT, QUICK_SLOT_COUNT,
+};

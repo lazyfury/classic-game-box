@@ -20,8 +20,10 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 - 分支 `refactor/app-root`（合并后可回 `main`）。
 - **Q0 完成**：计划、目录结构、Rust 工作区骨架、`cargo check/test/clippy` 全绿。
 - **Q1 完成**：Mesen 原生 arm64 编译 + dlopen + 出画面（`ui::frame::FrameImage`）+ 键盘。
-- **Q2 进行中**：音频（cpal）+ Swift `GameController` 手柄已接线，`.srm` 电池存档与即时存档槽
-  （`Session::{save,load}_state`，F5/F6 与 F1–F3/Shift+F1–F3），待人眼验收“能玩、能存读”。
+- **Q2 进行中**：音频（cpal）+ Swift `GameController` 手柄已接线，`.srm` 电池存档与即时存档
+  （`Session::{quick_save,quick_load,save_state,load_state}`）。**快速存档是 3 档 LIFO 轮转**
+  （`fast01` 最新；F5 存 / F6 读，读只取最新不弹出），另见 Q6 的手动槽；
+  待人眼验收“能玩、能存读”。
 - **Q3 完成**：库模型重建——DB 是模型（`games` + `tags`/`game_tags` + `screenshots`），
   **单库、自包含、可切换**：`--library-dir` / “打开游戏库…”选定唯一库根，
   DB / 截图 / 存档 / 金手指都在库根下，整个文件夹拷走即备份（不合并多个目录）；
@@ -40,7 +42,10 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 - **Q5 打包**：`scripts/package-macos.sh` / `scripts/release.sh` 出 macOS `.app` + zip
   （cores/assets 入 Resources）；`--selfcheck` 无头自检。
 - **Q6 定制**：输入能力对齐（16 键 + 模拟轴 + capabilities + 按机种绑定 + core descriptors）；
-  存档 10 槽（按 core 隔离 + 缩略图）；金手指 `.cht`；倒带（每 2 帧 / 10s）；画面后处理
+  即时存档（按 core 隔离 + 缩略图）：**快速存档是 3 档 LIFO 轮转**（`fast01` 最新，
+  存档时旧的依次下移、超出 3 档丢最旧，避免死档；`Library::{roll_quick,compact_quick}`，
+  `stateqN` 独立命名空间），另有固定手动槽 `save01–save09`（`stateN`，F1–F3 存 /
+  Shift+F1–F3 读）；金手指 `.cht`；倒带（每 2 帧 / 10s）；画面后处理
   shader（扫描线/CRT/LCD/锐化）；core options + `SET_CONTROLLER_PORT_DEVICE` + core 消息；
   截图多选删除；中栏可拖动；全屏游玩（`ViewModel::fullscreen`，F11/play 列
   “全屏”按钮进入，Esc 退出；只挂载右栏游戏视图，库网格与侧栏不入树）。

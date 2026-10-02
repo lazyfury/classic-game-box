@@ -19,10 +19,10 @@ mod view;
 pub use frame::{centered_fit, contain_fit, crop_fit, FrameImage};
 pub use icons::{clear_textures, rasterize_icon, set_texture, Icon, IconName};
 pub use model::{
-    save_slot_label, Action, BindingRow, CatalogRow, CheatRow, Confirm, CoreOptionRow, CoreRow,
-    EditTarget, GameRow, InputDescriptorRow, MissingCoreRow, MsaaKind, SafeArea, SaveSlotRow,
-    ScreenshotRow, Section, SettingsGroup, ShaderKind, SortKey, StatusKind, SystemCount,
-    TextureHandle, ViewModel,
+    manual_slot_label, quick_slot_label, Action, BindingRow, CatalogRow, CheatRow, Confirm,
+    CoreOptionRow, CoreRow, EditTarget, GameRow, InputDescriptorRow, MissingCoreRow, MsaaKind,
+    SafeArea, SaveSlotRow, ScreenshotRow, Section, SettingsGroup, ShaderKind, SortKey, StatusKind,
+    SystemCount, TextureHandle, ViewModel,
 };
 pub use theme::{game_theme, ThemeChoice};
 pub use view::{
