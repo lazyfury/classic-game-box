@@ -3,20 +3,20 @@
 #   release-*  -> a normal Release
 #   beta-*     -> a pre-release
 #
-# The heavy part is the bundled cores. `scripts/build-cores.sh --minimal`
-# clones and builds mesen / mgba / custom_nes_core / freej2me_plus (cmake, a
-# JDK for `jlink`, Xcode command line tools). Every other core is offered as a
-# runtime download from the libretro buildbot instead, so the bundle stays
-# redistributable — see `scripts/core-profiles.sh` and `cores/README.md`.
+# No cores are bundled: the app ships the full `cores/cores.json` and downloads
+# a core from the libretro buildbot on demand (settings page -> 下载核心, or the
+# library page's "缺少核心" card). The one exception is J2ME (`freej2me_plus`),
+# which has no buildbot build — it must be compiled from source, see
+# `cores/README.md`. `macos/scripts/package.sh` bundles whatever is in
+# `cores/dist`; a manual `workflow_dispatch` run can build a set into it first.
 #
 # `macos/scripts/package.sh` does the assembly: the Rust host as a static lib
-# linked into the Swift binary, then cores/assets under `Contents/Resources`,
-# ad-hoc codesigned. The app is **not notarized**, so a downloaded copy is
-# quarantined by Gatekeeper: testers may need right-click -> Open, or
+# linked into the Swift binary, then assets under `Contents/Resources`, ad-hoc
+# codesigned. The app is **not notarized**, so a downloaded copy is quarantined
+# by Gatekeeper: testers may need right-click -> Open, or
 # `xattr -dr com.apple.quarantine "Classic Game Box (Swift).app"`.
 #
-# The whole thing must run on an **arm64** macOS runner: the buildbot cores and
-# the shipped dylibs are arm64 only.
+# Must run on an **arm64** macOS runner: the shipped app is arm64 only.
 
 name: release
 
@@ -40,7 +40,7 @@ jobs:
       # Match the Swift package's deployment target (see macos/Package.swift).
       MACOSX_DEPLOYMENT_TARGET: '14.0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Require an arm64 runner
         run: |
@@ -48,30 +48,20 @@ jobs:
           arch="$(uname -m)"
           echo "arch=$arch"
           if [ "$arch" != "arm64" ]; then
-            echo "::error::the app and the bundled cores are arm64 only; use a macOS arm64 runner"
+            echo "::error::the app is arm64 only; use a macOS arm64 runner"
             exit 1
           fi
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: JDK (for the freej2me_plus bundle)
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Cache core sources
-        uses: actions/cache@v4
-        with:
-          path: cores/sources
-          key: cores-${{ runner.os }}-${{ hashFiles('cores/*/build.sh', 'scripts/core-profiles.sh') }}
-
-      - name: Build the bundled cores
-        run: ./scripts/build-cores.sh --minimal
+      - name: Gate (fmt + clippy + test)
+        run: ./scripts/dev.sh
 
       - name: Package the app
         run: macos/scripts/package.sh

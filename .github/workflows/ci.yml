@@ -20,7 +20,7 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
