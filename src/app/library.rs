@@ -3,14 +3,14 @@
 use super::*;
 
 impl super::App {
-    /// Re-read the library folders and rebuild the game rows.
+    /// Rescan the library folders and reconcile the database.
     ///
-    /// The folder is the truth about what exists, so every refresh rescans it
-    /// and reconciles the database: new files are inserted, vanished files are
-    /// dropped, changed files have their facts refreshed. The rows then come
-    /// from the database, which is the model — the name, pin, play statistics,
-    /// screenshots and cover a scan cannot know live there.
-    pub(super) fn refresh_library(&mut self) {
+    /// This is a **manual** action (the library page's "重新扫描"), except that
+    /// a database written by another version is wiped and rescanned once on
+    /// open. The folder is the truth about what exists, so the rescan inserts
+    /// new files, drops files that are provably gone, and refreshes changed
+    /// ones; the rows themselves come from the database, which is the model.
+    pub(super) fn rescan_library(&mut self) {
         // The one game library (once chosen) plus its built-in ROM folder.
         // Before a library is chosen the game data lives in app data, so only
         // the built-in folder is scanned there — walking app data itself would
@@ -31,19 +31,10 @@ impl super::App {
             let _ = self.settings.save(&self.paths.settings_json);
         }
 
-        self.game_source = match &self.library {
-            Some(library) => {
-                let _ = library.sync(&disk);
-                library.games().unwrap_or_default()
-            }
-            // No database: fall back to the scan, with no metadata to show.
-            None => disk.iter().map(Game::from_disk).collect(),
-        };
-        self.refresh_cover_textures();
-        self.refresh_screenshot_textures();
-        self.rebuild_game_rows();
-        self.rebuild_screenshot_rows();
-        self.rebuild_missing_cores();
+        if let Some(library) = &self.library {
+            let _ = library.sync(&disk);
+        }
+        self.reload_library();
     }
 
     /// Rebuild the view from the database without rescanning the ROM folders.
@@ -72,7 +63,7 @@ impl super::App {
         self.paths = Paths::new(self.paths.user_data.clone(), Some(PathBuf::from(&dir)));
         let _ = self.paths.ensure();
         self.library = Library::open(&self.paths.library_db).ok();
-        self.reload_library();
+        self.rescan_library();
         self.model
             .set_status(format!("已切换游戏库：{dir}"), StatusKind::Info);
     }
@@ -134,7 +125,7 @@ impl super::App {
             }
         }
         let report = import_roms(&self.paths.roms, &files);
-        self.reload_library();
+        self.rescan_library();
         self.queue_missing_core_prompt(&report.copied);
         if !report.is_empty() || !switched {
             self.model
@@ -263,9 +254,9 @@ impl super::App {
         self.rebuild_game_rows();
     }
 
-    /// Re-scan and reconcile the library after the folders changed.
+    /// Rebuild the view from the database without rescanning the ROM folders.
     pub(super) fn reload_library(&mut self) {
-        self.refresh_library();
+        self.reload_from_db();
         self.rebuild_settings_view();
     }
 

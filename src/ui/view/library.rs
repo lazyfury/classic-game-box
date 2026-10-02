@@ -77,6 +77,7 @@ pub(super) fn library_page(
 
     let add_files = actions.clone();
     let add_dir = actions.clone();
+    let rescan = actions.clone();
     column = column.child(
         Row::new()
             .gap(space::SM)
@@ -87,6 +88,10 @@ pub(super) fn library_page(
             .child(
                 Button::ghost("打开游戏库…", theme)
                     .on_click(move |_tree, _id| add_dir.push(Action::SwitchLibrary)),
+            )
+            .child(
+                Button::ghost("重新扫描", theme)
+                    .on_click(move |_tree, _id| rescan.push(Action::RescanLibrary)),
             ),
     );
     Page {

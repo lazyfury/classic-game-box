@@ -709,6 +709,8 @@ pub enum Action {
     AddGames,
     /// Open the native folder picker and switch to the chosen game library.
     SwitchLibrary,
+    /// Rescan the library folders and reconcile the database.
+    RescanLibrary,
     /// Filter the library to one console, or `None` for all of them.
     FilterSystem(Option<SystemId>),
     /// Fold or unfold the "missing core" card.

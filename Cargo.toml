@@ -12,7 +12,7 @@ name = "cgb-app"
 description = "Classic Game Box: the app library (UI + emulator host) embedded by the native macOS host."
 version.workspace = true
 edition.workspace = true
-# `wgpu` 24 and igui require Rust 1.76.
+# `wgpu` 24 and igui require Rust 1.76; `diesel` 2.3 requires 1.86.
 rust-version.workspace = true
 license.workspace = true
 repository = "https://github.com/lazyfury/classic-game-box"
@@ -47,7 +47,10 @@ cpal.workspace = true
 ringbuf.workspace = true
 
 # Game library (src/library/) and file layout (src/paths.rs):
-rusqlite.workspace = true
+diesel.workspace = true
+# Enables the bundled SQLite that `diesel` links (the driver crate itself is
+# not called directly).
+libsqlite3-sys.workspace = true
 png.workspace = true
 dirs.workspace = true
 thiserror.workspace = true
@@ -69,7 +72,7 @@ igui = { workspace = true, features = ["bench"] }
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
-rust-version = "1.76"
+rust-version = "1.86"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
@@ -95,7 +98,11 @@ windows = { version = "0.58", default-features = false }
 cc = "1"
 cpal = "0.15"
 ringbuf = "0.4"
-rusqlite = { version = "0.32", features = ["bundled"] }
+# The library ORM. `libsqlite3-sys` with `bundled` compiles SQLite from source
+# (diesel's `sqlite` feature links it but does not bundle it), so the Windows
+# cross-build needs no system SQLite.
+diesel = { version = "2.3", features = ["sqlite"] }
+libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 png = "0.17"
 dirs = "5"
 serde = { version = "1", features = ["derive"] }

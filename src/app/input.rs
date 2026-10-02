@@ -263,6 +263,7 @@ impl super::App {
                 Action::CycleCoreOption(index, delta) => self.cycle_core_option(index, delta),
                 Action::AddGames => self.add_games_dialog(),
                 Action::SwitchLibrary => self.switch_library(),
+                Action::RescanLibrary => self.rescan_library(),
                 Action::FilterSystem(system) => {
                     self.model.system_filter = system;
                     self.rebuild_game_rows();

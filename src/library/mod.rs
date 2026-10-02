@@ -10,6 +10,7 @@ mod error;
 mod import;
 mod png_codec;
 mod saves;
+mod schema;
 
 pub use cheats::{load_cheats, parse_cht, save_cheats, write_cht, Cheat};
 pub use db::{collect_games, scan_dir, DiskGame, Game, Library, Screenshot};

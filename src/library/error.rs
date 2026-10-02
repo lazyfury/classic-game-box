@@ -4,7 +4,10 @@
 #[derive(Debug, thiserror::Error)]
 pub enum LibraryError {
     #[error("database error: {0}")]
-    Database(#[from] rusqlite::Error),
+    Database(#[from] diesel::result::Error),
+
+    #[error("database connection error: {0}")]
+    Connection(#[from] diesel::result::ConnectionError),
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

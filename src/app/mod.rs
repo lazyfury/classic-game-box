@@ -510,7 +510,17 @@ impl App {
             fps_time: Instant::now(),
             last_columns_check: Instant::now(),
         };
-        app.refresh_library();
+        app.reload_from_db();
+        // A database written by another version is wiped when it is opened;
+        // repopulate it once from the folder. This is the only automatic scan
+        // — every other rescan is a manual UI action.
+        if app
+            .library
+            .as_ref()
+            .is_some_and(|library| library.was_reset())
+        {
+            app.rescan_library();
+        }
         app.rebuild_settings_view();
         app
     }
