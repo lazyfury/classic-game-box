@@ -29,25 +29,41 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 
 ## Bundled set vs. downloaded cores
 
-Not every core needs to be shipped. `macos/scripts/package.sh` copies every
-`cores/dist/*.dylib` into the bundle, so build only the set you want to ship
-first (`./scripts/build-cores.sh --minimal`, or `--only a,b,c`). The
-**full `cores.json` still ships**; at load the app drops rows whose module is
-absent (`resolve_module` in `src/app/helpers.rs`), so it never offers a core it
-cannot run, and keeps the rest so the library page can recommend a download.
-Cores left out are fetched at runtime from the libretro buildbot (settings page
-→ 下载核心, or `--download-core`); the downloaded rows land in
+The released app ships **no core dylibs** — only the full `cores/cores.json`.
+Cores are fetched at runtime from the libretro buildbot (settings page →
+下载核心, or `--download-core`); the downloaded rows land in
 `<app data>/cores/downloaded.json` and are merged with the bundled manifest at
-startup. When the library has games for a console with no available core, the
-library page shows a “缺少核心” card (and adding such games prompts once) with a
-one-click download of the recommended core.
+startup. At load the app drops manifest rows whose module is absent
+(`resolve_module` in `src/app/helpers.rs`), so it never offers a core it cannot
+run, and keeps the rest so the library page can recommend a download. When the
+library has games for a console with no available core, the library page shows
+a “缺少核心” card (and adding such games prompts once) with a one-click
+download of the recommended core.
 
-The **minimal** set is `mesen`, `mgba`, `custom_nes_core`, `freej2me_plus` (see
-`scripts/core-profiles.sh`): the permissive/own cores plus the two the buildbot
-has no macOS arm64 build for (`custom_nes_core`, `freej2me_plus`). The
-non-commercial cores (`snes9x`, `genesis_plus_gx`, `picodrive`, `fbneo`) are
-**not** in it — they cannot be sold, so they ship as downloads instead of being
-redistributed. Everything else can go either way.
+To bundle cores into a local build, build them into `cores/dist` first:
+`macos/scripts/package.sh` copies every `cores/dist/*.dylib` into
+`Contents/Resources/cores`. `./scripts/build-cores.sh --minimal` builds the
+redistributable set `mesen mgba custom_nes_core freej2me_plus` (see
+`scripts/core-profiles.sh`), `--only a,b,c` picks an explicit list, and no flag
+builds every `cores/*/build.sh`. The non-commercial cores (`snes9x`,
+`genesis_plus_gx`, `picodrive`, `fbneo`) cannot be sold, so build them only
+locally and never redistribute them.
+
+### No buildbot build — compile these yourself
+
+Two cores have no `apple/osx/arm64` buildbot artifact, so neither the release
+nor the runtime download can provide them. Build from source and put the
+result where the app looks:
+
+- **`freej2me_plus`** (Java ME) — `./cores/freej2me_plus/build.sh` (needs a
+  JDK). Copy `cores/dist/freej2me_plus_libretro.dylib` and the
+  `cores/dist/freej2me_plus/` bundle (jar + trimmed JRE) into a packaged app's
+  `Contents/Resources/cores/` and `Contents/Resources/freej2me_plus/`; in a
+  source checkout, leaving them in `cores/dist/` is enough. On startup the app
+  seeds the jar into `<app data>/system/` and prepends the JRE to `PATH`.
+- **`custom_nes_core`** (the self-authored NES core) —
+  `./cores/custom_nes_core/build.sh`, then drop the dylib into
+  `Contents/Resources/cores/` (packaged) or `cores/dist/` (checkout).
 
 ## Blocked cores
 

@@ -28,15 +28,26 @@ macOS 上的经典游戏机模拟器。**打开就能玩**：把 ROM 拖进窗�
 GitHub **git 依赖**引入（`Cargo.lock` 固定 commit），无需相邻 checkout；首次构建需要联网。
 
 ```bash
-# 1. 构建原生 libretro 核心（第三方项目，首次要联网、几分钟）
-#    Q1 只构建 Mesen（NES）；GB/GBA 推迟到 Q4，加 --with-mgba 才构建
-./scripts/build-cores.sh
-#    → cores/dist/mesen_libretro.dylib
-
-# 2. 构建并运行（Rust 侧是库，Swift 才是入口）
+# 1. 构建并运行（Rust 侧是库，Swift 才是入口）
 cargo build                                   # → target/debug/libcgb_app.a
 macos/scripts/run.sh                          # 打开库界面
 macos/scripts/run.sh /path/to/mario.nes       # 直接开始
+```
+
+游戏需要 libretro 核心。**发布版不打包任何核心**，只带 `cores/cores.json`：用到某个机种时，
+从设置页「下载核心」或库页的「缺少核心」卡片（或 `--download-core`）从 libretro buildbot 下载即可。
+本地开发想直接玩，先构建一份进 `cores/dist`：
+
+```bash
+./scripts/build-cores.sh                 # 全部；或 --minimal / --only mesen,mgba
+# → cores/dist/*.dylib
+```
+
+例外：**J2ME（`freej2me_plus`）不在 libretro buildbot 上**，发布版也没带，要用就自己编译
+（细节与安装位置见 [`cores/README.md`](cores/README.md)）：
+
+```bash
+./cores/freej2me_plus/build.sh           # 需要 JDK；产出 dylib + jar + 精简 JRE
 ```
 
 每个阶段的门槛：
