@@ -92,6 +92,127 @@ pub struct CoreOption {
     pub value: String,
 }
 
+/// One `retro_memory_descriptor`, owned.
+///
+/// The bytes belong to the core and stay put for the session's life, so a
+/// region may be held across frames and read at will; it must not outlive the
+/// [`CoreHost`] that published it. Every read is bounds-checked against the
+/// descriptor's `len`.
+///
+/// The host pointer is kept as an integer, not a `*const u8`, so the type
+/// stays `Send`/`Sync` (a raw pointer would make the whole [`HostShared`]
+/// non-`Send`). It is only ever turned back into a pointer inside a
+/// bounds-checked read.
+#[derive(Clone, Debug)]
+pub struct MemoryRegion {
+    /// `RETRO_MEMDESC_*` usage flags.
+    pub flags: u64,
+    /// Start of the region in the emulated address space.
+    pub start: usize,
+    /// Region length in bytes.
+    pub len: usize,
+    /// Address bits that must match `start` (`0` = the whole range is mapped).
+    pub select: usize,
+    /// Address bits ignored when mapping (`0` = none).
+    pub disconnect: usize,
+    /// The core's short name for the address space, if it gave one.
+    pub addrspace: String,
+    ptr: usize,
+}
+
+impl MemoryRegion {
+    /// `RETRO_MEMDESC_VIDEO_RAM`: the emulated system's video memory.
+    pub fn is_video_ram(&self) -> bool {
+        self.flags & RETRO_MEMDESC_VIDEO_RAM != 0
+    }
+
+    /// `RETRO_MEMDESC_SYSTEM_RAM`: the emulated system's work RAM.
+    pub fn is_system_ram(&self) -> bool {
+        self.flags & RETRO_MEMDESC_SYSTEM_RAM != 0
+    }
+
+    /// `RETRO_MEMDESC_SAVE_RAM`: the cartridge's battery save.
+    pub fn is_save_ram(&self) -> bool {
+        self.flags & RETRO_MEMDESC_SAVE_RAM != 0
+    }
+
+    /// `RETRO_MEMDESC_CONST`: read-only (ROM-like) memory.
+    pub fn is_read_only(&self) -> bool {
+        self.flags & RETRO_MEMDESC_CONST != 0
+    }
+
+    /// A human label: the core's address-space name when it gave one,
+    /// otherwise a guess from the usage flags.
+    pub fn label(&self) -> String {
+        if !self.addrspace.is_empty() {
+            return self.addrspace.clone();
+        }
+        if self.is_video_ram() {
+            return "VRAM".to_string();
+        }
+        if self.is_system_ram() {
+            return "RAM".to_string();
+        }
+        if self.is_save_ram() {
+            return "Save RAM".to_string();
+        }
+        if self.is_read_only() {
+            return "ROM".to_string();
+        }
+        String::new()
+    }
+
+    /// The emulated address range this region covers, as `(start, end)`.
+    pub fn address_range(&self) -> (usize, usize) {
+        (self.start, self.start.saturating_add(self.len))
+    }
+
+    /// Map an emulated address to an offset within this region, if it falls
+    /// inside. Follows libretro's `(addr & ~disconnect) - start` rule.
+    fn address_offset(&self, address: usize) -> Option<usize> {
+        if self.select != 0 && (address & self.select) != (self.start & self.select) {
+            return None;
+        }
+        let offset = (address & !self.disconnect).checked_sub(self.start)?;
+        (offset < self.len).then_some(offset)
+    }
+
+    /// Copy region bytes `[offset, offset + out.len())`, bounds-checked against
+    /// `len`. Returns the number of bytes read (`0` when out of range or the
+    /// region is unbacked). This is the buffer view, ignoring `select` /
+    /// `disconnect` mirrors.
+    pub fn copy_into(&self, offset: usize, out: &mut [u8]) -> usize {
+        if self.ptr == 0 {
+            return 0;
+        }
+        if offset
+            .checked_add(out.len())
+            .is_none_or(|end| end > self.len)
+        {
+            return 0;
+        }
+        // SAFETY: `ptr` is valid for `len` bytes for as long as the host that
+        // published it is alive, and `offset..end` is within `len`.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                (self.ptr as *const u8).add(offset),
+                out.as_mut_ptr(),
+                out.len(),
+            );
+        }
+        out.len()
+    }
+
+    /// Read `out.len()` bytes from the emulated `address`, when it maps into
+    /// this region and the whole request is inside it.
+    pub fn read_at(&self, address: usize, out: &mut [u8]) -> usize {
+        let Some(offset) = self.address_offset(address) else {
+            return 0;
+        };
+        self.copy_into(offset, out)
+    }
+}
+
 /// A core option plus a `CString` for its value, so `GET_VARIABLE` can hand the
 /// core a pointer that stays valid until the value changes.
 struct HostOption {
@@ -151,6 +272,9 @@ struct HostShared {
     options_dirty: AtomicBool,
     /// The last `SET_MESSAGE` text, taken by the app.
     message: Mutex<Option<String>>,
+    /// The core's memory map, owned. Published through `SET_MEMORY_MAPS` and
+    /// replaced whenever the machine is (re)loaded.
+    memory_regions: Mutex<Vec<MemoryRegion>>,
     /// Hardware-rendering state (GL core), or defaults when none is active.
     hw: Mutex<HwRenderState>,
     /// The offscreen GL context and framebuffer, when a core asked for one.
@@ -175,6 +299,7 @@ impl HostShared {
             core_options: Mutex::new(Vec::new()),
             options_dirty: AtomicBool::new(false),
             message: Mutex::new(None),
+            memory_regions: Mutex::new(Vec::new()),
             hw: Mutex::new(HwRenderState::default()),
             gl: Mutex::new(None),
             hw_frame: Mutex::new(None),
@@ -327,6 +452,42 @@ impl HostShared {
 
         // `context_reset` is deliberately *not* called here; see `HwRenderState`.
         // It runs from `CoreHost::load_game` once `retro_load_game` returns.
+        true
+    }
+
+    /// Record the core's memory map.
+    ///
+    /// The descriptors' `ptr` fields are promised valid for the session, so
+    /// only the small descriptor value is copied — not the bytes it points to.
+    /// A core re-publishes the map whenever the machine changes (mGBA sends it
+    /// from `retro_load_game`), so each call replaces the previous one.
+    ///
+    /// # Safety
+    ///
+    /// `data` is the `retro_memory_map *` from `SET_MEMORY_MAPS`.
+    unsafe fn set_memory_maps(&self, data: *mut c_void) -> bool {
+        if data.is_null() {
+            return false;
+        }
+        let map = &*(data as *const retro_memory_map);
+        let mut regions = Vec::new();
+        if !map.descriptors.is_null() {
+            let descriptors =
+                std::slice::from_raw_parts(map.descriptors, map.num_descriptors as usize);
+            regions.reserve(descriptors.len());
+            for descriptor in descriptors {
+                regions.push(MemoryRegion {
+                    flags: descriptor.flags,
+                    start: descriptor.start,
+                    len: descriptor.len,
+                    select: descriptor.select,
+                    disconnect: descriptor.disconnect,
+                    addrspace: cstring(descriptor.addrspace),
+                    ptr: descriptor.ptr as usize,
+                });
+            }
+        }
+        *lock(&self.memory_regions) = regions;
         true
     }
 
@@ -510,6 +671,9 @@ impl HostShared {
                 }
                 true
             }
+            // A core publishes the map from its emulated address space to
+            // host buffers here. Used by the resource inspector.
+            RETRO_ENVIRONMENT_SET_MEMORY_MAPS => self.set_memory_maps(data),
             // Accepted and ignored for now.
             RETRO_ENVIRONMENT_SET_ROTATION
             | RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL
@@ -800,6 +964,26 @@ impl CoreHost {
             return false;
         }
         unsafe { (self.core.api().unserialize)(bytes.as_ptr() as *const c_void, bytes.len()) }
+    }
+
+    /// The core's published memory map, owned. Empty when the core does not
+    /// publish one (then only `retro_get_memory_data` regions are available).
+    pub fn memory_regions(&self) -> Vec<MemoryRegion> {
+        lock(&self.shared.memory_regions).clone()
+    }
+
+    /// Read `out.len()` bytes from the emulated `address`, following the first
+    /// matching descriptor. Returns the number of bytes read (`0` when no
+    /// descriptor covers the whole request).
+    pub fn read_memory(&self, address: usize, out: &mut [u8]) -> usize {
+        let regions = lock(&self.shared.memory_regions);
+        for region in regions.iter() {
+            let read = region.read_at(address, out);
+            if read != 0 {
+                return read;
+            }
+        }
+        0
     }
 
     /// The battery save (`RETRO_MEMORY_SAVE_RAM`), copied out for persisting to
@@ -1344,6 +1528,90 @@ mod tests {
         };
         assert!(!ok, "Vulkan is not offered");
         assert!(!lock(&host.hw).active);
+    }
+
+    #[test]
+    fn memory_maps_are_captured_and_read() {
+        let host = host();
+        let mut ram = *b"0123456789abcdef";
+        let addrspace = CString::new("WRAM").unwrap();
+        let descriptor = retro_memory_descriptor {
+            flags: RETRO_MEMDESC_SYSTEM_RAM,
+            ptr: ram.as_mut_ptr() as *mut c_void,
+            offset: 0,
+            start: 0x1000,
+            select: 0,
+            disconnect: 0,
+            len: ram.len(),
+            addrspace: addrspace.as_ptr(),
+        };
+        let map = retro_memory_map {
+            descriptors: &descriptor,
+            num_descriptors: 1,
+        };
+        let ok = unsafe {
+            host.environment(
+                RETRO_ENVIRONMENT_SET_MEMORY_MAPS,
+                &map as *const retro_memory_map as *mut c_void,
+            )
+        };
+        assert!(ok, "SET_MEMORY_MAPS is accepted");
+
+        let regions = lock(&host.memory_regions).clone();
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].label(), "WRAM");
+        assert!(regions[0].is_system_ram());
+        assert_eq!(regions[0].address_range(), (0x1000, 0x1010));
+
+        let mut out = [0u8; 4];
+        assert_eq!(regions[0].read_at(0x1004, &mut out), 4);
+        assert_eq!(&out, b"4567");
+
+        let mut at_start = [0u8; 2];
+        assert_eq!(regions[0].copy_into(0, &mut at_start), 2);
+        assert_eq!(&at_start, b"01");
+
+        // A read that would run off the end is refused, not overrun.
+        let mut too_far = [0u8; 4];
+        assert_eq!(regions[0].read_at(0x100e, &mut too_far), 0);
+        // An address outside the region does not match.
+        assert_eq!(regions[0].read_at(0x2000, &mut too_far), 0);
+    }
+
+    #[test]
+    fn memory_map_select_masks_the_address() {
+        let host = host();
+        let mut vram = [0u8; 16];
+        vram[4] = 0xAB;
+        // VRAM at 0x06000000, only the top byte significant (mGBA's shape).
+        let descriptor = retro_memory_descriptor {
+            flags: RETRO_MEMDESC_VIDEO_RAM,
+            ptr: vram.as_mut_ptr() as *mut c_void,
+            offset: 0,
+            start: 0x0600_0000,
+            select: 0xFF00_0000,
+            disconnect: 0,
+            len: vram.len(),
+            addrspace: ptr::null(),
+        };
+        let map = retro_memory_map {
+            descriptors: &descriptor,
+            num_descriptors: 1,
+        };
+        unsafe {
+            host.environment(
+                RETRO_ENVIRONMENT_SET_MEMORY_MAPS,
+                &map as *const retro_memory_map as *mut c_void,
+            );
+        }
+        let regions = lock(&host.memory_regions).clone();
+        assert!(regions[0].is_video_ram());
+
+        let mut byte = [0u8; 1];
+        assert_eq!(regions[0].read_at(0x0600_0004, &mut byte), 1);
+        assert_eq!(byte[0], 0xAB);
+        // 0x07000000 fails the select mask: it is a different address space.
+        assert_eq!(regions[0].read_at(0x0700_0004, &mut byte), 0);
     }
 
     #[test]

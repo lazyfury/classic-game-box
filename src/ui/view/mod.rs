@@ -61,6 +61,7 @@ use crate::ui::model::{Action, Section, StatusKind, ViewModel};
 mod cheats;
 mod components;
 mod format;
+mod inspector;
 mod library;
 pub mod menus;
 mod play;
@@ -69,6 +70,7 @@ mod screenshots;
 mod settings;
 
 use cheats::cheats_page;
+use inspector::{inspector_detail, inspector_page};
 use library::{library_grid_window, library_page};
 use play::play_column;
 use saves::saves_page;
@@ -312,6 +314,9 @@ fn right_column(
         *scroll = page.scroll;
         return page.tree;
     }
+    if model.section == Section::Inspector && model.preview.is_none() {
+        return inspector_detail(theme, model, actions);
+    }
     play_column(theme, model, actions, info_ref)
 }
 
@@ -392,6 +397,7 @@ fn rail_item(
     let icon = match section {
         Section::Library => IconName::Library,
         Section::Screenshots => IconName::Camera,
+        Section::Inspector => IconName::LayoutGrid,
         Section::Saves => IconName::Save,
         Section::Cheats => IconName::Sparkles,
         Section::Settings => IconName::Settings2,
@@ -415,6 +421,7 @@ fn content_column(
     let page = match model.section {
         Section::Library => library_page(theme, model, actions),
         Section::Screenshots => screenshots_page(theme, model, actions),
+        Section::Inspector => inspector_page(theme, model, actions),
         Section::Saves => saves_page(theme, model, actions),
         Section::Cheats => cheats_page(theme, model, actions),
         Section::Settings => settings_page(theme, model, actions),

@@ -65,6 +65,16 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   截图多选删除；中栏可拖动；全屏游玩（`ViewModel::fullscreen`，F11/play 列
   “全屏”按钮进入，Esc 退出；只挂载右栏游戏视图，库网格与侧栏不入树）。
   后处理用 `igui_backend_wgpu::TextureEffect`（`igui` 自 `v0.2.0` 提供）。
+- **资源检视器（FC/GBA 美术/素材分析 + 内存）**：`Section::Inspector`（左栏「资源」）= 图案表 /
+  调色板 / 背景 / 精灵 / 内存。数据走 libretro 标准 `SET_MEMORY_MAPS`：前端在 `CoreHost` 里采集
+  并暴露 `MemoryRegion` / `read_memory`（`crates/cgb-libretro`，地址翻译用 `select`/`disconnect`，
+  读取边界检查；描述符**值**要拷贝，核心常给栈上数组）；纯解码在 `src/inspect/`
+  （`nes::view` 用与自研核心一致的 2C02 调色板；`gba::view` 解 4bpp/8bpp tile、RGB555、
+  文本 BG 与 OAM 精灵；`hex::dump` 把内存烧成点阵图）；应用胶水 `src/app/inspect.rs`，
+  按 `SystemId` 分派，hex 视图对任何发布内存映射的核心通用。
+  自定义核心发布 PPU 区域 `NT/PAL/OAM/CHR`（合成地址，`addrspace` 名识别；CHR 是原始 ROM，
+  非运行时 bank）；mGBA 按固定地址发布 VRAM/PAL/OAM/IO。见
+  `docs/architecture/asset-inspector-plan.md`。
 - **运行时**：`cgb-app` 跑在 igui 的 `igui_app` 插件运行时上，平台插件由
   `src/native/`（Swift host）提供：`NativeGpuPlugin`（CAMetalLayer → wgpu surface）/
   `NativeInputPlugin` / `NativeTextMeasurePlugin` / `NativeClipboardPlugin` /

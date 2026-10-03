@@ -68,6 +68,7 @@
 #include "core/types.hpp"
 
 #include <array>
+#include <span>
 
 namespace fc::nes {
 
@@ -123,6 +124,19 @@ public:
 
     /// The raw nametable byte at `address`, before mirroring, for tools.
     void write_vram(u16 address, u8 value) noexcept;
+
+    /// The PPU's 4KB nametable VRAM. Published to the front end's resource
+    /// inspector, which reads it directly.
+    [[nodiscard]] std::span<u8> nametable_ram() noexcept { return nametables_; }
+    [[nodiscard]] std::span<const u8> nametable_ram() const noexcept { return nametables_; }
+
+    /// Palette RAM as stored, all 32 bytes, for a viewer.
+    [[nodiscard]] std::span<u8> palette_bytes() noexcept { return palette_ram_; }
+    [[nodiscard]] std::span<const u8> palette_bytes() const noexcept { return palette_ram_; }
+
+    /// All 256 OAM bytes.
+    [[nodiscard]] std::span<u8> oam_bytes() noexcept { return oam_; }
+    [[nodiscard]] std::span<const u8> oam_bytes() const noexcept { return oam_; }
 
     /// Palette RAM with the $3F10 -> $3F00 mirroring applied, so index
     /// $10 really does read slot $00.

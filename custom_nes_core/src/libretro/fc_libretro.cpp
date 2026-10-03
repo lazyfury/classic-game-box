@@ -490,7 +490,7 @@ void rebuild_cheats()
 // promised the pointers stay valid, not just valid for the call.
 // ---------------------------------------------------------------------------
 
-retro_memory_descriptor g_memory_descriptors[2]{};
+retro_memory_descriptor g_memory_descriptors[8]{};
 retro_memory_map g_memory_map{};
 
 void publish_memory_maps()
@@ -525,6 +525,63 @@ void publish_memory_maps()
         g_memory_descriptors[count].disconnect = 0;
         g_memory_descriptors[count].len = cartridge->prg_ram().size();
         g_memory_descriptors[count].addrspace = nullptr;
+        ++count;
+    }
+
+    // The PPU's own address space. The CPU cannot reach any of it, but a
+    // resource inspector that wants to look at the graphics can, and
+    // publishing the buffers here is the standard libretro way to hand a
+    // front end live memory. These descriptors are read-only in practice.
+    fc::nes::Ppu& ppu = g_machine->ppu();
+
+    // Nametables: the PPU's 4KB VRAM (the PPU applies mirroring itself).
+    g_memory_descriptors[count].flags = RETRO_MEMDESC_VIDEO_RAM;
+    g_memory_descriptors[count].ptr = ppu.nametable_ram().data();
+    g_memory_descriptors[count].offset = 0;
+    g_memory_descriptors[count].start = 0x2000;
+    g_memory_descriptors[count].select = 0;
+    g_memory_descriptors[count].disconnect = 0;
+    g_memory_descriptors[count].len = ppu.nametable_ram().size();
+    g_memory_descriptors[count].addrspace = "NT";
+    ++count;
+
+    // Palette RAM: 32 bytes at $3F00.
+    g_memory_descriptors[count].flags = RETRO_MEMDESC_VIDEO_RAM;
+    g_memory_descriptors[count].ptr = ppu.palette_bytes().data();
+    g_memory_descriptors[count].offset = 0;
+    g_memory_descriptors[count].start = 0x3F00;
+    g_memory_descriptors[count].select = 0;
+    g_memory_descriptors[count].disconnect = 0;
+    g_memory_descriptors[count].len = ppu.palette_bytes().size();
+    g_memory_descriptors[count].addrspace = "PAL";
+    ++count;
+
+    // OAM: 256 bytes of sprite memory. The hardware has no address for it
+    // ($2003/$2004 are the doors), so it sits just past palette RAM; the
+    // addrspace name is what an inspector keys on.
+    g_memory_descriptors[count].flags = RETRO_MEMDESC_VIDEO_RAM;
+    g_memory_descriptors[count].ptr = ppu.oam_bytes().data();
+    g_memory_descriptors[count].offset = 0;
+    g_memory_descriptors[count].start = 0x3F20;
+    g_memory_descriptors[count].select = 0;
+    g_memory_descriptors[count].disconnect = 0;
+    g_memory_descriptors[count].len = ppu.oam_bytes().size();
+    g_memory_descriptors[count].addrspace = "OAM";
+    ++count;
+
+    // Pattern tables (CHR). The CHR ROM is not reachable from the CPU or the
+    // PPU's own window (it is bankswitched); this is the raw chip, so a tile
+    // viewer can show every tile of every bank. Placed last and at a
+    // synthetic start so it never shadows a real address.
+    if (cartridge != nullptr && !cartridge->chr_rom().empty()) {
+        g_memory_descriptors[count].flags = RETRO_MEMDESC_CONST;
+        g_memory_descriptors[count].ptr = const_cast<fc::u8*>(cartridge->chr_rom().data());
+        g_memory_descriptors[count].offset = 0;
+        g_memory_descriptors[count].start = 0x4000;
+        g_memory_descriptors[count].select = 0;
+        g_memory_descriptors[count].disconnect = 0;
+        g_memory_descriptors[count].len = cartridge->chr_rom().size();
+        g_memory_descriptors[count].addrspace = "CHR";
         ++count;
     }
 

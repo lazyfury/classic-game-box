@@ -229,6 +229,9 @@ impl super::App {
                         }
                         self.populate_cheats();
                     }
+                    if section == Section::Inspector {
+                        self.inspector_dirty = true;
+                    }
                     // A page switch starts its scroll at the top; keep the
                     // grid's window in step with that.
                     if changed && matches!(section, Section::Library | Section::Screenshots) {
@@ -274,6 +277,30 @@ impl super::App {
                 Action::SetMsaa(mode) => self.set_msaa(mode),
                 Action::SetThemeChoice(choice) => self.set_theme(choice, self.light),
                 Action::SetLight(light) => self.set_theme(self.theme_choice, light),
+                Action::SelectInspectorView(index) => {
+                    self.inspector_view = index;
+                    self.inspector_dirty = true;
+                    self.dirty = true;
+                }
+                Action::SelectInspectorRegion(index) => {
+                    self.inspector_region = index;
+                    self.inspector_hex_offset = 0;
+                    self.inspector_dirty = true;
+                    self.dirty = true;
+                }
+                Action::InspectorHexPage(delta) => {
+                    let page = crate::inspect::hex::PAGE_BYTES as i64;
+                    let last = self.model.inspector_hex_total.saturating_sub(1) as i64;
+                    let next =
+                        (self.inspector_hex_offset as i64 + delta as i64 * page).clamp(0, last);
+                    self.inspector_hex_offset = next as usize;
+                    self.inspector_dirty = true;
+                    self.dirty = true;
+                }
+                Action::RefreshInspector => {
+                    self.inspector_dirty = true;
+                    self.dirty = true;
+                }
                 Action::CycleCoreOption(index, delta) => self.cycle_core_option(index, delta),
                 Action::AddGames => self.add_games_dialog(),
                 Action::SwitchLibrary => self.switch_library(),

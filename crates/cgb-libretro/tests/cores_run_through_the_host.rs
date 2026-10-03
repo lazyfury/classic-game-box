@@ -143,6 +143,25 @@ fn cores_run_through_the_host() {
             av.sample_rate
         );
         eprintln!("{name}: {}x{} @ {:.3}fps", av.width, av.height, av.fps);
+        // Every NES core here publishes a memory map; the custom core adds the
+        // PPU regions the resource inspector reads.
+        let regions = host.memory_regions();
+        assert!(!regions.is_empty(), "{name} published no memory map");
+        if *name == "custom_nes_core_libretro.dylib" {
+            for expected in ["NT", "PAL", "OAM", "CHR"] {
+                assert!(
+                    regions.iter().any(|r| r.addrspace == expected),
+                    "{name} is missing the {expected} region: {:?}",
+                    regions.iter().map(|r| r.label()).collect::<Vec<_>>()
+                );
+            }
+            let chr = regions.iter().find(|r| r.addrspace == "CHR").unwrap();
+            assert_eq!(chr.len, 8 * 1024, "the synthetic NROM has 8KB of CHR");
+            assert!(chr.is_read_only());
+            // Console RAM is readable through the map.
+            let mut byte = [0u8; 1];
+            assert_eq!(host.read_memory(0x0000, &mut byte), 1);
+        }
         // Drop before the next core: the host slot is a single global.
         drop(host);
         tested += 1;
@@ -162,6 +181,35 @@ fn cores_run_through_the_host() {
             "mgba_libretro.dylib: {}x{} @ {:.3}fps",
             av.width, av.height, av.fps
         );
+        // mGBA publishes its whole bus: VRAM, palette, OAM, ROM and I/O. It
+        // does not set the VRAM flag, so an inspector keys off the fixed GBA
+        // addresses (VRAM is at 0x06000000).
+        let regions = host.memory_regions();
+        let vram = regions
+            .iter()
+            .find(|r| r.start == 0x0600_0000)
+            .unwrap_or_else(|| {
+                panic!(
+                    "mGBA did not publish VRAM: {:?}",
+                    regions.iter().map(|r| r.label()).collect::<Vec<_>>()
+                )
+            });
+        assert_eq!(vram.len, 0x18000, "GBA VRAM is 96KB");
+        assert!(!vram.is_read_only());
+        // The resource inspector's GBA decoder keys off these fixed addresses.
+        for (start, len) in [
+            (0x0500_0000usize, 0x400usize), // palette RAM
+            (0x0700_0000, 0x400),           // OAM
+            (0x0400_0000, 0x400),           // I/O (DISPCNT / BGxCNT)
+        ] {
+            let region = regions
+                .iter()
+                .find(|region| region.start == start)
+                .unwrap_or_else(|| panic!("mGBA did not publish {start:#010X}"));
+            assert_eq!(region.len, len, "{start:#010X}");
+        }
+        let mut byte = [0u8; 1];
+        assert_eq!(host.read_memory(0x0600_0000, &mut byte), 1);
         drop(host);
         tested += 1;
     } else {

@@ -14,6 +14,7 @@ use crate::ui::theme::ThemeChoice;
 pub enum Section {
     Library,
     Screenshots,
+    Inspector,
     Saves,
     Cheats,
     Settings,
@@ -21,9 +22,10 @@ pub enum Section {
 
 impl Section {
     /// The pages, in the order the rail lists them.
-    pub const ALL: [Section; 5] = [
+    pub const ALL: [Section; 6] = [
         Section::Library,
         Section::Screenshots,
+        Section::Inspector,
         Section::Saves,
         Section::Cheats,
         Section::Settings,
@@ -34,12 +36,21 @@ impl Section {
         match self {
             Section::Library => "游戏库",
             Section::Screenshots => "截图",
+            Section::Inspector => "资源",
             Section::Saves => "存档",
             Section::Cheats => "金手指",
             Section::Settings => "设置",
         }
     }
 }
+
+/// The resource-inspector views, in the order the page lists them. The last,
+/// [`INSPECTOR_HEX_VIEW`], is the generic hex dump; the rest are per-system
+/// decoded pictures.
+pub const INSPECTOR_VIEWS: [&str; 5] = ["图案表", "调色板", "背景", "精灵", "内存"];
+
+/// The hex dump view's index in [`INSPECTOR_VIEWS`].
+pub const INSPECTOR_HEX_VIEW: usize = 4;
 
 /// The functional groups the settings page is split into. The middle column
 /// lists them and the right column shows the selected group's cards, so a long
@@ -494,6 +505,17 @@ pub struct TextureHandle {
     pub height: u32,
 }
 
+/// One core memory region, for the resource inspector's read-only list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InspectorRegionRow {
+    /// The core's name for the region (or a guess from its flags).
+    pub label: String,
+    /// The emulated address range, formatted.
+    pub range: String,
+    /// The size, formatted.
+    pub size: String,
+}
+
 /// Everything the UI renders from, rebuilt from app state each frame.
 #[derive(Clone, Debug)]
 pub struct ViewModel {
@@ -611,6 +633,23 @@ pub struct ViewModel {
     /// with the core the app would download. Drives the library page's
     /// "missing core" card; empty when nothing is missing.
     pub missing_cores: Vec<MissingCoreRow>,
+    /// Whether the running core publishes memory regions the inspector can
+    /// decode (false when nothing is running or the core has no 2D memory).
+    pub inspector_ready: bool,
+    /// The selected inspector view, an index into [`INSPECTOR_VIEWS`].
+    pub inspector_view: usize,
+    /// The region the hex view dumps, an index into [`inspector_regions`].
+    pub inspector_region: usize,
+    /// The hex view's byte offset into the selected region.
+    pub inspector_hex_offset: usize,
+    /// The selected region's length, for the hex pager.
+    pub inspector_hex_total: usize,
+    /// The decoded inspector image, uploaded by the app.
+    pub inspector_image: Option<TextureHandle>,
+    /// A one-line caption under the decoded image.
+    pub inspector_caption: String,
+    /// The running core's memory regions, for the inspector's list.
+    pub inspector_regions: Vec<InspectorRegionRow>,
 }
 
 impl ViewModel {
@@ -706,6 +745,14 @@ impl Default for ViewModel {
             catalog_status: String::new(),
             catalog_progress: None,
             missing_cores: Vec::new(),
+            inspector_ready: false,
+            inspector_view: 0,
+            inspector_region: 0,
+            inspector_hex_offset: 0,
+            inspector_hex_total: 0,
+            inspector_image: None,
+            inspector_caption: String::new(),
+            inspector_regions: Vec::new(),
         }
     }
 }
@@ -733,6 +780,14 @@ pub enum Action {
     SetThemeChoice(ThemeChoice),
     /// Switch the light / dark appearance.
     SetLight(bool),
+    /// Pick the resource inspector's view (an index into [`INSPECTOR_VIEWS`]).
+    SelectInspectorView(usize),
+    /// Pick the region the hex view dumps (an index into the region list).
+    SelectInspectorRegion(usize),
+    /// Page the hex view by `+1` / `-1` page.
+    InspectorHexPage(i32),
+    /// Re-decode the resource inspector from the running core.
+    RefreshInspector,
     /// Cycle the core option at this index by `+1` / `-1`.
     CycleCoreOption(usize, i32),
     /// Open the native file picker and add the chosen ROM files to the library.

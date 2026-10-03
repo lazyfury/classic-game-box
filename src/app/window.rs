@@ -167,6 +167,21 @@ impl super::App {
         }
         self.refresh_play_info();
 
+        // The resource inspector re-decodes on entry / view change, and streams
+        // its texture while the game runs (so OAM and nametables stay live).
+        if self.model.section == Section::Inspector && !self.model.fullscreen {
+            if self.inspector_dirty {
+                self.inspector_dirty = false;
+                self.refresh_inspector();
+            } else if self
+                .session
+                .as_ref()
+                .is_some_and(|session| !session.paused() && session.frame_index() % 8 == 0)
+            {
+                self.sync_inspector();
+            }
+        }
+
         if self.dirty {
             self.rebuild_ui();
             // A rebuild closes every overlay (layout anchors die with the tree),

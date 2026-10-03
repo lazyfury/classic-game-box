@@ -500,6 +500,18 @@ impl Session {
         self.core.take_message()
     }
 
+    /// The core's published memory map, for the resource inspector. Empty when
+    /// the core does not publish one.
+    pub fn memory_regions(&self) -> Vec<cgb_libretro::MemoryRegion> {
+        self.core.memory_regions()
+    }
+
+    /// Read emulated memory at `address` into `out`, following the core's
+    /// memory map. Returns how many bytes were read (`0` when unmapped).
+    pub fn read_memory(&self, address: usize, out: &mut [u8]) -> usize {
+        self.core.read_memory(address, out)
+    }
+
     /// How many frames the core has produced since load (wraps at `u32`). The
     /// host takes the delta over wall time for the on-screen FPS.
     pub fn frame_index(&self) -> u32 {

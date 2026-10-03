@@ -23,6 +23,7 @@ pub mod cli;
 pub mod cores;
 pub mod cores_cli;
 pub mod host;
+pub mod inspect;
 pub mod library;
 // The unified embedded host. It compiles on every target: the macOS surface
 // branch is `#[cfg(target_os = "macos")]`, and the Windows one uses

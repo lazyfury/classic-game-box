@@ -11,8 +11,9 @@ use super::library::*;
 
 use crate::ui::color::cover_color;
 use crate::ui::model::{
-    BindingRow, CheatRow, Confirm, CoreRow, EditTarget, GameRow, MsaaKind, SaveSlotRow,
-    ScreenshotRow, SettingsGroup, ShaderKind, SortKey, SystemCount, TextureHandle,
+    BindingRow, CheatRow, Confirm, CoreRow, EditTarget, GameRow, InspectorRegionRow, MsaaKind,
+    SaveSlotRow, ScreenshotRow, SettingsGroup, ShaderKind, SortKey, SystemCount, TextureHandle,
+    INSPECTOR_HEX_VIEW,
 };
 use crate::ui::theme::ThemeChoice;
 use cgb_libretro::SystemId;
@@ -793,6 +794,80 @@ fn the_rail_offers_the_cheats_section() {
     let (mut tree, list) = laid_out(&ViewModel::default(), &actions);
     click(&mut tree, text_position(&list, "金手指"));
     assert!(actions.drain().contains(&Action::Show(Section::Cheats)));
+}
+
+#[test]
+fn the_inspector_lists_regions_and_picks_views() {
+    let actions = ViewBridge::default();
+    let model = ViewModel {
+        section: Section::Inspector,
+        has_session: true,
+        core_name: "Custom NES Core".to_string(),
+        inspector_ready: true,
+        inspector_caption: "512 个 tile".to_string(),
+        inspector_regions: vec![InspectorRegionRow {
+            label: "CHR".to_string(),
+            range: "0x4000–0x6000".to_string(),
+            size: "8 KB".to_string(),
+        }],
+        inspector_image: Some(TextureHandle {
+            texture: TextureId::new(0x999),
+            width: 128,
+            height: 256,
+        }),
+        ..ViewModel::default()
+    };
+    let (mut tree, list) = laid_out(&model, &actions);
+    let has = |needle: &str| {
+        list.commands().iter().any(|command| {
+            matches!(command, DrawCommand::DrawText { text, .. } if text.contains(needle))
+        })
+    };
+    // The memory map and the decoded image's caption both reach the paint list.
+    assert!(has("CHR"));
+    assert!(has("512 个 tile"));
+
+    // Picking a non-active view asks the host to re-decode.
+    click(&mut tree, text_position(&list, "调色板"));
+    assert_eq!(actions.drain(), vec![Action::SelectInspectorView(1)]);
+
+    click(&mut tree, text_position(&list, "刷新"));
+    assert_eq!(actions.drain(), vec![Action::RefreshInspector]);
+
+    // A region row is the hex view's selector.
+    click(&mut tree, text_position(&list, "CHR"));
+    assert_eq!(actions.drain(), vec![Action::SelectInspectorRegion(0)]);
+}
+
+#[test]
+fn the_hex_view_pages() {
+    let actions = ViewBridge::default();
+    let model = ViewModel {
+        section: Section::Inspector,
+        has_session: true,
+        core_name: "mGBA".to_string(),
+        inspector_ready: true,
+        inspector_view: INSPECTOR_HEX_VIEW,
+        inspector_region: 0,
+        inspector_hex_offset: 0,
+        inspector_hex_total: 4096,
+        inspector_regions: vec![InspectorRegionRow {
+            label: "VRAM".to_string(),
+            range: "0x06000000–0x06018000".to_string(),
+            size: "96 KB".to_string(),
+        }],
+        inspector_image: Some(TextureHandle {
+            texture: TextureId::new(0x999),
+            width: 660,
+            height: 640,
+        }),
+        ..ViewModel::default()
+    };
+    let (mut tree, list) = laid_out(&model, &actions);
+    click(&mut tree, text_position(&list, "下一页 →"));
+    assert_eq!(actions.drain(), vec![Action::InspectorHexPage(1)]);
+    click(&mut tree, text_position(&list, "← 上一页"));
+    assert_eq!(actions.drain(), vec![Action::InspectorHexPage(-1)]);
 }
 
 /// The rail is the only way to change what the middle column shows, so it

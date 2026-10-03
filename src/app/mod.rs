@@ -30,10 +30,10 @@ use crate::ui::{
     TextureHandle, ThemeChoice, Ui, ViewBridge, ViewModel, CONTENT_DEFAULT_WIDTH,
     CONTENT_MAX_WIDTH, CONTENT_MIN_WIDTH,
 };
-use cgb_libretro::{choose_core, system_for_path, CoreSpec, JoypadButton, SystemId};
+use cgb_libretro::{choose_core, system_for_path, CoreSpec, JoypadButton, MemoryRegion, SystemId};
 use cgb_libretro::{InputState, KeyboardBindings, KeyboardMode, MAX_PORTS};
 use igui::igui_app::{AppLogic, EventContext, EventResult, FrameContext, InitContext};
-use igui::igui_backend_wgpu::{TextureEffect, WgpuBackend};
+use igui::igui_backend_wgpu::{TextureEffect, TextureFilter, WgpuBackend};
 use igui::igui_components::OverlayId;
 use igui::igui_core::{Cursor, InputEvent, Key, Modifiers, NodeId, Rect, ViewportSize};
 use igui::igui_profile::{inspect, FrameCounters, FrameStats, Profiler, Severity, StageTimes};
@@ -49,6 +49,7 @@ mod cores;
 mod gamepads;
 mod helpers;
 mod input;
+mod inspect;
 mod library;
 mod project;
 mod saves;
@@ -104,6 +105,9 @@ const ICON_TEXTURE_BASE: u32 = 0x2_0000;
 /// and fixed manual slots share this id space but never collide: quick ranks
 /// map to `0..`[`crate::library::QUICK_SLOT_COUNT`], manual slots to `16+slot`.
 const SAVE_TEXTURE_BASE: u32 = 0x3_0000;
+
+/// The resource inspector's single decoded image.
+const INSPECTOR_TEXTURE_BASE: u32 = 0x4_0000;
 
 /// Which save stack a thumbnail belongs to, so a quick save and a manual slot
 /// with the same number do not share a cached texture.
@@ -254,6 +258,19 @@ pub struct App {
     /// Registered save-state thumbnails, keyed by stack + slot, with the
     /// modified time they were uploaded for.
     save_textures: HashMap<SaveThumb, (i64, TextureHandle)>,
+    /// The selected resource-inspector view (an index into
+    /// [`crate::ui::INSPECTOR_VIEWS`]).
+    inspector_view: usize,
+    /// The region the hex view dumps (an index into the region list).
+    inspector_region: usize,
+    /// The hex view's byte offset into that region.
+    inspector_hex_offset: usize,
+    /// Whether the inspector texture has been registered with nearest
+    /// filtering yet (the first upload sets it; later ones just stream).
+    inspector_registered: bool,
+    /// Set when the inspector must re-decode and rebuild its rows next frame
+    /// (entering the section, changing view, or starting a game).
+    inspector_dirty: bool,
     /// The running game's cheats, and the `.cht` file they came from.
     cheats: Vec<crate::library::Cheat>,
     cheat_path: Option<PathBuf>,
@@ -499,6 +516,11 @@ impl App {
             cover_textures: HashMap::new(),
             screenshot_textures: HashMap::new(),
             save_textures: HashMap::new(),
+            inspector_view: 0,
+            inspector_region: 0,
+            inspector_hex_offset: 0,
+            inspector_registered: false,
+            inspector_dirty: true,
             cheats: Vec::new(),
             cheat_path: None,
             core_options: Vec::new(),

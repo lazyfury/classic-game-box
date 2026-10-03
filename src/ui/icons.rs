@@ -62,11 +62,13 @@ pub enum IconName {
     Save,
     /// Sparkles; the cheats section.
     Sparkles,
+    /// A 2x2 grid; the resource inspector section.
+    LayoutGrid,
 }
 
 impl IconName {
     /// Every icon in the pack, for tests and iteration.
-    pub const ALL: [IconName; 19] = [
+    pub const ALL: [IconName; 20] = [
         IconName::Pin,
         IconName::Trash,
         IconName::ArrowUp,
@@ -86,6 +88,7 @@ impl IconName {
         IconName::Check,
         IconName::Save,
         IconName::Sparkles,
+        IconName::LayoutGrid,
     ];
 
     /// The embedded SVG source for this icon.
@@ -110,6 +113,7 @@ impl IconName {
             IconName::Check => include_str!("../../assets/icons/check.svg"),
             IconName::Save => include_str!("../../assets/icons/save.svg"),
             IconName::Sparkles => include_str!("../../assets/icons/sparkles.svg"),
+            IconName::LayoutGrid => include_str!("../../assets/icons/layout-grid.svg"),
         }
     }
 }

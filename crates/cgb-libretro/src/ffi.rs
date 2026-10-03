@@ -43,6 +43,10 @@ pub const RETRO_ENVIRONMENT_GET_INPUT_DEVICE_CAPABILITIES: c_uint = 24;
 pub const RETRO_ENVIRONMENT_GET_LOG_INTERFACE: c_uint = 27;
 pub const RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY: c_uint = 31;
 pub const RETRO_ENVIRONMENT_SET_CONTROLLER_INFO: c_uint = 35;
+/// `RETRO_ENVIRONMENT_SET_MEMORY_MAPS`: the core publishes a map from its
+/// emulated address space to host buffers. `data` is a `retro_memory_map *`.
+/// The command is experimental, so it carries the experimental bit.
+pub const RETRO_ENVIRONMENT_SET_MEMORY_MAPS: c_uint = 36 | RETRO_ENVIRONMENT_EXPERIMENTAL;
 pub const RETRO_ENVIRONMENT_SET_GEOMETRY: c_uint = 37;
 pub const RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION: c_uint = 52;
 pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS: c_uint = 53;
@@ -65,7 +69,22 @@ pub const RETRO_ENVIRONMENT_GET_INPUT_BITMASKS: c_uint = 51 | RETRO_ENVIRONMENT_
 
 // --- memory / pixel formats ----------------------------------------------
 pub const RETRO_MEMORY_SAVE_RAM: c_uint = 0;
+pub const RETRO_MEMORY_RTC: c_uint = 1;
 pub const RETRO_MEMORY_SYSTEM_RAM: c_uint = 2;
+pub const RETRO_MEMORY_VIDEO_RAM: c_uint = 3;
+pub const RETRO_MEMORY_ROM: c_uint = 4;
+/// `RETRO_MEMORY_MASK`: cores mask the id before switching on it, and
+/// `retro_get_memory_data` receives the same low bits.
+pub const RETRO_MEMORY_MASK: c_uint = 0xff;
+
+// `RETRO_MEMDESC_*`: how a memory descriptor is used. The alignment and
+// minimum-size flags (high bits) are ignored here: an inspector reads byte by
+// byte and does not need them.
+pub const RETRO_MEMDESC_CONST: u64 = 1 << 0;
+pub const RETRO_MEMDESC_BIGENDIAN: u64 = 1 << 1;
+pub const RETRO_MEMDESC_SYSTEM_RAM: u64 = 1 << 2;
+pub const RETRO_MEMDESC_SAVE_RAM: u64 = 1 << 3;
+pub const RETRO_MEMDESC_VIDEO_RAM: u64 = 1 << 4;
 
 /// `RETRO_PIXEL_FORMAT_*` enum values (not defines). 0RGB1555 is libretro's
 /// default before a core calls `SET_PIXEL_FORMAT`.
@@ -246,6 +265,33 @@ pub const RETRO_RUMBLE_WEAK: c_uint = 1;
 pub struct retro_rumble_interface {
     pub set_rumble_state:
         Option<unsafe extern "C" fn(port: c_uint, effect: c_uint, strength: u16) -> bool>,
+}
+
+/// `struct retro_memory_descriptor`: one region of the emulated address space
+/// mapped to a host buffer.
+///
+/// Field order and types match `libretro.h` exactly. The `ptr` is owned by the
+/// core and is promised valid for the whole session (not just the call), which
+/// is why the host copies the descriptor rather than its target.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct retro_memory_descriptor {
+    pub flags: u64,
+    pub ptr: *mut c_void,
+    pub offset: usize,
+    pub start: usize,
+    pub select: usize,
+    pub disconnect: usize,
+    pub len: usize,
+    pub addrspace: *const c_char,
+}
+
+/// `struct retro_memory_map`: an array of descriptors plus its length.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct retro_memory_map {
+    pub descriptors: *const retro_memory_descriptor,
+    pub num_descriptors: c_uint,
 }
 
 /// `struct retro_input_descriptor`.

@@ -95,7 +95,7 @@ mod host;
 mod loader;
 
 pub use error::LibretroError;
-pub use host::{AvInfo, CoreHost, CoreOption, Frame, InputDescriptor, SystemInfo};
+pub use host::{AvInfo, CoreHost, CoreOption, Frame, InputDescriptor, MemoryRegion, SystemInfo};
 pub use loader::CoreLibrary;
 
 mod core_choice;
