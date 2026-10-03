@@ -191,6 +191,13 @@ mod tests {
         assert!(cores
             .iter()
             .any(|core| core.key == "fbneo" && core.system == SystemId::Arcade));
+        // PS2's recommended (first manifest) core is Play!; LRPS2 stays but is
+        // marked unstable, so it must not come first.
+        let first_ps2 = cores
+            .iter()
+            .find(|core| core.system == SystemId::PlayStation2)
+            .expect("ps2 core in the manifest");
+        assert_eq!(first_ps2.key, "play");
         // FreeJ2ME-Plus tints every frame with a green LCD backlight by
         // default; the manifest overrides it to Disabled.
         let j2me = cores

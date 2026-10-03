@@ -126,9 +126,10 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   真实 BIOS 放 `<system>/scph550x.bin`）。PS1 关闭倒带（state 大）。`.iso/.chd/.pbp`
   与 PSP 冲突，仍归 PSP；单游戏用卡片右键的**「选择机种…」**覆盖（存在库
   `games.system`，`Library::set_system`，rescan 不覆盖）。**已完成人工验收**。
-- **PS2（软件渲染）**：`SystemId::PlayStation2`（`.elf/.ciso/.zso/.mdf/.nrg/.dump`）→
-  **LRPS2**（PCSX2 的 libretro fork，`cores/pcsx2/build.sh` 装 buildbot
-  `apple/osx/arm64` dylib）。**macOS 上只能用软件渲染**：LRPS2 的 OpenGL 渲染器
+- **PS2（不稳定，推荐 Play!）**：`SystemId::PlayStation2`（`.elf/.ciso/.zso/.mdf/.nrg/.dump`）→
+  推荐核 **Play!**（`play`，可在下载核心页装了用）。LRPS2（`pcsx2`）保留但仍可下载，
+  只在下载列表里用**黄色「不稳定」**标记（`src/cores/catalog.rs` 的 `UNSTABLE_CORES`，
+  可下载/可加载，只是警告），不再作为推荐。**macOS 上只能用软件渲染**：LRPS2 的 OpenGL 渲染器
   硬要求 `GL_ARB_shading_language_420pack`（`GSDeviceOGL.cpp`），而 macOS 封顶
   OpenGL 4.1（本机实测 CGL 4.1 core context 无此扩展、也无
   `GL_ARB_shading_language_packing`）；硬件渲染（Vulkan / paraLLEl-GS）需要
@@ -136,7 +137,11 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   `Software (SW)`，走普通软件帧路径。**必须有真机 PS2 BIOS**（无 HLE）：
   `scph*.bin` / `rom1.bin` / `erom.bin` 放 `<app data>/system/pcsx2/bios/`。
   `.iso/.chd/.bin/.cue` 与 PSP/PS1/Genesis 冲突，仍归它们；单游戏用卡片右键的
-  **「选择机种…」**覆盖。PS2 关闭倒带（state 大）。**待人眼验收**（需自带 BIOS + 游戏）。
+  **「选择机种…」**覆盖。PS2 关闭倒带（state 大）。
+  **状态：不稳定。** LRPS2 能出画面/声音，但会崩：**存档写入**时、
+  **卸载核心 / 复位 / 切到另一款新游戏**时（PCSX2 的序列化与 teardown 问题，
+  软件路径也躲不过；与此前 N64/PSP/PS1 的 `context_destroy` 顺序是另一码事）。
+  故整机种不作为产品功能推进，默认/推荐改用 Play!。
 - **J2ME（Java ME）**：`SystemId::J2me`（`.jar`/`.kjx`）→ **FreeJ2ME-Plus**
   （`TASEmulators/freej2me-plus`）。它的 libretro 模块只是 C shim，用
   `fork/exec` 起一个 Java VM（`freej2me_plus-lr.jar`）走 stdin/stdout 管道；

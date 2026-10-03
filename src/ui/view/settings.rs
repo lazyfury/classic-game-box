@@ -94,6 +94,7 @@ fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBrid
         );
     } else {
         let mut any_unsupported = false;
+        let mut any_unstable = false;
         for (index, entry) in model.catalog.iter().enumerate() {
             let mut item = Row::new()
                 .align(Align::Center)
@@ -105,6 +106,10 @@ fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBrid
                         .ellipsis(true),
                 )
                 .child(Text::caption(entry.system_key.as_str(), theme).tone(Tone::Muted));
+            if entry.unstable {
+                any_unstable = true;
+                item = item.child(Text::caption("不稳定", theme).tone(Tone::Warning));
+            }
             if !entry.supported {
                 any_unsupported = true;
                 item = item.child(Text::caption("暂不支持", theme).tone(Tone::Subtle));
@@ -138,6 +143,15 @@ fn catalog_card(theme: &'static dyn Theme, model: &ViewModel, actions: &ViewBrid
                     theme,
                 )
                 .tone(Tone::Subtle),
+            );
+        }
+        if any_unstable {
+            list = list.child(
+                Text::caption(
+                    "「不稳定」= 可下载、可加载，但已知会崩（存档 / 复位 / 卸载核心 / 切换游戏），谨慎使用。",
+                    theme,
+                )
+                .tone(Tone::Warning),
             );
         }
     }

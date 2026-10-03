@@ -14,8 +14,9 @@ use std::sync::mpsc::{channel, Receiver};
 use std::time::{Duration, Instant};
 
 use crate::cores::{
-    cache_path, download_core_with_progress, is_blocked, load_cores, register_downloaded,
-    registry_path, update_catalog, write_catalog, Catalog, Platform, DEFAULT_SOURCE,
+    cache_path, download_core_with_progress, is_blocked, is_unstable, load_cores,
+    register_downloaded, registry_path, update_catalog, write_catalog, Catalog, Platform,
+    DEFAULT_SOURCE,
 };
 use crate::library::{
     collect_games, decode_png, encode_png, import_roms, remove_legacy_quick, Game, ImportReport,

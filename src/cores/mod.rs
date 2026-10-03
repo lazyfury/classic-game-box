@@ -10,8 +10,8 @@ mod download;
 mod manifest;
 
 pub use catalog::{
-    cache_path, is_blocked, registry_path, Catalog, CatalogEntry, Platform, BLOCKED_CORES,
-    DEFAULT_SOURCE,
+    cache_path, is_blocked, is_unstable, registry_path, Catalog, CatalogEntry, Platform,
+    BLOCKED_CORES, DEFAULT_SOURCE, UNSTABLE_CORES,
 };
 pub use download::{
     download_core, download_core_with_progress, register_downloaded, update_catalog, write_catalog,

@@ -146,6 +146,14 @@
       "fps": 59.826
     },
     {
+      "key": "play",
+      "name": "Play!",
+      "system": "ps2",
+      "dylib": "play_libretro.dylib",
+      "sample_rate": 48000,
+      "fps": 59.94
+    },
+    {
       "key": "pcsx2",
       "name": "LRPS2",
       "system": "ps2",

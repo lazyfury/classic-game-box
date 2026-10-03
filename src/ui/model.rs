@@ -439,6 +439,9 @@ pub struct CatalogRow {
     /// downloaded but never registered or run, so the list says so instead of
     /// offering a button.
     pub supported: bool,
+    /// Whether the core is on the known-unstable list (`UNSTABLE_CORES`). Such a
+    /// core stays downloadable and usable, but the list warns about it.
+    pub unstable: bool,
 }
 
 /// A console the library has games for, but no available core serves. The

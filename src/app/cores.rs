@@ -26,6 +26,7 @@ impl super::App {
                         cores_dir.join(entry.module_file(platform)).is_file()
                     }),
                     supported: SystemId::parse_key(&entry.system).is_some(),
+                    unstable: is_unstable(&entry.name),
                 })
                 .collect()
         };

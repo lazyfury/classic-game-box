@@ -66,6 +66,21 @@ pub fn is_blocked(name: &str) -> bool {
         .any(|blocked| blocked.eq_ignore_ascii_case(name))
 }
 
+/// Cores this app can download and load, but that are known to be **unstable**:
+/// they crash on save / reset / unloading / switching games, so they are not the
+/// recommended pick for their console. Unlike [`BLOCKED_CORES`] they stay
+/// listed, downloadable and usable — the download list just tags them, so the
+/// player knows what they are choosing. Kept in one place so the UI and the
+/// recommendation agree. See cores/README.md.
+pub const UNSTABLE_CORES: &[&str] = &["pcsx2"];
+
+/// Whether a core name is on the unstable list (case-insensitive).
+pub fn is_unstable(name: &str) -> bool {
+    UNSTABLE_CORES
+        .iter()
+        .any(|core| core.eq_ignore_ascii_case(name))
+}
+
 impl Catalog {
     /// The built-in snapshot, embedded at compile time.
     pub fn builtin() -> Self {
@@ -230,6 +245,18 @@ mod tests {
             .iter()
             .any(|c| c.name == "squirreljme"));
         assert!(!catalog.search("j2me").iter().any(|c| is_blocked(&c.name)));
+    }
+
+    #[test]
+    fn unstable_cores_stay_listed_but_are_flagged() {
+        // `is_unstable` drives the yellow warning in the download list; unlike
+        // the blocklist, an unstable core is still offered.
+        assert!(is_unstable("pcsx2"));
+        assert!(is_unstable("PCSX2"));
+        assert!(!is_unstable("mesen"));
+        assert!(!is_unstable("play"));
+        let catalog = Catalog::builtin();
+        assert!(catalog.search("pcsx2").iter().any(|c| c.name == "pcsx2"));
     }
 
     #[test]
