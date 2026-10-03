@@ -124,6 +124,19 @@ impl InputState {
             *analog = [[0; 2]; 2];
         }
     }
+
+    /// Release the **gamepad** half of every port (buttons and sticks), leaving
+    /// the keyboard half alone.
+    ///
+    /// A gamepad source calls this at the start of each poll and then writes
+    /// every connected pad, so the gamepad half is recomputed from scratch each
+    /// frame: a port whose pad disconnected, was unassigned or was moved can
+    /// never keep last frame's buttons or a stuck stick. Clearing only the
+    /// gamepad half keeps the keyboard and gamepad OR-ed independently.
+    pub fn clear_gamepad(&mut self) {
+        self.gamepad = [0; MAX_PORTS];
+        self.analog = [[[0; 2]; 2]; MAX_PORTS];
+    }
 }
 
 /// Set or clear one bit in a per-port mask.
@@ -684,5 +697,21 @@ mod tests {
         // Out-of-range ports are ignored, not a panic.
         state.set_gamepad_mask(MAX_PORTS, 0xffff);
         assert_eq!(state.mask(MAX_PORTS), 0);
+    }
+
+    #[test]
+    fn clear_gamepad_drops_pads_but_keeps_keys() {
+        let mut state = InputState::new();
+        state.set(0, JoypadButton::A, true); // keyboard
+        state.set_gamepad_mask(0, 1 << JoypadButton::Left.id());
+        state.set_analog(0, 0, 0, 12345);
+
+        state.clear_gamepad();
+
+        // The pad half is gone, including any stuck direction or stick.
+        assert!(!state.is_down(0, JoypadButton::Left));
+        assert_eq!(state.analog(0, 0, 0), 0);
+        // ... but the keyboard is untouched, so a held key still registers.
+        assert!(state.is_down(0, JoypadButton::A));
     }
 }

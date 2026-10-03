@@ -111,6 +111,10 @@ impl NativeGamepad {
 
 impl GamepadSource for NativeGamepad {
     fn poll(&mut self, state: &mut InputState) {
+        // Recompute the gamepad half from scratch every frame: a port whose pad
+        // disconnected or was moved off must not keep last frame's buttons or a
+        // stuck stick. The keyboard half is left alone.
+        state.clear_gamepad();
         // Clone the shared handle so `detect_reset(&mut self, ...)` can run while
         // the device list is borrowed (borrowing `self.devices` directly would
         // conflict with the `&mut self` call).
@@ -124,12 +128,12 @@ impl GamepadSource for NativeGamepad {
         // Start.
         for (slot, device) in devices.iter().enumerate() {
             if !device.connected {
-                if self.seen.remove(&slot) {
-                    self.start_down.remove(&slot);
-                    if let Some(port) = self.ports.remove(&slot) {
-                        state.clear(port);
-                    }
-                }
+                // Drop the mapping unconditionally: the upfront `clear_gamepad`
+                // already zeroed the port, so a disconnect can never leave a
+                // stale port behind.
+                self.seen.remove(&slot);
+                self.start_down.remove(&slot);
+                self.ports.remove(&slot);
                 continue;
             }
             let newly_seen = self.seen.insert(slot);
@@ -418,6 +422,24 @@ mod tests {
             Some(0),
             "a reconnect claims a port again"
         );
+    }
+
+    #[test]
+    fn an_unassign_clears_the_port_instead_of_leaving_a_stuck_button() {
+        let devices = Rc::new(RefCell::new(vec![device("Pad", true)]));
+        let mut gamepad = source(devices.clone());
+        let mut state = InputState::default();
+        devices.borrow_mut()[0].buttons = 1u16 << JoypadButton::Left.id();
+        devices.borrow_mut()[0].analog[0] = [-32768, 0];
+        gamepad.poll(&mut state);
+        assert!(state.is_down(0, JoypadButton::Left), "the pad drives 1P");
+
+        // Unassigning mid-play must leave the port neutral on the next poll,
+        // not frozen on the direction the pad happened to be holding.
+        gamepad.assign("0", None);
+        gamepad.poll(&mut state);
+        assert!(!state.is_down(0, JoypadButton::Left), "no stuck direction");
+        assert_eq!(state.analog(0, 0, 0), 0, "no stuck stick");
     }
 
     #[test]

@@ -100,6 +100,9 @@ impl GilrsGamepads {
 
 impl GamepadSource for GilrsGamepads {
     fn poll(&mut self, state: &mut InputState) {
+        // Recompute the gamepad half from scratch: a port whose pad went away
+        // or was moved must not keep last frame's buttons or a stuck stick.
+        state.clear_gamepad();
         // Connection changes first, so a fresh pad is read in this same frame.
         while let Some(event) = self.gilrs.next_event() {
             match event.event {
@@ -113,9 +116,9 @@ impl GamepadSource for GilrsGamepads {
                     }
                 }
                 EventType::Disconnected => {
-                    if let Some(port) = self.ports.remove(&event.id) {
-                        state.clear(port);
-                    }
+                    // The upfront `clear_gamepad` already zeroed the port; just
+                    // forget the mapping (and leave the keyboard half alone).
+                    self.ports.remove(&event.id);
                 }
                 // Only an unassigned pad claims: an assigned pad ignores Start,
                 // so a lone pad cannot hop between ports.
