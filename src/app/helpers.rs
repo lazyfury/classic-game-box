@@ -200,6 +200,28 @@ pub(crate) fn prepend_path(dir: &Path) {
     }
 }
 
+/// Make the FreeJ2ME Java worker run headless.
+///
+/// The libretro path only uses AWT offscreen (fonts, `BufferedImage`,
+/// `Graphics2D`), but on macOS initialising the Cocoa AWT toolkit turns the
+/// `java` process into the foreground app and takes key focus from our window,
+/// so keyboard input stops reaching the game. Headless keeps every AWT class
+/// the core needs without a toolkit. `JAVA_TOOL_OPTIONS` is read by the bundled
+/// `java` launcher and inherited across the core's `fork/exec`; a user's own
+/// options are preserved by appending rather than replacing.
+pub(crate) fn ensure_headless_java() {
+    const HEADLESS: &str = "-Djava.awt.headless=true";
+    let existing = std::env::var("JAVA_TOOL_OPTIONS").unwrap_or_default();
+    if existing.split_whitespace().any(|option| option == HEADLESS) {
+        return;
+    }
+    let joined = match existing.trim() {
+        "" => HEADLESS.to_string(),
+        options => format!("{options} {HEADLESS}"),
+    };
+    std::env::set_var("JAVA_TOOL_OPTIONS", joined);
+}
+
 /// Map the UI preset to the backend's effect.
 pub(crate) fn texture_effect(kind: ShaderKind) -> TextureEffect {
     match kind {
@@ -217,4 +239,34 @@ pub(crate) fn inside_library(root: &Path, path: &Path) -> bool {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     path.starts_with(&root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_headless_java;
+
+    #[test]
+    fn headless_java_is_added_once_and_keeps_existing_options() {
+        let saved = std::env::var_os("JAVA_TOOL_OPTIONS");
+        std::env::set_var("JAVA_TOOL_OPTIONS", "-Xmx64m");
+
+        ensure_headless_java();
+        let first = std::env::var("JAVA_TOOL_OPTIONS").unwrap_or_default();
+        assert!(first.contains("-Xmx64m"), "keeps the user's options");
+        assert!(first
+            .split_whitespace()
+            .any(|option| option == "-Djava.awt.headless=true"));
+
+        // Idempotent: a second call must not stack the flag.
+        ensure_headless_java();
+        assert_eq!(
+            first,
+            std::env::var("JAVA_TOOL_OPTIONS").unwrap_or_default()
+        );
+
+        match saved {
+            Some(value) => std::env::set_var("JAVA_TOOL_OPTIONS", value),
+            None => std::env::remove_var("JAVA_TOOL_OPTIONS"),
+        }
+    }
 }

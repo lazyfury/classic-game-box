@@ -384,6 +384,10 @@ impl App {
             .filter(|dir| dir.is_dir())
             .unwrap_or_else(|| PathBuf::from(BUNDLED_ARCADE_SYSTEM));
         let _ = seed_dir(&bundled_arcade, &paths.system);
+        // The Java worker must stay out of the foreground (see
+        // `ensure_headless_java`): set before the core `fork/exec`s `java`, so
+        // the child inherits it.
+        ensure_headless_java();
         // J2ME runs the game in a child Java VM: seed the jar into the system
         // dir the core reads, and put the bundled JRE first on `PATH` so the
         // core's `execvp("java")` finds it. Without a bundle (never built) the
