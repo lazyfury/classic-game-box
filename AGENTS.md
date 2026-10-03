@@ -73,7 +73,7 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   改名 / 搜索 / 标签编辑用上游 `igui_components::TextInput`（自带 caret/选区/IME 预编辑）。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
   （mesen / mgba / nestopia / custom_nes_core / fbneo / snes9x / genesis_plus_gx /
-  picodrive / parallel_n64 / ppsspp / mednafen_psx_hw / freej2me_plus）；
+  picodrive / parallel_n64 / ppsspp / mednafen_psx_hw / pcsx2 / freej2me_plus）；
   `--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
   Sega 系（genesis / sms / gg / sg1000）有两个核心：Genesis Plus GX 与轻量的
@@ -126,6 +126,17 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   真实 BIOS 放 `<system>/scph550x.bin`）。PS1 关闭倒带（state 大）。`.iso/.chd/.pbp`
   与 PSP 冲突，仍归 PSP；单游戏用卡片右键的**「选择机种…」**覆盖（存在库
   `games.system`，`Library::set_system`，rescan 不覆盖）。**已完成人工验收**。
+- **PS2（软件渲染）**：`SystemId::PlayStation2`（`.elf/.ciso/.zso/.mdf/.nrg/.dump`）→
+  **LRPS2**（PCSX2 的 libretro fork，`cores/pcsx2/build.sh` 装 buildbot
+  `apple/osx/arm64` dylib）。**macOS 上只能用软件渲染**：LRPS2 的 OpenGL 渲染器
+  硬要求 `GL_ARB_shading_language_420pack`（`GSDeviceOGL.cpp`），而 macOS 封顶
+  OpenGL 4.1（本机实测 CGL 4.1 core context 无此扩展、也无
+  `GL_ARB_shading_language_packing`）；硬件渲染（Vulkan / paraLLEl-GS）需要
+  Vulkan，宿主未支持。故 `cores.json` 把 `pcsx2_renderer` 默认设为
+  `Software (SW)`，走普通软件帧路径。**必须有真机 PS2 BIOS**（无 HLE）：
+  `scph*.bin` / `rom1.bin` / `erom.bin` 放 `<app data>/system/pcsx2/bios/`。
+  `.iso/.chd/.bin/.cue` 与 PSP/PS1/Genesis 冲突，仍归它们；单游戏用卡片右键的
+  **「选择机种…」**覆盖。PS2 关闭倒带（state 大）。**待人眼验收**（需自带 BIOS + 游戏）。
 - **J2ME（Java ME）**：`SystemId::J2me`（`.jar`/`.kjx`）→ **FreeJ2ME-Plus**
   （`TASEmulators/freej2me-plus`）。它的 libretro 模块只是 C shim，用
   `fork/exec` 起一个 Java VM（`freej2me_plus-lr.jar`）走 stdin/stdout 管道；

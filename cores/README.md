@@ -15,6 +15,7 @@ build script (`cores/<name>/build.sh`); the third-party source is cloned into
 | `parallel_n64` | Nintendo 64 | `libretro/parallel-n64` | `dist/parallel_n64_libretro.dylib` | ✅ arm64 + dynarec, **hardware-rendered** (OpenGL / GLideN64) |
 | `ppsspp` | PlayStation Portable | `hrydgard/ppsspp` (buildbot dylib) | `dist/ppsspp_libretro.dylib` | ✅ arm64 (buildbot dylib), **hardware-rendered** (OpenGL) |
 | `mednafen_psx_hw` | Sony PlayStation | `libretro/beetle-psx-libretro` | `dist/mednafen_psx_hw_libretro.dylib` | ✅ arm64, **hardware-rendered** (OpenGL) |
+| `pcsx2` | PlayStation 2 | `PCSX2/pcsx2` (buildbot dylib) | `dist/pcsx2_libretro.dylib` | ✅ arm64 (buildbot dylib), **hardware-rendered** (OpenGL core ≥ 3.3) |
 | `genesis_plus_gx` | MD / Genesis / SMS / GG / SG-1000 | `libretro/Genesis-Plus-GX` | `dist/genesis_plus_gx_libretro.dylib` | 🔧 build.sh added, not yet built/verified |
 | `picodrive` | MD / Genesis / SMS / GG / SG-1000 | `libretro/picodrive` | `dist/picodrive_libretro.dylib` | 🔧 build.sh added, not yet built/verified |
 | `freej2me_plus` | J2ME (Java ME) | `TASEmulators/freej2me-plus` | `dist/freej2me_plus_libretro.dylib` | ✅ arm64, boots a JVM and returns 240×320 frames |
@@ -105,7 +106,7 @@ them.
 - `name` defaults to `key`.
 - `sample_rate` / `fps` are hints only: the real values come from the core's
   own `av_info` after a game loads.
-- `system` is `nes`, `gba`, `gb`, `gbc`, `snes`, `arcade`, `n64`, `psp`, `ps1`, `j2me` (or one of
+- `system` is `nes`, `gba`, `gb`, `gbc`, `snes`, `arcade`, `n64`, `psp`, `ps1`, `ps2`, `j2me` (or one of
   the Sega keys); an unknown system is skipped with a
   warning. A duplicate `(system, key)` keeps the first.
 - `option_defaults` (optional) is a `{ "core_option_key": "value" }` map the
@@ -235,6 +236,28 @@ overrides the extension per game. The script also fetches the upstream `assets/`
 into `cores/dist/ppsspp/`; the app seeds that into `<system dir>/PPSSPP/` at
 startup (without `compat.ini` the core warns at init), and `package.sh`
 ships it in `Resources/ppsspp/`.
+
+`pcsx2` is **LRPS2**, the PlayStation 2 core. Its `build.sh` installs the
+libretro buildbot's `apple/osx/arm64` dylib (override with `PCSX2_URL`).
+
+**macOS can only run LRPS2's software renderer.** Its OpenGL renderer hard-fails
+on any context without `GL_ARB_shading_language_420pack` (`GSDeviceOGL.cpp`:
+"this is required for the OpenGL renderer"), and macOS caps out at OpenGL 4.1
+(verified on this machine: the CGL 4.1 core context the front end creates
+exposes neither 420pack nor `GL_ARB_shading_language_packing`). The hardware
+renderers (Vulkan, paraLLEl-GS) need a Vulkan context, which the front end does
+not offer. `cores.json` therefore defaults `pcsx2_renderer` to `Software (SW)`
+so the core rides the plain software frame path; a player can override it in the
+core-options UI, but the hardware choices need the Vulkan host work described in
+`docs/architecture/`.
+
+LRPS2 has **no HLE BIOS**: a real PS2 BIOS dump is required. Drop `scph*.bin` /
+`rom1.bin` / `erom.bin` into `<app data>/system/pcsx2/bios/` (the core-info's
+`firmware0_path` is `pcsx2/bios`, relative to the system dir). `.iso` / `.chd` /
+`.bin` / `.cue` stay with PSP / PS1 / Genesis, so only the unambiguous PS2
+extensions (`elf`, `ciso`, `zso`, `mdf`, `nrg`, `dump`) select PS2; a `.iso`
+guessed as PSP is fixed per game from the card's “选择机种…” menu. PS2 disc
+images are large, so rewind is disabled for the console like N64 / PSP / PS1.
 
 `freej2me_plus` is the odd one: the libretro module is only a shim that
 `fork/exec`s a Java VM (`freej2me_plus-lr.jar`) and talks to it over

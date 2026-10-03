@@ -343,10 +343,11 @@ impl KeyboardBindings {
             bindings.bind(Key::Character('v'), JoypadButton::X); // Triangle
             bindings.bind(Key::Character('q'), JoypadButton::L);
             bindings.bind(Key::Character('e'), JoypadButton::R);
-        } else if system == SystemId::PlayStation {
-            // Beetle PSX's libretro ids: Cross = B, Circle = A, Square = Y,
-            // Triangle = X, L1/R1 = L/R, L2/R2 = L2/R2. The base covers Cross
-            // (`z`/`j`), Circle (`x`/`k`), the D-pad, Start and Select.
+        } else if system == SystemId::PlayStation || system == SystemId::PlayStation2 {
+            // The Sony pads share the libretro ids (Beetle PSX and LRPS2):
+            // Cross = B, Circle = A, Square = Y, Triangle = X, L1/R1 = L/R,
+            // L2/R2 = L2/R2. The base covers Cross (`z`/`j`), Circle (`x`/`k`),
+            // the D-pad, Start and Select.
             bindings.bind(Key::Character('c'), JoypadButton::Y); // Square
             bindings.bind(Key::Character('v'), JoypadButton::X); // Triangle
             bindings.bind(Key::Character('q'), JoypadButton::L); // L1
@@ -590,6 +591,25 @@ mod tests {
     #[test]
     fn the_ps1_layout_adds_square_triangle_and_shoulders() {
         let bindings = KeyboardBindings::default_bindings_for(SystemId::PlayStation);
+        let mut state = InputState::new();
+        for (key, button) in [
+            ('z', JoypadButton::B),  // Cross
+            ('x', JoypadButton::A),  // Circle
+            ('c', JoypadButton::Y),  // Square
+            ('v', JoypadButton::X),  // Triangle
+            ('q', JoypadButton::L),  // L1
+            ('e', JoypadButton::R),  // R1
+            ('r', JoypadButton::L2), // L2
+            ('f', JoypadButton::R2), // R2
+        ] {
+            bindings.apply(Key::Character(key), true, &mut state, 0);
+            assert!(state.is_down(0, button), "{key:?} -> {button:?}");
+        }
+    }
+
+    #[test]
+    fn the_ps2_layout_matches_the_sony_pad() {
+        let bindings = KeyboardBindings::default_bindings_for(SystemId::PlayStation2);
         let mut state = InputState::new();
         for (key, button) in [
             ('z', JoypadButton::B),  // Cross

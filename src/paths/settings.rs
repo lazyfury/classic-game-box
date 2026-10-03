@@ -27,6 +27,7 @@ pub struct Settings {
     pub n64_core: Option<String>,
     pub psp_core: Option<String>,
     pub ps1_core: Option<String>,
+    pub ps2_core: Option<String>,
     pub j2me_core: Option<String>,
     /// The game library folder: the database, screenshots, saves and cheats
     /// all live under it, so the folder is one self-contained library that can
@@ -105,6 +106,7 @@ impl Settings {
             SystemId::N64 => self.n64_core.as_deref(),
             SystemId::Psp => self.psp_core.as_deref(),
             SystemId::PlayStation => self.ps1_core.as_deref(),
+            SystemId::PlayStation2 => self.ps2_core.as_deref(),
             SystemId::J2me => self.j2me_core.as_deref(),
         }
     }
@@ -124,6 +126,7 @@ impl Settings {
             SystemId::N64 => &mut self.n64_core,
             SystemId::Psp => &mut self.psp_core,
             SystemId::PlayStation => &mut self.ps1_core,
+            SystemId::PlayStation2 => &mut self.ps2_core,
             SystemId::J2me => &mut self.j2me_core,
         };
         *slot = key.map(str::to_string);

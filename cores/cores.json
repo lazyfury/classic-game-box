@@ -146,6 +146,15 @@
       "fps": 59.826
     },
     {
+      "key": "pcsx2",
+      "name": "LRPS2",
+      "system": "ps2",
+      "dylib": "pcsx2_libretro.dylib",
+      "sample_rate": 48000,
+      "fps": 59.94,
+      "option_defaults": { "pcsx2_renderer": "Software (SW)" }
+    },
+    {
       "key": "freej2me_plus",
       "name": "FreeJ2ME-Plus",
       "system": "j2me",

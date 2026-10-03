@@ -32,6 +32,9 @@ pub enum SystemId {
     Psp,
     /// Sony PlayStation. Hardware-rendered (OpenGL) via Beetle PSX HW.
     PlayStation,
+    /// Sony PlayStation 2. CPU-rendered (software GS) via LRPS2 (PCSX2); its
+    /// hardware renderers need Vulkan, which the host does not offer.
+    PlayStation2,
     /// J2ME (Java ME): the feature-phone games. A `.jar` MIDlet suite, run by
     /// a Java VM the core starts as a child process.
     J2me,
@@ -51,6 +54,7 @@ pub const SYSTEMS: &[SystemId] = &[
     SystemId::N64,
     SystemId::Psp,
     SystemId::PlayStation,
+    SystemId::PlayStation2,
     SystemId::J2me,
 ];
 
@@ -70,6 +74,7 @@ impl SystemId {
             SystemId::N64 => "Nintendo 64",
             SystemId::Psp => "PlayStation Portable",
             SystemId::PlayStation => "Sony PlayStation",
+            SystemId::PlayStation2 => "Sony PlayStation 2",
             SystemId::J2me => "J2ME (Java ME)",
         }
     }
@@ -90,6 +95,7 @@ impl SystemId {
             SystemId::N64 => "N64",
             SystemId::Psp => "PSP",
             SystemId::PlayStation => "PS1",
+            SystemId::PlayStation2 => "PS2",
             SystemId::J2me => "J2ME",
         }
     }
@@ -120,6 +126,11 @@ impl SystemId {
             // are shared with PSP and stay there; a wrong guess is fixed per
             // game from the card's "选择机种…" menu.
             SystemId::PlayStation => &["cue", "ccd", "toc", "m3u", "img"],
+            // The PS2 disc images. `.iso`, `.chd`, `.bin`, `.cue`, `.img` and
+            // `.m3u` are shared with PSP / PS1 / Genesis and stay with them, so
+            // only the unambiguous PS2 extensions are claimed here; a `.iso`
+            // guessed as PSP is fixed per game from the card's "选择机种…" menu.
+            SystemId::PlayStation2 => &["elf", "ciso", "zso", "mdf", "nrg", "dump"],
             // `.jar` is a MIDlet suite; `.kjx` is a Keitai (i-appli) archive
             // the core also accepts. `.jad` (the descriptor) is not a game.
             SystemId::J2me => &["jar", "kjx"],
@@ -141,6 +152,7 @@ impl SystemId {
             SystemId::N64 => "n64",
             SystemId::Psp => "psp",
             SystemId::PlayStation => "ps1",
+            SystemId::PlayStation2 => "ps2",
             SystemId::J2me => "j2me",
         }
     }
@@ -161,6 +173,7 @@ impl SystemId {
             "n64" | "nintendo_64" => Some(SystemId::N64),
             "psp" | "playstation_portable" => Some(SystemId::Psp),
             "ps1" | "psx" | "playstation" => Some(SystemId::PlayStation),
+            "ps2" | "playstation2" | "playstation_2" => Some(SystemId::PlayStation2),
             "j2me" | "java" => Some(SystemId::J2me),
             _ => None,
         }
@@ -195,6 +208,7 @@ pub fn system_for_path(path: &str) -> SystemId {
         "z64" | "n64" | "v64" => SystemId::N64,
         "iso" | "cso" | "pbp" | "chd" => SystemId::Psp,
         "cue" | "ccd" | "toc" | "m3u" | "img" => SystemId::PlayStation,
+        "elf" | "ciso" | "zso" | "mdf" | "nrg" | "dump" => SystemId::PlayStation2,
         "jar" | "kjx" => SystemId::J2me,
         _ => SystemId::Nes,
     }
@@ -234,6 +248,12 @@ mod tests {
         assert_eq!(system_for_path("disc.toc"), SystemId::PlayStation);
         assert_eq!(system_for_path("set.m3u"), SystemId::PlayStation);
         assert_eq!(system_for_path("track.img"), SystemId::PlayStation);
+        assert_eq!(system_for_path("boot.elf"), SystemId::PlayStation2);
+        assert_eq!(system_for_path("disc.ciso"), SystemId::PlayStation2);
+        assert_eq!(system_for_path("DISC.ZSO"), SystemId::PlayStation2);
+        assert_eq!(system_for_path("disc.mdf"), SystemId::PlayStation2);
+        assert_eq!(system_for_path("disc.nrg"), SystemId::PlayStation2);
+        assert_eq!(system_for_path("disc.dump"), SystemId::PlayStation2);
         assert_eq!(system_for_path("pileup.jar"), SystemId::J2me);
         assert_eq!(system_for_path("PILEUP.JAR"), SystemId::J2me);
         assert_eq!(system_for_path("keitai.kjx"), SystemId::J2me);
@@ -247,6 +267,7 @@ mod tests {
         assert_eq!(SystemId::parse_key("GBC"), Some(SystemId::Gb));
         assert_eq!(SystemId::parse_key("MEGADRIVE"), Some(SystemId::Genesis));
         assert_eq!(SystemId::parse_key("md"), Some(SystemId::Genesis));
+        assert_eq!(SystemId::parse_key("PS2"), Some(SystemId::PlayStation2));
         assert_eq!(SystemId::parse_key("wonderswan"), None);
     }
 
@@ -269,6 +290,11 @@ mod tests {
             SystemId::parse_key("playstation_portable"),
             Some(SystemId::Psp)
         );
+        assert_eq!(
+            SystemId::parse_key("playstation2"),
+            Some(SystemId::PlayStation2)
+        );
+        assert_eq!(SystemId::parse_key("ps2"), Some(SystemId::PlayStation2));
         // A console we do not model stays unknown.
         assert_eq!(SystemId::parse_key("wiiu"), None);
         assert_eq!(SystemId::parse_key("nds"), None);

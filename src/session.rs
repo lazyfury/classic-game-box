@@ -50,12 +50,16 @@ fn rewind_capacity(frame_seconds: f64) -> usize {
 /// megabytes: a held rewind would balloon memory. Disable it there; the UI just
 /// has nothing to rewind.
 fn rewind_allowed(system: SystemId) -> bool {
-    // The N64's, PSP's and PS1's states are megabytes, and the J2ME core
-    // cannot serialize at all (`retro_serialize` returns false), so none of
-    // them gets a rewind ring.
+    // The N64's, PSP's, PS1's and PS2's states are megabytes, and the J2ME
+    // core cannot serialize at all (`retro_serialize` returns false), so none
+    // of them gets a rewind ring.
     !matches!(
         system,
-        SystemId::N64 | SystemId::Psp | SystemId::PlayStation | SystemId::J2me
+        SystemId::N64
+            | SystemId::Psp
+            | SystemId::PlayStation
+            | SystemId::PlayStation2
+            | SystemId::J2me
     )
 }
 
