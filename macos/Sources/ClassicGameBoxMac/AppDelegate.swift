@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var app: OpaquePointer?
     /// A pending one-shot frame (idle input), or nil.
     private var timer: Timer?
+    /// The gamepad's own loop, independent of the frame driver.
+    private var inputTimer: Timer?
     /// Drives frames while the app wants them (macOS 14+).
     private var displayLink: CADisplayLink?
     /// The local event monitor that schedules a frame for any input.
@@ -90,6 +92,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.requestFrame()
             return event
         }
+        // The gamepad's own loop: it reconciles the controller table and
+        // samples input even while the renderer is idle, so a pad still responds
+        // (and a missed disconnect is caught) when nothing else draws frames.
+        let inputTimer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            self?.pollInput()
+        }
+        RunLoop.main.add(inputTimer, forMode: .common)
+        self.inputTimer = inputTimer
         requestFrame()
 
         NSApp.activate(ignoringOtherApps: true)
@@ -108,6 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         displayLink = nil
         timer?.invalidate()
         timer = nil
+        inputTimer?.invalidate()
+        inputTimer = nil
         // The wgpu surface borrows the CAMetalLayer, so the Rust app must be
         // torn down while `view` (and its layer) is still alive. `view` is
         // released only after this method returns.
@@ -143,6 +155,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func displayTick() {
         runFrame()
+    }
+
+    /// One tick of the gamepad loop: keep the controller table honest, and when
+    /// the renderer is idle sample input so a pad press can wake a frame.
+    private func pollInput() {
+        gamepads.reconcile()
+        guard let app else { return }
+        // While the display link drives frames, the frame loop already samples
+        // input; only the idle case needs this tick.
+        if let displayLink, !displayLink.isPaused { return }
+        if cgb_host_poll(app) {
+            requestFrame()
+        }
     }
 
     private func timerTick() {

@@ -737,6 +737,17 @@ impl super::App {
         gamepads.borrow_mut().claim(next_free_port(&devices));
     }
 
+    /// The input tick a host may run on its own cadence while idle: sample the
+    /// pads and keep the assignment UI in step, but lay out and paint nothing.
+    /// Returns whether the app needs a frame (something on screen changed).
+    ///
+    /// While a game runs the frame loop already samples input every frame, so a
+    /// host only needs this while idle.
+    pub(crate) fn poll_input(&mut self) -> bool {
+        self.step_gamepad();
+        self.dirty
+    }
+
     /// A main-controller Select long-press: the first asks to confirm, a second
     /// one clears every gamepad assignment.
     pub(super) fn handle_main_reset(&mut self) {

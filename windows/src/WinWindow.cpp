@@ -90,6 +90,7 @@ int WinWindow::Run() {
 
     MSG msg = {};
     for (;;) {
+        bool needFrame = false;
         if (continuous_) {
             // A running game / animation: present as fast as the surface
             // allows (Fifo throttles to the display), while staying responsive
@@ -97,20 +98,24 @@ int WinWindow::Run() {
             RunFrame();
             MsgWaitForMultipleObjectsEx(0, nullptr, 1, QS_ALLINPUT, 0);
         } else {
-            // Idle: block until something happens.
-            MsgWaitForMultipleObjectsEx(0, nullptr, INFINITE, QS_ALLINPUT, 0);
+            // Idle: the gamepad's own loop. Wake on a message or a short
+            // timeout, then sample input; a pad connecting or an assignment
+            // change needs a frame even though no window message arrived.
+            DWORD wait = MsgWaitForMultipleObjectsEx(0, nullptr, 16, QS_ALLINPUT, 0);
+            if (wait == WAIT_TIMEOUT && app_ && cgb_host_poll(app_)) {
+                needFrame = true;
+            }
         }
 
-        bool hadInput = false;
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            hadInput = true;
+            needFrame = true;
             if (msg.message == WM_QUIT) {
                 return static_cast<int>(msg.wParam);
             }
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
-        if (hadInput && !continuous_) {
+        if (needFrame && !continuous_) {
             RunFrame();
         }
     }

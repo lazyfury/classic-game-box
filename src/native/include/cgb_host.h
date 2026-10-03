@@ -45,6 +45,13 @@ void cgb_host_frame(CgbHostApp *app);
 bool cgb_host_needs_frame(const CgbHostApp *app);
 
 /*
+ * Sample input (gamepads) without rendering a frame. Returns true when the app
+ * now needs a frame, e.g. the assignment UI changed. A running game already
+ * samples every frame; a host calls this on its own cadence while idle.
+ */
+bool cgb_host_poll(CgbHostApp *app);
+
+/*
  * The pending fullscreen request: 1 enter, 0 leave, -1 none. The app parks a
  * request; the shell applies it with its platform's own fullscreen transition.
  */

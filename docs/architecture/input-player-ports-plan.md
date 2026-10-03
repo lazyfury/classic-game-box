@@ -106,4 +106,8 @@
 - **P3 完成**：设置页 → 输入 的「键盘分配」卡片（单人/双人）；play view 按钮组的「输入分配」下钻菜单：**已连接手柄列表 → 每个手柄 → 1P/2P/3P/4P/未分配**（当前端口打 ✓，点击即分配），按钮文本显示「键盘单人/双人 + 手柄1（1P）」。
   「分配模式」模态框：按 **Start** 认领（只认未分配的手柄）、主控长按 **Select** ≈1s 重置全部（二次确认）、「确认完成分配」关闭；模态框打开时保持帧循环以轮询手柄。macOS 与 gilrs 统一为「shell 只报**设备级**原始状态（`cgb_host_gamepad_device`/`_state` 按 slot），app 把 slot 映射到 port」，且连接时默认占第一个空闲端口。
   仍缺：设置页的**逐键重映射**；每核心端口数（暂用固定 4）。
+- **P3.1 修复（卡方向）**：`1d2a1ea` 把 macOS 从「每帧整体快照」（`GamepadSnapshot::apply` 覆盖全部端口）改成「按 slot 打补丁」时，丢了「每帧重置」这个不变量：`NativeGamepad::poll` 只写有映射的端口，未分配 / 换槽 / 断开漏清的端口会**冻结在最后一帧的方向位**；`assign` 结构上又拿不到 `InputState`，所以「未分配 → 1P」只是恰好重写了一遍那个端口，看起来像修好了。修复：
+  - `InputState::clear_gamepad()`：每帧开头只清 gamepad 半区（buttons + analog），再按映射写入——**从零重算**，陈旧位不可能存在；键盘半区不动（两者仍 OR）。
+  - macOS 槽位重建：`Gamepads.swift` 以 `GCController.controllers()` 为准 `reconcile()`（连接时先 reconcile，兜底蓝牙漏掉的 `DidDisconnect`），`attach` 幂等、`extendedGamepad` 未就绪不宣告 connected。修掉「幽灵 slot 占着 port 0 卡方向、真手柄被移到 port 1」。
+  - **手柄独立循环**：新增 `cgb_host_poll(app) -> bool`（`App::poll_input`，不布局不绘制）；macOS 用 60Hz `Timer` 跑 `reconcile()` + `poll`，Windows 空闲 `MsgWaitForMultipleObjectsEx` 改 16ms 超时后 `poll`，返回 true 才 `RunFrame()`。这样空闲时手柄仍有自己的节拍。
 - **P4**（之后）：netplay（lockstep → rollback）。

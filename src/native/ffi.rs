@@ -8,8 +8,12 @@ use std::rc::Rc;
 use crate::app::App as CgbApp;
 use crate::cli::Args;
 use crate::host::SharedHostWindow;
-use igui::igui_app::{App as IguiApp, AppConfig, PlatformEvent};
-use igui::igui_core::{Cursor, ImeEvent, Vec2};
+use igui::igui_app::{
+    App as IguiApp, AppConfig, AppLogic, EventContext, EventResult, FrameContext, InitContext,
+    PlatformEvent,
+};
+use igui::igui_core::{Cursor, ImeEvent, InputEvent, Rect, Vec2};
+use igui::igui_render::PaintContext;
 
 use super::gpu::{NativeGpu, NativeGpuPlugin};
 use super::input::{
@@ -28,12 +32,56 @@ pub struct CgbHostApp {
     host_window: NativeHostWindow,
     gamepad: Rc<RefCell<Vec<DeviceState>>>,
     drops: Rc<RefCell<Vec<PathBuf>>>,
+    /// A shared handle to the concrete logic, so `cgb_host_poll` can run the
+    /// input tick without a full frame (the runtime's `FrameContext` is not
+    /// constructible outside it).
+    logic: SharedLogic,
 }
 
 impl CgbHostApp {
     /// Route one native event through the runtime into the UI.
     fn emit(&mut self, event: &NativeEvent) {
         self.app.platform_event(PlatformEvent::new(event));
+    }
+}
+
+/// A shared handle to the app logic.
+pub(crate) type SharedLogic = Rc<RefCell<CgbApp>>;
+
+/// Adapts [`SharedLogic`] to the runtime's [`AppLogic`], delegating every phase.
+struct LogicHandle(SharedLogic);
+
+impl AppLogic for LogicHandle {
+    fn init(&mut self, ctx: &InitContext<'_>) {
+        self.0.borrow_mut().init(ctx);
+    }
+
+    fn event(&mut self, ctx: &EventContext<'_>, event: &InputEvent) -> EventResult {
+        self.0.borrow_mut().event(ctx, event)
+    }
+
+    fn update(&mut self, ctx: &FrameContext<'_>) {
+        self.0.borrow_mut().update(ctx);
+    }
+
+    fn layout(&mut self, ctx: &FrameContext<'_>) {
+        self.0.borrow_mut().layout(ctx);
+    }
+
+    fn paint(&mut self, ctx: &FrameContext<'_>, paint: &mut PaintContext) {
+        self.0.borrow_mut().paint(ctx, paint);
+    }
+
+    fn needs_frame(&self) -> bool {
+        self.0.borrow().needs_frame()
+    }
+
+    fn cursor(&self) -> Option<Cursor> {
+        self.0.borrow().cursor()
+    }
+
+    fn caret(&self) -> Option<Rect> {
+        self.0.borrow().caret()
     }
 }
 
@@ -104,8 +152,8 @@ pub unsafe extern "C" fn cgb_host_start(
         }
     };
 
-    let logic = CgbApp::new(args);
-    let drops = logic.drop_sink();
+    let logic: SharedLogic = Rc::new(RefCell::new(CgbApp::new(args)));
+    let drops = logic.borrow().drop_sink();
     let (gpu_plugin, gpu) = NativeGpuPlugin::new();
     let host_window = NativeHostWindow::default();
     let (gamepad_plugin, gamepad) = NativeGamepadPlugin::new();
@@ -120,7 +168,7 @@ pub unsafe extern "C" fn cgb_host_start(
     .plugin(NativeClipboardPlugin)
     .plugin(NativeInputPlugin)
     .plugin(gamepad_plugin)
-    .logic(logic);
+    .logic(LogicHandle(logic.clone()));
     builder.insert_service(NativeSurface {
         handle,
         width,
@@ -146,6 +194,7 @@ pub unsafe extern "C" fn cgb_host_start(
         host_window,
         gamepad,
         drops,
+        logic,
     }))
 }
 
@@ -185,6 +234,23 @@ pub unsafe extern "C" fn cgb_host_frame(app: *mut CgbHostApp) {
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_needs_frame(app: *const CgbHostApp) -> bool {
     unsafe { app.as_ref() }.is_some_and(|app| app.app.needs_frame())
+}
+
+/// Sample input (gamepads) without rendering a frame. Returns true when the app
+/// now needs a frame, e.g. the assignment UI changed.
+///
+/// A running game already samples input every frame, so a host only needs this
+/// on its own cadence while idle (a pad connecting, a Start press waiting).
+///
+/// # Safety
+///
+/// `app` must be a live pointer from `cgb_host_start`.
+#[no_mangle]
+pub unsafe extern "C" fn cgb_host_poll(app: *mut CgbHostApp) -> bool {
+    match unsafe { app.as_mut() } {
+        Some(app) => app.logic.borrow_mut().poll_input(),
+        None => false,
+    }
 }
 
 /// The pending fullscreen request: `1` enter, `0` leave, `-1` none.
