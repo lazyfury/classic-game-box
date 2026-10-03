@@ -191,18 +191,22 @@ impl GlContext {
 
         let mut pixel_format: *mut c_void = ptr::null_mut();
         let mut npix: c_int = 0;
+        // SAFETY: CGL API; `attrs` is a NUL-terminated local array and the out-params are locals.
         let err = unsafe { CGLChoosePixelFormat(attrs.as_ptr(), &mut pixel_format, &mut npix) };
         if err != K_CGL_NO_ERROR || pixel_format.is_null() {
             return Err(format!("CGLChoosePixelFormat failed ({err})"));
         }
 
         let mut context: *mut c_void = ptr::null_mut();
+        // SAFETY: `pixel_format` was just created and `context` is a local out-param.
         let err = unsafe { CGLCreateContext(pixel_format, ptr::null_mut(), &mut context) };
         if err != K_CGL_NO_ERROR || context.is_null() {
+            // SAFETY: `pixel_format` came from `CGLChoosePixelFormat` and is not used again.
             unsafe { CGLDestroyPixelFormat(pixel_format) };
             return Err(format!("CGLCreateContext failed ({err})"));
         }
 
+        // SAFETY: `context` was just created on this thread and is stored for later use.
         unsafe { CGLSetCurrentContext(context) };
 
         let mut gl = GlContext {
@@ -221,6 +225,7 @@ impl GlContext {
 
     /// Build (or rebuild) the FBO and its attachments at the current size.
     fn build_fbo(&mut self, depth: bool, stencil: bool) -> Result<(), String> {
+        // SAFETY: GL needs the context current — it is, on this thread; every object id is a local field.
         unsafe {
             glGenFramebuffers(1, &mut self.fbo);
             glGenTextures(1, &mut self.color);
@@ -301,6 +306,7 @@ impl GlContext {
         if self.width == width && self.height == height {
             return Ok(());
         }
+        // SAFETY: same current-context guarantee; deletes the FBO/attachments this context owns.
         unsafe {
             if self.fbo != 0 {
                 glDeleteFramebuffers(1, &self.fbo);
@@ -327,6 +333,7 @@ impl GlContext {
 
     /// Make this context current on the calling thread.
     pub fn make_current(&self) -> Result<(), String> {
+        // SAFETY: `self.context` is live and this is the thread that owns it.
         let err = unsafe { CGLSetCurrentContext(self.context) };
         if err != K_CGL_NO_ERROR {
             return Err(format!("CGLSetCurrentContext failed ({err})"));
@@ -352,6 +359,7 @@ impl GlContext {
         let w = self.width as usize;
         let h = self.height as usize;
         let mut rgba = vec![0u8; w * h * 4];
+        // SAFETY: the context is current here; `rgba` has exactly `w*h*4` bytes for `glReadPixels`.
         unsafe {
             glBindFramebuffer(GL_READ_FRAMEBUFFER, self.fbo);
             glReadBuffer(GL_COLOR_ATTACHMENT0);
@@ -384,6 +392,7 @@ unsafe impl Send for GlContext {}
 
 impl Drop for GlContext {
     fn drop(&mut self) {
+        // SAFETY: deletes only objects of `self.context` and destroys it on the owning thread.
         unsafe {
             // Only touch GL if this context is current on this thread.
             if CGLGetCurrentContext() == self.context {
@@ -406,6 +415,7 @@ impl Drop for GlContext {
 
 /// Resolve a GL symbol by name for a core's `get_proc_address`.
 pub fn proc_address(name: &CStr) -> *mut c_void {
+    // SAFETY: `name` is a NUL-terminated `CStr`; `dlsym` returns a symbol or NULL.
     unsafe { dlsym(RTLD_DEFAULT, name.as_ptr()) }
 }
 

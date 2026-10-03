@@ -1,0 +1,56 @@
+# Dependency gate for `cargo deny check` (see `scripts/audit.sh`).
+#
+# The app links a deep wgpu / igui tree and `dlopen`s third-party libretro cores
+# at runtime, so this scans the **Rust** dependency graph for known
+# vulnerabilities, yanked releases, wildcard requirements and unexpected
+# sources. It is a separate, opt-in check: `scripts/dev.sh` stays install-free.
+#
+#   cargo install cargo-deny --locked
+#   ./scripts/audit.sh
+
+[advisories]
+# Vulnerabilities in the advisory DB are denied by default; a yanked release is
+# worth surfacing but should not fail an otherwise green tree.
+yanked = "warn"
+ignore = [
+    # Unmaintained, no safe upgrade available, all transitive through igui's
+    # pinned wgpu 24 / font stack. Re-check when igui bumps wgpu and igui_font.
+    { id = "RUSTSEC-2024-0436", reason = "paste is pulled by metal under wgpu 24; no safe upgrade until igui bumps wgpu" },
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz is pulled by igui_font; no safe upgrade until igui switches to harfrust" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is pulled by igui_font / ab_glyph; no safe upgrade until igui migrates" },
+]
+
+[licenses]
+# Permissive licenses only; the workspace itself is MIT.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.8
+
+[bans]
+# The graphics stack legitimately carries several versions of the same crate
+# (wgpu / windows / wasm bindings), so duplicates are not a failure.
+multiple-versions = "allow"
+# `workspace = true` is not a wildcard, but cargo-deny cannot resolve it in this
+# root-package-is-workspace layout (see the `unresolved-workspace-dependency`
+# diagnostic below), so denying wildcards only produces false positives here.
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+# Only the pinned UI upstream may be built from git.
+unknown-git = "deny"
+allow-git = ["https://github.com/lazyfury/igui"]

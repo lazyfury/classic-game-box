@@ -366,10 +366,18 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+依赖审计（可选，不在 `dev.sh` 里，需要 `cargo install cargo-deny --locked`）：
+
+```bash
+./scripts/audit.sh        # cargo deny check：漏洞 / yanked / 许可证 / 来源
+```
+
 - 不写截图 / 录屏测试：UI 手感由人看；UI 回归用 `igui_backend_recording` 录 `DrawList`
   + `igui_profile::inspect`，模拟器侧用假 frontend 单测。
+- 每个 `unsafe` 块都要有 `// SAFETY:` 注释，由 `clippy::undocumented_unsafe_blocks`
+  （`Cargo.toml` 的 `[workspace.lints]`）在 gate 里守住。
 - `CGB_PERF=1` 打印性能打点。
-- UI 栈 `igui` 以 **git 依赖**固定到 `v0.2.0` 的 commit（`Cargo.lock` 锁定），无需相邻 checkout。
+- UI 栈 `igui` 以 **git 依赖**固定到 `v0.3.1` 的 tag（`Cargo.lock` 锁定），无需相邻 checkout。
 
 ## 目录结构
 

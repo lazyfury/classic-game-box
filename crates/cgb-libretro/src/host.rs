@@ -724,6 +724,7 @@ impl CoreHost {
         // `environment` from init.
         HOST.store(Arc::as_ptr(&shared) as *mut HostShared, Ordering::Release);
 
+        // SAFETY: `retro_init` runs once on the freshly loaded core; every fn pointer comes from the same library.
         unsafe {
             let api = core.api();
             (api.set_environment)(environment_cb);
@@ -759,6 +760,7 @@ impl CoreHost {
             size: data.len(),
             meta: ptr::null(),
         };
+        // SAFETY: `info` borrows `cpath` and `data`, both alive for the call; `load_game` runs once per load.
         let loaded = unsafe { (self.core.api().load_game)(&info) };
         if !loaded {
             return Err(LibretroError::LoadGame {
@@ -775,6 +777,7 @@ impl CoreHost {
         // `SET_HW_RENDER`). The GL context is still current and the FBO exists.
         let reset = lock(&self.shared.hw).reset.take();
         if let Some(reset) = reset {
+            // SAFETY: the core armed this reset in `SET_HW_RENDER`; the GL context and FBO are still live.
             unsafe { reset() };
         }
         Ok(())
@@ -783,11 +786,13 @@ impl CoreHost {
     /// Run exactly one emulated frame. The core calls back into the front end
     /// for video, audio and input.
     pub fn run_frame(&self) {
+        // SAFETY: `retro_run` on the loaded core, from the thread that owns it.
         unsafe { (self.core.api().run)() }
     }
 
     /// Reset the machine without reloading it.
     pub fn reset(&self) {
+        // SAFETY: `retro_reset` on the loaded core, from the thread that owns it.
         unsafe { (self.core.api().reset)() }
     }
 
@@ -885,6 +890,7 @@ impl CoreHost {
     /// Tell the core which device class a port uses; some cores require it
     /// before they answer input.
     pub fn set_controller_port_device(&self, port: u32, device: u32) {
+        // SAFETY: fn pointer from the loaded core; only plain integer arguments.
         unsafe { (self.core.api().set_controller_port_device)(port as c_uint, device as c_uint) };
     }
 
@@ -897,6 +903,7 @@ impl CoreHost {
             need_fullpath: false,
             block_extract: false,
         };
+        // SAFETY: `info` is a live, initialized out-struct the core fills.
         unsafe { (self.core.api().system_info)(&mut info) };
         SystemInfo {
             library_name: cstring(info.library_name),
@@ -914,6 +921,7 @@ impl CoreHost {
     /// mGBA only answers correctly once a machine is in.
     pub fn av_info(&self) -> AvInfo {
         let mut av = retro_system_av_info::default();
+        // SAFETY: `av` is a live out-struct the core fills.
         unsafe { (self.core.api().av_info)(&mut av) };
         AvInfo {
             width: av.geometry.base_width,
@@ -925,11 +933,13 @@ impl CoreHost {
 
     /// Instant save-state bytes, or empty if the core cannot serialize.
     pub fn serialize(&self) -> Vec<u8> {
+        // SAFETY: fn pointer from the loaded core; no arguments.
         let size = unsafe { (self.core.api().serialize_size)() };
         if size == 0 {
             return Vec::new();
         }
         let mut buf = vec![0u8; size];
+        // SAFETY: `buf` is exactly `size` bytes, the size the core just reported.
         let ok = unsafe { (self.core.api().serialize)(buf.as_mut_ptr() as *mut c_void, size) };
         if ok {
             buf
@@ -941,11 +951,13 @@ impl CoreHost {
     /// The number of bytes `serialize` would produce, or `0` when the core does
     /// not implement save states.
     pub fn serialize_size(&self) -> usize {
+        // SAFETY: fn pointer from the loaded core; no arguments.
         unsafe { (self.core.api().serialize_size)() }
     }
 
     /// Disable every cheat. Call before applying a game's cheat list.
     pub fn reset_cheats(&self) {
+        // SAFETY: fn pointer from the loaded core; no arguments.
         unsafe { (self.core.api().cheat_reset)() };
     }
 
@@ -955,6 +967,7 @@ impl CoreHost {
         let Ok(code) = CString::new(code) else {
             return;
         };
+        // SAFETY: `code` is a NUL-terminated `CString` alive for the call.
         unsafe { (self.core.api().cheat_set)(index as c_uint, enabled, code.as_ptr()) };
     }
 
@@ -963,6 +976,7 @@ impl CoreHost {
         if bytes.is_empty() {
             return false;
         }
+        // SAFETY: `bytes` is a live slice; the core reads at most `bytes.len()`.
         unsafe { (self.core.api().unserialize)(bytes.as_ptr() as *const c_void, bytes.len()) }
     }
 
@@ -989,29 +1003,35 @@ impl CoreHost {
     /// The battery save (`RETRO_MEMORY_SAVE_RAM`), copied out for persisting to
     /// `<save_dir>/<rom>.srm`.
     pub fn save_ram(&self) -> Option<Vec<u8>> {
+        // SAFETY: fn pointer from the loaded core; no arguments.
         let size = unsafe { (self.core.api().get_memory_size)(RETRO_MEMORY_SAVE_RAM) };
         if size == 0 {
             return None;
         }
+        // SAFETY: fn pointer from the loaded core; the result is null-checked below.
         let ptr = unsafe { (self.core.api().get_memory_data)(RETRO_MEMORY_SAVE_RAM) } as *const u8;
         if ptr.is_null() {
             return None;
         }
+        // SAFETY: the core returned `ptr`/`size` for SAVE_RAM and `ptr` is non-null (checked); it lives while the core does.
         Some(unsafe { std::slice::from_raw_parts(ptr, size) }.to_vec())
     }
 
     /// Write battery-save bytes back into the core (called after loading a
     /// `.srm` from disk).
     pub fn write_save_ram(&self, bytes: &[u8]) -> bool {
+        // SAFETY: fn pointer from the loaded core; no arguments.
         let size = unsafe { (self.core.api().get_memory_size)(RETRO_MEMORY_SAVE_RAM) };
         if size == 0 {
             return false;
         }
+        // SAFETY: fn pointer from the loaded core; the result is null-checked below.
         let ptr = unsafe { (self.core.api().get_memory_data)(RETRO_MEMORY_SAVE_RAM) } as *mut u8;
         if ptr.is_null() {
             return false;
         }
         let n = size.min(bytes.len());
+        // SAFETY: `ptr` is non-null (checked) and `n <= size`, so the save-RAM buffer is in bounds.
         unsafe { std::slice::from_raw_parts_mut(ptr, n).copy_from_slice(&bytes[..n]) };
         true
     }
@@ -1026,6 +1046,7 @@ impl Drop for CoreHost {
     fn drop(&mut self) {
         // Unpublish first so no callback can reach a half-dropped host.
         HOST.store(ptr::null_mut(), Ordering::Release);
+        // SAFETY: the core is still loaded; `context_destroy` runs before `unload_game`/`deinit`, each exactly once.
         unsafe {
             // Tear down the core's hardware-render resources *before*
             // `retro_unload_game`: the core expects `context_destroy` while its
@@ -1464,6 +1485,7 @@ fn cstring(ptr: *const c_char) -> String {
     if ptr.is_null() {
         String::new()
     } else {
+        // SAFETY: libretro guarantees `ptr` is a NUL-terminated string owned by the core.
         unsafe { CStr::from_ptr(ptr) }
             .to_string_lossy()
             .into_owned()
@@ -1489,6 +1511,7 @@ mod tests {
     #[test]
     fn the_hw_sentinel_is_not_dereferenced() {
         let host = host();
+        // SAFETY: `host` is a locally built `HostShared`; the sentinel address is never dereferenced.
         unsafe {
             host.on_video(RETRO_HW_FRAME_BUFFER_VALID as *const c_void, 640, 480, 0);
         }
@@ -1503,6 +1526,7 @@ mod tests {
     fn preferred_hw_render_is_opengl_core() {
         let host = host();
         let mut context_type: c_int = -1;
+        // SAFETY: `context_type` is a live `c_int` the environment call writes.
         let ok = unsafe {
             host.environment(
                 RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER,
@@ -1520,6 +1544,7 @@ mod tests {
             context_type: RETRO_HW_CONTEXT_VULKAN,
             ..Default::default()
         };
+        // SAFETY: `callback` is a live, initialized struct passed for `SET_HW_RENDER`.
         let ok = unsafe {
             host.environment(
                 RETRO_ENVIRONMENT_SET_HW_RENDER,
@@ -1549,6 +1574,7 @@ mod tests {
             descriptors: &descriptor,
             num_descriptors: 1,
         };
+        // SAFETY: `map`/`descriptor`/`ram` are locals alive for the call.
         let ok = unsafe {
             host.environment(
                 RETRO_ENVIRONMENT_SET_MEMORY_MAPS,
@@ -1598,6 +1624,7 @@ mod tests {
             descriptors: &descriptor,
             num_descriptors: 1,
         };
+        // SAFETY: `map`/`descriptor`/`vram` are locals alive for the call.
         unsafe {
             host.environment(
                 RETRO_ENVIRONMENT_SET_MEMORY_MAPS,
@@ -1626,6 +1653,7 @@ mod tests {
         let value = CString::new("480x272").unwrap();
         let value_label = CString::new("480x272 (1x)").unwrap();
 
+        // SAFETY: `retro_core_option_v2_definition` is a plain C struct; all-zero is a valid value.
         let mut definition: retro_core_option_v2_definition = unsafe { std::mem::zeroed() };
         definition.key = key.as_ptr();
         definition.desc = desc.as_ptr();
@@ -1633,6 +1661,7 @@ mod tests {
         definition.values[0].value = value.as_ptr();
         definition.values[0].label = value_label.as_ptr();
 
+        // SAFETY: a `retro_core_option_v2_definition` of all-zero is a valid terminator.
         let definitions = [definition, unsafe { std::mem::zeroed() }];
         let mut set = retro_core_options_v2 {
             categories: ptr::null_mut(),
@@ -1644,6 +1673,7 @@ mod tests {
         };
 
         let host = host();
+        // SAFETY: `intl`/`set`/`definitions` are locals alive for the call.
         let ok = unsafe {
             host.environment(
                 RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL,

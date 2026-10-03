@@ -6,8 +6,9 @@
 权威设计见 [`docs/architecture/quill-native-migration.md`](docs/architecture/quill-native-migration.md)。
 
 UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上游），以 git 依赖固定到
-`v0.2.0` 的 commit；见 `Cargo.toml` 的 `igui` / `igui_svg` / `igui_winit` / `igui_core`。
-不再需要相邻的 `../quill` checkout。
+`v0.3.1` 的 tag；见 `Cargo.toml` 的 `igui` / `igui_svg` / `igui_scene` / `igui_core`。
+不再是 winit 装配（`igui_winit` 只在 `macos/`/`windows/` 的说明里作对照），宿主是自研的
+原生壳；不再需要相邻的 `../quill` checkout。
 
 ## 现状
 
@@ -83,7 +84,7 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   改名 / 搜索 / 标签编辑用上游 `igui_components::TextInput`（自带 caret/选区/IME 预编辑）。
 - **核心清单统一**：所有核心都从单一 `cores/cores.json` 加载
   （mesen / mgba / nestopia / custom_nes_core / fbneo / snes9x / genesis_plus_gx /
-  picodrive / parallel_n64 / ppsspp / mednafen_psx_hw / pcsx2 / freej2me_plus）；
+  picodrive / parallel_n64 / ppsspp / mednafen_psx_hw / play / pcsx2 / freej2me_plus）；
   `--core` 按 key 或路径选核。
   mGBA 用上游 `libretro/mgba`（CMake）构建，输出 **RGB565**，宿主已接受并转换。
   Sega 系（genesis / sms / gg / sg1000）有两个核心：Genesis Plus GX 与轻量的
@@ -217,6 +218,17 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
+
+依赖审计（可选，**不在 `dev.sh` 里**：`cargo-deny` 不是 rustup 组件、要联网取
+RustSec 库；配置在 `deny.toml`）：
+
+```bash
+cargo install cargo-deny --locked
+./scripts/audit.sh        # cargo deny check：漏洞 / yanked / 许可证 / 来源
+```
+
+每个 `unsafe` 块都必须有 `// SAFETY:` 注释，由 `clippy::undocumented_unsafe_blocks`
+（`Cargo.toml` 的 `[workspace.lints]`）在 gate 里守住。
 
 原生 core 是第三方项目（外加自研的 custom_nes_core），按需构建（需网络，
 首次几分钟）：

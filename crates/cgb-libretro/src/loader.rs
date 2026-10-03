@@ -91,6 +91,7 @@ impl CoreLibrary {
             source,
         })?;
 
+        // SAFETY: every symbol resolves from the just-loaded `library`, which is stored beside the fn pointers and outlives them.
         unsafe {
             let version: FnVersion = symbol(&library, path, b"retro_api_version\0")?;
             let found = version();

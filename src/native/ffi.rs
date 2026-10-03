@@ -219,6 +219,7 @@ pub unsafe extern "C" fn cgb_host_destroy(app: *mut CgbHostApp) {
 /// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_frame(app: *mut CgbHostApp) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     if let Some(app) = unsafe { app.as_mut() } {
         app.app.frame();
     }
@@ -233,6 +234,7 @@ pub unsafe extern "C" fn cgb_host_frame(app: *mut CgbHostApp) {
 /// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_needs_frame(app: *const CgbHostApp) -> bool {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     unsafe { app.as_ref() }.is_some_and(|app| app.app.needs_frame())
 }
 
@@ -247,6 +249,7 @@ pub unsafe extern "C" fn cgb_host_needs_frame(app: *const CgbHostApp) -> bool {
 /// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_poll(app: *mut CgbHostApp) -> bool {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     match unsafe { app.as_mut() } {
         Some(app) => app.logic.borrow_mut().poll_input(),
         None => false,
@@ -263,6 +266,7 @@ pub unsafe extern "C" fn cgb_host_poll(app: *mut CgbHostApp) -> bool {
 /// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_take_fullscreen(app: *mut CgbHostApp) -> i32 {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     match unsafe { app.as_ref() }.and_then(|app| app.host_window.take_request()) {
         Some(true) => 1,
         Some(false) => 0,
@@ -278,6 +282,7 @@ pub unsafe extern "C" fn cgb_host_take_fullscreen(app: *mut CgbHostApp) -> i32 {
 /// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_cursor(app: *const CgbHostApp) -> u32 {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     unsafe { app.as_ref() }
         .and_then(|app| app.app.cursor())
         .map_or(0, cursor_code)
@@ -312,19 +317,24 @@ pub unsafe extern "C" fn cgb_host_caret(
     out_width: *mut f32,
     out_height: *mut f32,
 ) -> bool {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     let Some(rect) = (unsafe { app.as_ref() }).and_then(|app| app.app.caret()) else {
         return false;
     };
     if !out_x.is_null() {
+        // SAFETY: the out pointer is non-null and writable (checked above).
         unsafe { *out_x = rect.left() };
     }
     if !out_y.is_null() {
+        // SAFETY: the out pointer is non-null and writable (checked above).
         unsafe { *out_y = rect.top() };
     }
     if !out_width.is_null() {
+        // SAFETY: the out pointer is non-null and writable (checked above).
         unsafe { *out_width = rect.size.width };
     }
     if !out_height.is_null() {
+        // SAFETY: the out pointer is non-null and writable (checked above).
         unsafe { *out_height = rect.size.height };
     }
     true
@@ -347,9 +357,11 @@ pub unsafe extern "C" fn cgb_host_gamepad_device(
     name: *const c_char,
     connected: bool,
 ) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     let Some(app) = (unsafe { app.as_mut() }) else {
         return;
     };
+    // SAFETY: the C string argument is valid or NULL (this fn's contract).
     let name = unsafe { opt_string(name) }.unwrap_or_default();
     let mut devices = app.gamepad.borrow_mut();
     let slot = slot as usize;
@@ -382,6 +394,7 @@ pub unsafe extern "C" fn cgb_host_gamepad_state(
     right_x: i16,
     right_y: i16,
 ) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     let Some(app) = (unsafe { app.as_mut() }) else {
         return;
     };
@@ -405,6 +418,7 @@ pub unsafe extern "C" fn cgb_host_resize(
     height: u32,
     scale: f64,
 ) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     if let Some(app) = unsafe { app.as_mut() } {
         app.gpu.resize(width, height, scale);
     }
@@ -417,6 +431,7 @@ pub unsafe extern "C" fn cgb_host_resize(
 /// `app` must be a live pointer from `cgb_host_start`; `path` a valid C string.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_dropped_file(app: *mut CgbHostApp, path: *const c_char) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     let Some(app) = (unsafe { app.as_mut() }) else {
         return;
     };
@@ -437,6 +452,7 @@ pub unsafe extern "C" fn cgb_host_dropped_file(app: *mut CgbHostApp, path: *cons
 /// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_pointer_move(app: *mut CgbHostApp, x: f32, y: f32) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     if let Some(app) = unsafe { app.as_mut() } {
         app.emit(&NativeEvent::PointerMove(Vec2::new(x, y)));
     }
@@ -456,6 +472,7 @@ pub unsafe extern "C" fn cgb_host_pointer_down(
     button: u32,
     click_count: u32,
 ) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     if let Some(app) = unsafe { app.as_mut() } {
         app.emit(&NativeEvent::PointerDown {
             position: Vec2::new(x, y),
@@ -472,6 +489,7 @@ pub unsafe extern "C" fn cgb_host_pointer_down(
 /// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_pointer_up(app: *mut CgbHostApp, x: f32, y: f32, button: u32) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     if let Some(app) = unsafe { app.as_mut() } {
         app.emit(&NativeEvent::PointerUp {
             position: Vec2::new(x, y),
@@ -487,6 +505,7 @@ pub unsafe extern "C" fn cgb_host_pointer_up(app: *mut CgbHostApp, x: f32, y: f3
 /// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_pointer_leave(app: *mut CgbHostApp) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     if let Some(app) = unsafe { app.as_mut() } {
         app.emit(&NativeEvent::PointerLeave);
     }
@@ -500,6 +519,7 @@ pub unsafe extern "C" fn cgb_host_pointer_leave(app: *mut CgbHostApp) {
 /// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_scroll(app: *mut CgbHostApp, x: f32, y: f32, dx: f32, dy: f32) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     if let Some(app) = unsafe { app.as_mut() } {
         app.emit(&NativeEvent::Wheel {
             position: Vec2::new(x, y),
@@ -528,11 +548,13 @@ pub unsafe extern "C" fn cgb_host_key_down(
     characters: *const c_char,
     modifiers: u32,
 ) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     let Some(app) = (unsafe { app.as_mut() }) else {
         return;
     };
     // Modifiers may change without a dedicated message.
     app.emit(&NativeEvent::Modifiers(modifiers_from_bits(modifiers)));
+    // SAFETY: the C string argument is valid or NULL (this fn's contract).
     let characters = unsafe { opt_string(characters) };
     if let Some(key) = key_from_code(key_code, characters.as_deref()) {
         app.emit(&NativeEvent::KeyDown(key));
@@ -551,9 +573,11 @@ pub unsafe extern "C" fn cgb_host_key_up(
     key_code: u32,
     characters: *const c_char,
 ) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     let Some(app) = (unsafe { app.as_mut() }) else {
         return;
     };
+    // SAFETY: the C string argument is valid or NULL (this fn's contract).
     let characters = unsafe { opt_string(characters) };
     if let Some(key) = key_from_code(key_code, characters.as_deref()) {
         app.emit(&NativeEvent::KeyUp(key));
@@ -567,9 +591,11 @@ pub unsafe extern "C" fn cgb_host_key_up(
 /// `app` must be a live pointer from `cgb_host_start`; `utf8` a valid C string.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_text(app: *mut CgbHostApp, utf8: *const c_char) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     let Some(app) = (unsafe { app.as_mut() }) else {
         return;
     };
+    // SAFETY: the C string argument is valid or NULL (this fn's contract).
     if let Some(text) = unsafe { opt_string(utf8) } {
         if !text.is_empty() {
             app.emit(&NativeEvent::Text(text));
@@ -584,6 +610,7 @@ pub unsafe extern "C" fn cgb_host_text(app: *mut CgbHostApp, utf8: *const c_char
 /// `app` must be a live pointer from `cgb_host_start`.
 #[no_mangle]
 pub unsafe extern "C" fn cgb_host_modifiers(app: *mut CgbHostApp, bits: u32) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     if let Some(app) = unsafe { app.as_mut() } {
         app.emit(&NativeEvent::Modifiers(modifiers_from_bits(bits)));
     }
@@ -604,9 +631,11 @@ pub unsafe extern "C" fn cgb_host_ime(
     sel_start: i32,
     sel_end: i32,
 ) {
+    // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     let Some(app) = (unsafe { app.as_mut() }) else {
         return;
     };
+    // SAFETY: the C string argument is valid or NULL (this fn's contract).
     let text = unsafe { opt_string(text) };
     let event = match kind {
         0 => ImeEvent::Enabled,

@@ -15,7 +15,10 @@
 //!
 //! The schema is the whole model — see [`super::schema`]. There is deliberately
 //! no migration chain: a database whose `user_version` is not this build's is
-//! wiped and recreated.
+//! wiped and recreated. The one exception is additive index DDL
+//! ([`INDEX_SQL`]): indexes are an optimization, not model, so they are applied
+//! in place instead of forcing a rebuild that would drop the user's names,
+//! pins, tags and play stats for no correctness gain.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -83,6 +86,18 @@ CREATE TABLE game_tags (
     tag_id  INTEGER NOT NULL REFERENCES tags(id)  ON DELETE CASCADE,
     PRIMARY KEY (game_id, tag_id)
 );
+";
+
+/// Additive index DDL, applied on every [`Library::open`].
+///
+/// Indexes only speed up queries; they never change the model, so they are
+/// created in place (`IF NOT EXISTS`) rather than triggering the rebuild a model
+/// change forces (ADR 0003). `game_tags` / `save_states` already get a leading
+/// `game_id` index from their keys; these cover the child columns SQLite does
+/// not index automatically.
+const INDEX_SQL: &str = "
+CREATE INDEX IF NOT EXISTS idx_screenshots_game ON screenshots(game_id);
+CREATE INDEX IF NOT EXISTS idx_cheats_game      ON cheats(game_id);
 ";
 
 /// One row of `PRAGMA user_version`.
@@ -325,6 +340,7 @@ impl Library {
         if reset {
             reset_schema(&mut conn)?;
         }
+        ensure_indexes(&mut conn)?;
         let root = path
             .parent()
             .unwrap_or_else(|| Path::new("."))
@@ -873,6 +889,12 @@ fn reset_schema(conn: &mut SqliteConnection) -> Result<(), LibraryError> {
     Ok(())
 }
 
+/// Create the additive indexes if they are missing. Safe on any open database.
+fn ensure_indexes(conn: &mut SqliteConnection) -> Result<(), LibraryError> {
+    conn.batch_execute(INDEX_SQL)?;
+    Ok(())
+}
+
 /// A game's id from its stored key.
 fn game_id_by_key(conn: &mut SqliteConnection, key: &str) -> Result<Option<i64>, LibraryError> {
     Ok(games::table
@@ -1153,6 +1175,12 @@ mod tests {
     struct CountRow {
         #[diesel(sql_type = diesel::sql_types::BigInt)]
         n: i64,
+    }
+
+    #[derive(QueryableByName)]
+    struct IndexRow {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        name: String,
     }
 
     fn count_rows(library: &Library, sql: &str) -> i64 {
@@ -1467,6 +1495,26 @@ mod tests {
         let root = temp_dir("fresh");
         let library = open_library(&root);
         assert_eq!(user_version(&library), SCHEMA_VERSION);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn child_tables_have_their_foreign_key_indexes() {
+        let root = temp_dir("indexes");
+        let library = open_library(&root);
+        let mut conn = library.conn.borrow_mut();
+        for (table, index) in [
+            ("screenshots", "idx_screenshots_game"),
+            ("cheats", "idx_cheats_game"),
+        ] {
+            let rows: Vec<IndexRow> = diesel::sql_query(format!("PRAGMA index_list('{table}')"))
+                .load(&mut *conn)
+                .unwrap();
+            assert!(
+                rows.iter().any(|row| row.name == index),
+                "{table} is missing {index}"
+            );
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 
