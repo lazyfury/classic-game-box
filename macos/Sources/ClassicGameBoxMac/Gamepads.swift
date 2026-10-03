@@ -16,6 +16,8 @@ final class Gamepads {
 
     /// Controller → device slot, in connection order.
     private var slots: [ObjectIdentifier: Int] = [:]
+    /// Slot → the controller behind it, so a synthetic disconnect can name it.
+    private var controllers: [Int: GCController] = [:]
 
     func start() {
         NotificationCenter.default.addObserver(
@@ -31,19 +33,46 @@ final class Gamepads {
             object: nil
         )
         GCController.startWirelessControllerDiscovery {}
+        reconcile()
+    }
+
+    @objc private func controllerConnected(_ notification: Notification) {
+        // Reconcile *before* attaching: a Bluetooth blip can drop a
+        // `DidDisconnect`, and without this a reconnect would leave a phantom
+        // slot holding the old port (a stuck direction) while the live pad is
+        // moved to another.
+        reconcile()
+    }
+
+    @objc private func controllerDisconnected(_ notification: Notification) {
+        guard let controller = notification.object as? GCController else { return }
+        detach(controller)
+    }
+
+    /// Make the slot table match `GCController.controllers()`: drop any slot
+    /// whose controller is gone (a missed `DidDisconnect`), then (re)attach
+    /// every live controller. Safe to call as often as the input loop likes; it
+    /// never leaves a "connected" slot behind and it refreshes each pad's state,
+    /// which covers a push handler that stopped firing.
+    func reconcile() {
+        let live = Set(GCController.controllers().map { ObjectIdentifier($0) })
+        // Collect first: mutating `slots` while iterating it is not allowed.
+        for (id, slot) in slots.filter({ !live.contains($0.key) }) {
+            slots.removeValue(forKey: id)
+            let gone = controllers.removeValue(forKey: slot)
+            if let app {
+                let name = gone.map(Self.name) ?? "Controller"
+                name.withCString { cgb_host_gamepad_device(app, UInt32(slot), $0, false) }
+            }
+        }
         for controller in GCController.controllers() {
             attach(controller)
         }
     }
 
-    @objc private func controllerConnected(_ notification: Notification) {
-        guard let controller = notification.object as? GCController else { return }
-        attach(controller)
-    }
-
-    @objc private func controllerDisconnected(_ notification: Notification) {
-        guard let controller = notification.object as? GCController else { return }
+    private func detach(_ controller: GCController) {
         guard let slot = slots.removeValue(forKey: ObjectIdentifier(controller)) else { return }
+        controllers.removeValue(forKey: slot)
         if let app {
             Self.name(controller).withCString {
                 cgb_host_gamepad_device(app, UInt32(slot), $0, false)
@@ -52,17 +81,28 @@ final class Gamepads {
     }
 
     private func attach(_ controller: GCController) {
-        guard slots[ObjectIdentifier(controller)] == nil else { return }
-        let used = Set(slots.values)
-        guard let slot = (0..<16).first(where: { !used.contains($0) }) else { return }
-        slots[ObjectIdentifier(controller)] = slot
-
-        if let app {
-            Self.name(controller).withCString {
-                cgb_host_gamepad_device(app, UInt32(slot), $0, true)
+        // Only declare a device once it reports state: a controller whose profile
+        // is not ready yet would otherwise take a port and sit frozen (and its
+        // disconnect might never be seen). `reconcile()` retries.
+        guard let pad = controller.extendedGamepad else { return }
+        let id = ObjectIdentifier(controller)
+        let slot: Int
+        if let known = slots[id] {
+            slot = known
+        } else {
+            let used = Set(slots.values)
+            guard let free = (0..<16).first(where: { !used.contains($0) }) else { return }
+            slot = free
+            slots[id] = free
+            if let app {
+                Self.name(controller).withCString {
+                    cgb_host_gamepad_device(app, UInt32(slot), $0, true)
+                }
             }
         }
-        guard let pad = controller.extendedGamepad else { return }
+        controllers[slot] = controller
+        // Re-arm and re-push even for an already-known pad, so a handler that
+        // lapsed is restored and the current state is sent again.
         pad.valueChangedHandler = { [weak self] pad, _ in
             self?.push(pad, slot: slot)
         }
