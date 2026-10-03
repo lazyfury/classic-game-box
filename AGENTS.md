@@ -138,9 +138,11 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
   `scph*.bin` / `rom1.bin` / `erom.bin` 放 `<app data>/system/pcsx2/bios/`。
   `.iso/.chd/.bin/.cue` 与 PSP/PS1/Genesis 冲突，仍归它们；单游戏用卡片右键的
   **「选择机种…」**覆盖。PS2 关闭倒带（state 大）。
-  **状态：不稳定。** LRPS2 能出画面/声音，但会崩：**存档写入**时、
-  **卸载核心 / 复位 / 切到另一款新游戏**时（PCSX2 的序列化与 teardown 问题，
-  软件路径也躲不过；与此前 N64/PSP/PS1 的 `context_destroy` 顺序是另一码事）。
+  **状态：不稳定。** 实测（headless，release）：加载、跑帧、`serialize`（写即时存档，
+  50.6 MB）、卸载、切换游戏都正常；但 **`retro_reset` 和 `retro_unserialize` 会
+  SIGBUS**（崩溃点分别卡在 `Resetting host memory for virtual systems...` 和 mVU
+  Reset；不是 CHD 解压、也不是文件读写）。关 MTVU 无效。属于 PCSX2 在 macOS
+  上的宿主内存/状态重建问题。`armsx2` / `pcee2` 同标记为不稳定（同系 PCSX2）。
   故整机种不作为产品功能推进，默认/推荐改用 Play!。
 - **J2ME（Java ME）**：`SystemId::J2me`（`.jar`/`.kjx`）→ **FreeJ2ME-Plus**
   （`TASEmulators/freej2me-plus`）。它的 libretro 模块只是 C shim，用

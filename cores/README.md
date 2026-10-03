@@ -261,13 +261,18 @@ extensions (`elf`, `ciso`, `zso`, `mdf`, `nrg`, `dump`) select PS2; a `.iso`
 guessed as PSP is fixed per game from the card's “选择机种…” menu. PS2 disc
 images are large, so rewind is disabled for the console like N64 / PSP / PS1.
 
-**Status: unstable.** LRPS2 produces picture and sound on the software path,
-but it crashes when a save is written and when the core is unloaded (reset /
-starting another game) — PCSX2's serialize and teardown paths. It stays
+**Status: unstable.** LRPS2 produces picture and sound on the software path.
+Headless (release) the load, the frame loop, `serialize` (a 50.6 MB save state),
+unload and switching games all work; the crashes are **`retro_reset` and
+`retro_unserialize` → SIGBUS** — the fault is right after “Resetting host memory
+for virtual systems…” and in the mVU reset, so it is PCSX2's host-memory / state
+rebuild on macOS, **not CHD decompression or file I/O**. Disabling MTVU does not
+help. `armsx2` / `pcee2` (the same PCSX2 family) are tagged too. Such cores stay
 **downloadable and usable**, but `UNSTABLE_CORES` in `src/cores/catalog.rs` tags
-it so the download list shows a yellow “不稳定” and it is not the recommended
-core. `play` (Play!) is the recommended PS2 core: it runs, just slowly, and
-has lower compatibility. Do not treat PS2 as a supported console yet.
+them so the download list shows a yellow “不稳定” and they are not the
+recommended core. `play` (Play!) is the recommended PS2 core: it runs, just
+slowly, and has lower compatibility. Do not treat PS2 as a supported console
+yet.
 
 `freej2me_plus` is the odd one: the libretro module is only a shim that
 `fork/exec`s a Java VM (`freej2me_plus-lr.jar`) and talks to it over

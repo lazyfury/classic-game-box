@@ -72,7 +72,7 @@ pub fn is_blocked(name: &str) -> bool {
 /// listed, downloadable and usable — the download list just tags them, so the
 /// player knows what they are choosing. Kept in one place so the UI and the
 /// recommendation agree. See cores/README.md.
-pub const UNSTABLE_CORES: &[&str] = &["pcsx2"];
+pub const UNSTABLE_CORES: &[&str] = &["pcsx2", "armsx2", "pcee2"];
 
 /// Whether a core name is on the unstable list (case-insensitive).
 pub fn is_unstable(name: &str) -> bool {
@@ -253,6 +253,8 @@ mod tests {
         // the blocklist, an unstable core is still offered.
         assert!(is_unstable("pcsx2"));
         assert!(is_unstable("PCSX2"));
+        assert!(is_unstable("armsx2"));
+        assert!(is_unstable("pcee2"));
         assert!(!is_unstable("mesen"));
         assert!(!is_unstable("play"));
         let catalog = Catalog::builtin();
