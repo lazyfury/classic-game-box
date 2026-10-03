@@ -1,6 +1,9 @@
 # 系统架构 architecture/
 
 > 状态：**Phase 2 和 Phase 7 已完成**（总线架构 + Electron 前端）
+>
+> 已定型决定的「为什么」记在 [`decisions/`](decisions/README.md)（架构决策记录）；
+> 当前模块边界的可判定规则在 [`../../CONVENTIONS.md`](../../CONVENTIONS.md)。
 
 ## 目标结构
 

@@ -210,8 +210,9 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 ## 构建与验证（每阶段 gate）
 
 ```bash
-./scripts/dev.sh          # fmt --check + clippy -D warnings + test
+./scripts/dev.sh          # check-boundaries + fmt --check + clippy -D warnings + test
 # 等价于：
+./scripts/check-boundaries.sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
@@ -240,6 +241,7 @@ macos/scripts/run.sh mario.nes --core ./mycore_libretro.dylib # 任意模块
 | 迁移总设计、范围、里程碑、风险 | `docs/architecture/quill-native-migration.md` |
 | 旧架构的来龙去脉（为什么用 wasm、为什么现在不用） | `docs/architecture/libretro-migration.md` |
 | crate 职责与依赖 | `crates/README.md` |
+| 模块职责边界（可判定规则 + 校验脚本） | `CONVENTIONS.md`、`scripts/check-boundaries.sh` |
 | libretro frontend（dlopen / 回调 / 视频音频输入存档） | `crates/cgb-libretro/src/host.rs` |
 | 机种 / CoreSpec 选核、joypad id | `crates/cgb-libretro/src/{system,core_choice,joypad}.rs` |
 | UI 视图与帧循环 | `src/ui/`（视图 + `ViewModel`）、`src/app/`（`App` + `AppLogic` 组装） |
