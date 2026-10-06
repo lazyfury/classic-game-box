@@ -57,31 +57,49 @@ impl AppLogic for LogicHandle {
     }
 
     fn event(&mut self, ctx: &EventContext<'_>, event: &InputEvent) -> EventResult {
-        self.0.borrow_mut().event(ctx, event)
+        // A native file dialog (`rfd::FileDialog`) blocks inside a UI
+        // callback and runs a nested AppKit / Win32 loop, which can deliver
+        // more events (a tracking-area `mouseExited`, a frame tick) before the
+        // outer callback returns. Borrowing the logic again would panic, and a
+        // panic cannot unwind across this `extern "C"` ABI, so the process
+        // aborts. Drop the reentrant event instead: the outer call already
+        // owns the app. See `switch_library` / `add_games_dialog`.
+        match self.0.try_borrow_mut() {
+            Ok(mut app) => app.event(ctx, event),
+            Err(_) => EventResult::Ignored,
+        }
     }
 
+    // The frame phases are guarded the same way: a display link or frame timer
+    // firing inside the nested modal loop must not re-enter the logic.
     fn update(&mut self, ctx: &FrameContext<'_>) {
-        self.0.borrow_mut().update(ctx);
+        if let Ok(mut app) = self.0.try_borrow_mut() {
+            app.update(ctx);
+        }
     }
 
     fn layout(&mut self, ctx: &FrameContext<'_>) {
-        self.0.borrow_mut().layout(ctx);
+        if let Ok(mut app) = self.0.try_borrow_mut() {
+            app.layout(ctx);
+        }
     }
 
     fn paint(&mut self, ctx: &FrameContext<'_>, paint: &mut PaintContext) {
-        self.0.borrow_mut().paint(ctx, paint);
+        if let Ok(mut app) = self.0.try_borrow_mut() {
+            app.paint(ctx, paint);
+        }
     }
 
     fn needs_frame(&self) -> bool {
-        self.0.borrow().needs_frame()
+        self.0.try_borrow().is_ok_and(|app| app.needs_frame())
     }
 
     fn cursor(&self) -> Option<Cursor> {
-        self.0.borrow().cursor()
+        self.0.try_borrow().ok().and_then(|app| app.cursor())
     }
 
     fn caret(&self) -> Option<Rect> {
-        self.0.borrow().caret()
+        self.0.try_borrow().ok().and_then(|app| app.caret())
     }
 }
 
@@ -251,7 +269,12 @@ pub unsafe extern "C" fn cgb_host_needs_frame(app: *const CgbHostApp) -> bool {
 pub unsafe extern "C" fn cgb_host_poll(app: *mut CgbHostApp) -> bool {
     // SAFETY: `app` is a live pointer from `cgb_host_start` (this fn's contract).
     match unsafe { app.as_mut() } {
-        Some(app) => app.logic.borrow_mut().poll_input(),
+        // Same reentrancy guard as `LogicHandle`: the idle input timer can fire
+        // while a native modal dialog is up.
+        Some(app) => app
+            .logic
+            .try_borrow_mut()
+            .is_ok_and(|mut logic| logic.poll_input()),
         None => false,
     }
 }
