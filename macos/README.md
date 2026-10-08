@@ -65,6 +65,7 @@ swift build --package-path macos  # macos/.build/debug/cgb-mac
 | `macos/Sources/ClassicGameBoxMac/Gamepads.swift` | `GCController` → libretro snapshot |
 | `macos/Sources/ClassicGameBoxMac/AppDelegate.swift` | window, `cgb_host_start`, event-driven frame scheduling |
 | `macos/packaging/Info.plist`, `macos/scripts/package.sh` | the `.app` bundle |
+| `macos/packaging/AppIcon.png`, `macos/scripts/make-icon.sh` | the app icon (1024×1024 on the macOS grid → `.icns` at packaging time) |
 
 The Rust side lives at **`src/native/`** inside the root `cgb-app` package; the
 workspace root is also the app package, and the emulator boundary is the one

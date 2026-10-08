@@ -8,6 +8,8 @@
 	<string>Classic Game Box (Swift)</string>
 	<key>CFBundleExecutable</key>
 	<string>cgb-mac</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.classicgamebox.app.swift</string>
 	<key>CFBundleInfoDictionaryVersion</key>

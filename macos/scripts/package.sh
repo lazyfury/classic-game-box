@@ -9,6 +9,7 @@
 # The Rust host is linked **statically** into the Swift binary, so the bundle
 # is self-contained:
 #   Contents/MacOS/cgb-mac                       the app (Swift + Rust)
+#   Contents/Resources/AppIcon.icns              the app icon
 #   Contents/Resources/cores/{cores.json,*.dylib}
 #   Contents/Resources/assets/…
 #   Contents/Resources/{freej2me_plus,ppsspp}/…  when built
@@ -32,6 +33,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST="$ROOT/dist"
 APP="$DIST/$APP_NAME.app"
 PLIST="$ROOT/macos/packaging/Info.plist"
+ICON="$ROOT/macos/packaging/AppIcon.png"
 CORES_DIST="$ROOT/cores/dist"
 CORES_JSON="$ROOT/cores/cores.json"
 ASSETS="$ROOT/assets"
@@ -54,6 +56,11 @@ if [ "$(uname -s)" != "Darwin" ]; then
 	exit 1
 fi
 
+if [ ! -f "$ICON" ]; then
+	echo "找不到图标源图 $ICON" >&2
+	exit 1
+fi
+
 echo "==> cargo build --release"
 cargo build --release --manifest-path "$ROOT/Cargo.toml"
 
@@ -72,6 +79,10 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILT_SWIFT" "$APP/Contents/MacOS/$BINARY"
 cp "$PLIST" "$APP/Contents/Info.plist"
+
+# 应用图标：由 packaging/AppIcon.png 现场生成，产物不进仓库。
+echo "==> 生成图标"
+"$ROOT/macos/scripts/make-icon.sh" "$APP/Contents/Resources/AppIcon.icns"
 
 echo "==> 打包 cores"
 if [ -f "$CORES_JSON" ]; then
@@ -106,6 +117,12 @@ fi
 declared="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
 if [ "$declared" != "$BINARY" ]; then
 	echo "Info.plist 的 CFBundleExecutable ($declared) 与二进制名 ($BINARY) 不一致" >&2
+	exit 1
+fi
+# Same for the icon: CFBundleIconFile names the .icns (without extension).
+declared_icon="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP/Contents/Info.plist")"
+if [ ! -f "$APP/Contents/Resources/$declared_icon.icns" ]; then
+	echo "Info.plist 的 CFBundleIconFile ($declared_icon) 在 Resources 里找不到对应的 .icns" >&2
 	exit 1
 fi
 /usr/bin/plutil -lint "$APP/Contents/Info.plist"

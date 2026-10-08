@@ -52,7 +52,8 @@ UI 栈是 [`igui`](https://github.com/lazyfury/igui)（`quill` 改名后的上�
 - **性能**：DrawList 复用（运行游戏不重排重绘）+ 图标纹理化 + 库网格可见行虚拟化；
   `CGB_PERF=1` 打点。
 - **Q5 打包**：`macos/scripts/package.sh` 出 macOS `.app`（Rust release 静态库 + Swift
-  release，assets 入 Resources，ad-hoc 签名），**本地打包 / 发版**（`ditto` 压 zip +
+  release，assets 入 Resources，app 图标由 `macos/packaging/AppIcon.png` 现场生成
+  `.icns`，ad-hoc 签名），**本地打包 / 发版**（`ditto` 压 zip +
   `gh release create`）；**默认不带核**（随包只有 `cores.json`，核心运行时从 libretro
   buildbot 下载；`freej2me_plus` / `custom_nes_core` buildbot 没有，需自行编译，见
   `cores/README.md`）。`.github/workflows/release.yml` 只是**手动触发**的可选构建（免费
@@ -261,6 +262,7 @@ macos/scripts/run.sh mario.nes --core ./mycore_libretro.dylib # 任意模块
 | J2ME（Java ME）核心与随包 JRE | `cores/freej2me_plus/build.sh`、`src/app/mod.rs`（`j2me_dir` / `prepend_path`） |
 | 核心清单（启动选核） | `cores/cores.json`、`src/cores/`、`src/cli.rs` |
 | Swift/macOS host（主要产品） | `macos/`（Swift 窗口/事件）、`src/native/`（surface + 事件 + `cgb_host_*` C ABI）、`docs/architecture/swift-macos-host-plan.md` |
+| app 图标（`AppIcon.png` → `.icns`） | `macos/packaging/AppIcon.png`、`macos/scripts/make-icon.sh`（打包时自动调用） |
 | C++/Win32 host（实验） | `windows/`（C++ 窗口/消息循环）、`src/native/`（surface + 事件 + `cgb_host_*` C ABI）、`docs/architecture/windows-host-plan.md` |
 | 窗口/手柄 host 抽象 | `src/host.rs`（`HostWindow` / `GamepadSource`）、`src/app/mod.rs`（`App::init` 取源） |
 | 自研 FC/NES 核心 C++ 源码（历史对照 / `custom_nes_core` 来源） | `custom_nes_core/`（只读；`src/` 布局单 CMake 项目） |
